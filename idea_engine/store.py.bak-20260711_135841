@@ -1,0 +1,85 @@
+"""Ядро первого среза киборга — две дорожки с потолком и обратной тягой.
+
+Дорожка A (ideas): новые идеи. ПОТОЛОК = cap (по умолчанию 3). Обратная тяга:
+    добавить новую нельзя, пока дорожка полна открытыми идеями; место
+    освобождается, только когда юзер разгребёт (пометит take / later / trash).
+Дорожка B (finish): один слот-напоминание «доделать существующее». Обновляется,
+    когда дорожка A полна, — чтобы киборг не простаивал.
+
+Это чистая логика: ни сети, ни ключей, ни внешних путей внутри решений —
+только состояние в переданном файле. Оболочка (run.py) кормит её органами.
+"""
+import json
+import os
+
+DEFAULT_CAP = 3
+
+OPEN = "open"
+TAKE = "take"
+LATER = "later"
+TRASH = "trash"
+_CLEARED = {TAKE, LATER, TRASH}
+_VALID = _CLEARED | {OPEN}
+
+
+class Store:
+    def __init__(self, path, cap=DEFAULT_CAP):
+        self.path = path
+        self.data = {
+            "cap": cap,
+            "tick": 0,
+            "seq": 0,
+            "cursor": 0,      # ротация проектов в режиме B
+            "ideas": [],       # дорожка A
+            "finish": None,    # дорожка B (один слот)
+        }
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self.data.update(json.load(f))
+        self.data["cap"] = cap  # cap — конфиг, а не состояние: конструктор авторитетен
+
+    def save(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, ensure_ascii=False, indent=2)
+
+    # --- дорожка A: новые идеи ---
+    def open_ideas(self):
+        return [i for i in self.data["ideas"] if i["status"] == OPEN]
+
+    def has_room(self):
+        return len(self.open_ideas()) < self.data["cap"]
+
+    def add_idea(self, idea):
+        """Добавляет идею, только если есть место (обратная тяга). True/False."""
+        if not self.has_room():
+            return False
+        self.data["seq"] += 1
+        # служебные поля идут ПОСЛЕ idea — она не может подделать id/status/born_tick
+        rec = {**idea, "id": self.data["seq"], "status": OPEN, "born_tick": self.data["tick"]}
+        self.data["ideas"].append(rec)
+        return True
+
+    def set_status(self, idea_id, status):
+        if status not in _VALID:
+            raise ValueError(f"bad status: {status}")
+        target = None
+        for i in self.data["ideas"]:
+            if i["id"] == idea_id:
+                target = i
+                break
+        if target is None:
+            return False
+        # переоткрытие (OPEN) обязано уважать потолок — вторая дверь в open не пробивает cap
+        if status == OPEN and target["status"] != OPEN and not self.has_room():
+            return False
+        target["status"] = status
+        return True
+
+    def cleared_count(self):
+        return len([i for i in self.data["ideas"] if i["status"] in _CLEARED])
+
+    # --- дорожка B: доделать существующее ---
+    def set_finish(self, nudge, cursor):
+        self.data["finish"] = nudge
+        self.data["cursor"] = cursor

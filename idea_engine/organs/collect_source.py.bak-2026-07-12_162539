@@ -1,0 +1,143 @@
+"""Орган: collect_source — тянет свежие ВНЕШНИЕ items (сырьё для идей).
+
+Контракт органа: run(inputs, env) -> dict. Внутри run() ноль глобальных обращений:
+источник(и), лимит, таймаут приходят через env; ключей орган не берёт.
+
+Источники — все публичные API/страницы, БЕЗ ключа: Hacker News, Reddit (r/SideProject),
+Lobsters, GitHub Trending (HTML-скрейп, официального API нет). env["source"] — один
+источник, env["sources"] — список (тогда бюджет env["n"] делится между ними и сырьё
+СМЕШИВАЕТСЯ в одном ответе — межисточниковые дубли режет downstream-дедуп в harvest).
+Неизвестный источник или сетевой сбой -> честный fallback на встроенный сэмпл,
+degraded=True. Один источник упал, но другие дали сырьё -> НЕ degraded (сырьё есть),
+но ошибка видна в partial_errors — для диагностики, без блокировки органа.
+"""
+import json
+import re
+import urllib.request
+
+HN_TOP = "https://hacker-news.firebaseio.com/v0/topstories.json"
+HN_ITEM = "https://hacker-news.firebaseio.com/v0/item/{}.json"
+REDDIT_TOP = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
+LOBSTERS_HOT = "https://lobste.rs/hottest.json"
+GH_TRENDING = "https://github.com/trending"
+_UA = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
+
+_FALLBACK = [
+    {"title": "Show HN: local-first sync engine in Rust", "url": "", "id": 0},
+    {"title": "Ask HN: how do you run agents unattended?", "url": "", "id": 0},
+    {"title": "A tiny CRDT in 200 lines", "url": "", "id": 0},
+    {"title": "Building a personal search engine over your notes", "url": "", "id": 0},
+]
+
+
+def _get(url_or_req, timeout):
+    with urllib.request.urlopen(url_or_req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _hn(n, timeout):
+    ids = _get(HN_TOP, timeout)[:n]
+    items = []
+    for i in ids:
+        it = _get(HN_ITEM.format(i), timeout)
+        if it and it.get("title"):
+            items.append({"title": it["title"], "url": it.get("url", ""), "id": it.get("id")})
+    if not items:
+        raise ValueError("hn returned empty")
+    return items
+
+
+def _reddit(n, timeout):
+    # без User-Agent reddit отвечает 429 — ставим свой (публичный .json-эндпоинт, без ключа)
+    req = urllib.request.Request(REDDIT_TOP.format(n), headers={"User-Agent": _UA})
+    data = _get(req, timeout)
+    items = []
+    for c in (data.get("data", {}).get("children") or [])[:n]:
+        d = c.get("data", {})
+        title = d.get("title")
+        if title:
+            url = d.get("url") or ("https://reddit.com" + d.get("permalink", ""))
+            items.append({"title": title, "url": url, "id": d.get("id")})
+    if not items:
+        raise ValueError("reddit returned empty")
+    return items
+
+
+def _lobsters(n, timeout):
+    data = _get(LOBSTERS_HOT, timeout)
+    items = []
+    for it in (data or [])[:n]:
+        title = it.get("title")
+        if title:
+            items.append({"title": title, "url": it.get("url") or it.get("comments_url", ""),
+                          "id": it.get("short_id")})
+    if not items:
+        raise ValueError("lobsters returned empty")
+    return items
+
+
+def _gh_trending(n, timeout):
+    # официального API нет -> HTML-скрейп; парсим ТЕРПИМО (только class~lh-condensed + href
+    # owner/repo), любая непонятная разметка -> ValueError -> честный degrade, не краш.
+    req = urllib.request.Request(GH_TRENDING, headers={"User-Agent": "Mozilla/5.0 (" + _UA + ")"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        html = r.read().decode("utf-8", errors="replace")
+    blocks = re.findall(r'<h2[^>]*class="[^"]*lh-condensed[^"]*"[^>]*>(.*?)</h2>', html, re.DOTALL)
+    items = []
+    for b in blocks[:n]:
+        m = re.search(r'href="/([^"/?]+)/([^"/?]+)"', b)
+        if m:
+            owner, repo = m.group(1), m.group(2)
+            items.append({"title": f"{owner}/{repo}", "url": f"https://github.com/{owner}/{repo}", "id": None})
+    if not items:
+        raise ValueError("gh_trending: no repos parsed")
+    return items
+
+
+_SOURCES = {
+    "hn": _hn,
+    "reddit": _reddit,
+    "lobsters": _lobsters,
+    "gh_trending": _gh_trending,
+}
+
+
+def run(inputs, env):
+    env = env or {}
+    n = int(env.get("n", 8))
+    timeout = float(env.get("timeout", 8))
+    sources = env.get("sources")
+    names = list(sources) if sources else [env.get("source", "hn")]
+    per_n = max(1, -(-n // len(names)))  # общий бюджет n делим (ceil) между источниками
+
+    items, errors = [], []
+    for name in names:
+        fn = _SOURCES.get(name)
+        if fn is None:
+            errors.append(f"{name}: unknown source")
+            continue
+        try:
+            got = fn(per_n, timeout)
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+            continue
+        for it in got:
+            it = dict(it)
+            it.setdefault("source", name)
+            items.append(it)
+
+    label = "+".join(names)
+    if not items:
+        # ни один источник не дал сырья -> честный резерв. degrade — это УСПЕХ с резервом,
+        # а НЕ краш: НЕ ключ "error" (иначе киборг зря пометит источник сдохшим и заблокирует).
+        return {"items": list(_FALLBACK[:n]), "source": label, "degraded": True,
+                "degraded_reason": "; ".join(errors) or "no items"}
+
+    out = {"items": items, "source": label, "degraded": False}
+    if errors:
+        out["partial_errors"] = errors  # часть источников не ответила, но сырьё уже есть
+    return out
+
+
+if __name__ == "__main__":
+    print(json.dumps(run({}, {"n": 5}), ensure_ascii=False, indent=2))

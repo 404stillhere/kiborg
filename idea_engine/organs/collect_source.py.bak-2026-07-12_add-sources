@@ -1,0 +1,58 @@
+"""Орган: collect_source — тянет свежие ВНЕШНИЕ items (сырьё для идей).
+
+Контракт органа: run(inputs, env) -> dict. Внутри run() ноль глобальных обращений:
+источник, лимит, таймаут приходят через env; ключей орган не берёт.
+
+Тестовый источник = Hacker News (публичный API, без ключа) — материал «вне головы
+юзера». Сеть недоступна -> честный fallback на встроенный сэмпл, degraded=True.
+Другие источники (github-trending, research) подключаются в _SOURCES.
+"""
+import json
+import urllib.request
+
+HN_TOP = "https://hacker-news.firebaseio.com/v0/topstories.json"
+HN_ITEM = "https://hacker-news.firebaseio.com/v0/item/{}.json"
+
+_FALLBACK = [
+    {"title": "Show HN: local-first sync engine in Rust", "url": "", "id": 0},
+    {"title": "Ask HN: how do you run agents unattended?", "url": "", "id": 0},
+    {"title": "A tiny CRDT in 200 lines", "url": "", "id": 0},
+    {"title": "Building a personal search engine over your notes", "url": "", "id": 0},
+]
+
+
+def _get(url, timeout):
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _hn(n, timeout):
+    ids = _get(HN_TOP, timeout)[:n]
+    items = []
+    for i in ids:
+        it = _get(HN_ITEM.format(i), timeout)
+        if it and it.get("title"):
+            items.append({"title": it["title"], "url": it.get("url", ""), "id": it.get("id")})
+    if not items:
+        raise ValueError("hn returned empty")
+    return items
+
+
+def run(inputs, env):
+    env = env or {}
+    n = int(env.get("n", 8))
+    timeout = float(env.get("timeout", 8))
+    source = env.get("source", "hn")
+    try:
+        if source == "hn":
+            return {"items": _hn(n, timeout), "source": "hn", "degraded": False}
+        # неизвестный источник -> честный сэмпл
+        return {"items": list(_FALLBACK[:n]), "source": source, "degraded": True}
+    except Exception as e:
+        # degrade — это УСПЕХ с резервом, а НЕ краш: НЕ ключ "error" (иначе киборг зря пометит
+        # источник сдохшим и заблокирует), а "degraded_reason" — причина сохранена, блока нет.
+        return {"items": list(_FALLBACK[:n]), "source": source, "degraded": True, "degraded_reason": str(e)}
+
+
+if __name__ == "__main__":
+    print(json.dumps(run({}, {"n": 5}), ensure_ascii=False, indent=2))

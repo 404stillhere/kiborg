@@ -1,0 +1,29 @@
+# секреты — НИКОГДА не коммитить (проект пока не под git, но на будущее)
+gemini.md
+*.key
+.env
+
+# данные/состояние — перегенерируются
+cyborg/data/
+idea_engine/data/
+**/finish_cursor.json
+
+# python
+__pycache__/
+*.pyc
+
+# песочница ночной фабрики фич
+.feature-lab/
+
+# приватная память проекта — никогда не коммитить
+.brain/
+
+# сессии/токены
+*.session
+
+# окружение
+venv/
+node_modules/
+
+# кэши тестов
+.pytest_cache/

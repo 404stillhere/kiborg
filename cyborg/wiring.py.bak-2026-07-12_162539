@@ -1,0 +1,185 @@
+"""Обвязка ИСПОЛНЯЕМЫХ органов беты. Подключены органы idea_engine (локальны, чисты,
+безопасны: без секретов, без записи в прод). Реестр _shared/organs.json (89 карточек) —
+это каталог; сюда по одному переносятся реальные исполняемые органы (совет: расти
+группами, а не подключать все 47 сразу).
+"""
+import json
+import os
+import sys
+
+_IDEA = "M:/projects/kiborg/idea_engine"
+if _IDEA not in sys.path:
+    sys.path.insert(0, _IDEA)
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from organs import collect_source, ideate, finish_step, rank_ideas  # noqa: E402
+from core import Organ  # noqa: E402
+import deliver  # noqa: E402  (cyborg/deliver.py — sink в инбокс idea_engine)
+import finish_sink  # noqa: E402  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
+import stash_sink  # noqa: E402  (sink: копит идеи в копилку без потолка — для автономных прогонов)
+from organs_vendored import scrub_secrets  # noqa: E402  (вендорен из реестра, чистый)
+
+RECON = "M:/projects/panelofprojects/recon.json"
+
+
+def _run_collect(inputs, env):
+    # ВАЖНО: раньше env игнорировался (жёстко n=8/source=hn) — расширение харвеста
+    # (SOURCE_N) реально не долетало до сборщика в живом прогоне, только до gate-проверки
+    # в _source_signature (та звала collect_source напрямую). Теперь настройки прокидываются.
+    env = env if isinstance(env, dict) else {}
+    e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
+    if env.get("sources"):
+        e["sources"] = env["sources"]
+    if env.get("timeout"):
+        e["timeout"] = env["timeout"]
+    return collect_source.run(inputs, e)
+
+
+def _content_llm(env):
+    """Живая модель для контентных органов (ideate/rank): env['content_llm'], иначе общий env['llm'].
+    Так генератор и судья идут на живой модели, даже когда мозг оставлен на детерминированном stub."""
+    env = env if isinstance(env, dict) else {}
+    llm = env.get("content_llm") or env.get("llm")
+    return llm if callable(llm) else None
+
+
+def _run_ideate(inputs, env):
+    e = {"k": 6}  # генерим БОЛЬШЕ кандидатов — судья (rank_ideas) отберёт лучшие
+    llm = _content_llm(env)
+    if llm:
+        e["llm"] = llm
+    return ideate.run(inputs, e)
+
+
+def _run_rank(inputs, env):
+    e = {"keep": 3}  # оставить топ-3 из пула
+    llm = _content_llm(env)
+    if llm:
+        e["llm"] = llm
+    return rank_ideas.run(inputs, e)
+
+
+_CURSOR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "finish_cursor.json")
+
+
+def _run_finish(inputs, env):
+    # Курсор ПЕРСИСТИТСЯ между прогонами — иначе finish_step всегда возвращал первый проект
+    # (память per-run, «cursor» в ней не появлялся; finish_step отдаёт «next_cursor»). Теперь
+    # «доделай» реально ротирует по проектам бэклога.
+    cursor = 0
+    try:
+        with open(_CURSOR_FILE, encoding="utf-8") as f:
+            cursor = int(json.load(f).get("cursor", 0))
+    except Exception:
+        pass
+    out = finish_step.run(inputs, {"recon_path": RECON, "cursor": cursor})
+    try:
+        os.makedirs(os.path.dirname(_CURSOR_FILE), exist_ok=True)
+        with open(_CURSOR_FILE, "w", encoding="utf-8") as f:
+            json.dump({"cursor": int(out.get("next_cursor", cursor + 1))}, f)
+    except Exception:
+        pass
+    return out
+
+
+def _run_deliver(inputs, env):
+    return deliver.run(inputs, env)
+
+
+def _run_finish_sink(inputs, env):
+    return finish_sink.run(inputs, env)
+
+
+def _run_stash(inputs, env):
+    return stash_sink.run(inputs, env)
+
+
+def _run_scrub(inputs, env):
+    inp = inputs or {}
+    ideas = list(inp.get("ideas_best") or inp.get("ideas") or [])
+    out, red = [], 0
+    for idea in ideas:
+        if isinstance(idea, dict):
+            clean = dict(idea)
+            for f in ("title", "why"):
+                if isinstance(clean.get(f), str):
+                    s = scrub_secrets.scrub_text(clean[f])
+                    if s != clean[f]:
+                        red += 1
+                    clean[f] = s
+            out.append(clean)
+        else:
+            out.append(idea)
+    return {"ideas_safe": out, "redacted": red}
+
+
+def build_organs():
+    return [
+        Organ(
+            name="collect_source",
+            purpose="Тянет свежие внешние items (новости/сигналы) — сырьё для идей.",
+            run=_run_collect, role="source", produces=["items"], consumes=[],
+            tags=["собрать", "новости", "свежие", "источник", "идеи", "сигналы", "сырьё"],
+            needs={"network": True},
+        ),
+        Organ(
+            name="ideate",
+            purpose="Из items делает МНОГО идей-кандидатов с ценником (судья отберёт лучшие).",
+            run=_run_ideate, role="transform", produces=["ideas"], consumes=["items"],
+            tags=["идея", "идеи", "идей", "придумать", "предложить"],
+            needs={"key": "LLM_KEY", "stub_ok": True},
+        ),
+        Organ(
+            name="rank_ideas",
+            purpose="Судья: из пула идей оставляет топ-3 по рубрике (оригинальность/польза/выполнимость).",
+            run=_run_rank, role="transform", produces=["ideas_best"], consumes=["ideas"],
+            tags=["идея", "идеи", "отобрать", "лучшие", "оценить", "судья", "ранжировать"],
+            needs={"key": "LLM_KEY", "stub_ok": True},
+        ),
+        Organ(
+            name="finish_step",
+            purpose="Режим 'доделать': достаёт следующий шаг по существующим проектам.",
+            run=_run_finish, role="source", produces=["nudge"], consumes=[],
+            tags=["доделать", "существующие", "проекты", "шаг", "финиш", "довести"],
+            needs={},
+        ),
+        Organ(
+            name="scrub_secrets",
+            purpose="Защитный проход: вычищает креды (sk-/ghp-/AIza/KEY=…) из текста идей перед доставкой.",
+            run=_run_scrub, role="transform", produces=["ideas_safe"], consumes=["ideas_best"],
+            tags=["безопасно", "секрет", "очистить", "идеи", "защита"],
+            needs={},
+        ),
+        Organ(
+            name="deliver",
+            purpose="Доставляет идеи в инбокс через очередь (потолок 3 + обратная тяга, inbox.md).",
+            run=_run_deliver, role="sink", produces=["delivered"], consumes=["ideas_safe"],
+            tags=["доставить", "идеи", "инбокс", "прислать", "приноси", "свежие"],
+            needs={},
+        ),
+        Organ(
+            name="finish_sink",
+            purpose="Доводит подсказку «доделай» до инбокса (через deliver), вычистив секреты из recon.",
+            run=_run_finish_sink, role="sink", produces=["delivered"], consumes=["nudge"],
+            tags=["доделать", "довести", "шаг", "инбокс", "проекты"],
+            needs={},
+        ),
+    ]
+
+
+def build_harvest_organs():
+    """Органы АВТОНОМНОГО режима «копилка»: тот же конвейер идей (collect -> ideate ->
+    rank -> scrub), но финальный sink — НЕ инбокс (потолок 3), а копилка без потолка.
+    Для прогонов, когда Claude гоняет киборга сам: идеи копятся горой, разберёт юзер.
+    """
+    chain = [o for o in build_organs()
+             if o.name in ("collect_source", "ideate", "rank_ideas", "scrub_secrets")]
+    chain.append(Organ(
+        name="stash_ideas",
+        purpose="Копит идеи в копилку без потолка (для автономных прогонов), с дедупом.",
+        run=_run_stash, role="sink", produces=["delivered"], consumes=["ideas_safe"],
+        tags=["копилка", "копить", "накопитель", "идеи", "автономно", "приноси", "свежие"],
+        needs={},
+    ))
+    return chain

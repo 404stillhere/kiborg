@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Киборг — пульт</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<style>
+  :root{
+    --page:#0d0d0d; --card:#1a1a19; --card2:#222220;
+    --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --line:rgba(255,255,255,.10); --grid:#2c2c2a;
+    --blue:#3987e5; --aqua:#199e70; --yellow:#c98500;
+    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+    --r:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink2);
+       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
+  h1{color:var(--ink);font-size:22px;margin:0}
+  h2{color:var(--ink);font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  h2 .sub{color:var(--muted);font-weight:400;font-size:12px}
+  a{color:var(--blue)}
+  .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .head .upd{color:var(--muted);font-size:12px;margin-left:auto}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;
+        padding:5px 12px;font-size:12.5px;display:flex;align-items:center;gap:7px;color:var(--ink2)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .dot.good{background:var(--good)} .dot.warn{background:var(--warn)}
+  .dot.crit{background:var(--crit)} .dot.blue{background:var(--blue)}
+  .dot.mut{background:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:900px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+        padding:16px;margin-bottom:14px}
+
+  /* конвейер */
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:10px 0 4px}
+  .node{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+        padding:7px 10px;cursor:pointer;min-width:0;transition:border-color .15s}
+  .node:hover{border-color:var(--blue)}
+  .node.sel{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+  .node .nm{color:var(--ink);font-size:12.5px;font-weight:600;white-space:nowrap}
+  .node .rl{font-size:10.5px;color:var(--muted)}
+  .arrow{color:var(--muted);align-self:center;padding:0 6px;font-size:14px;flex:none}
+  .organ-detail{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+        padding:10px 12px;margin-top:10px;font-size:13px;display:none}
+  .organ-detail.show{display:block}
+  .organ-detail .io{color:var(--muted);font-size:12px;margin-top:4px}
+  .kv{color:var(--ink);font-weight:600}
+
+  button{font:inherit;border-radius:8px;border:1px solid var(--line);cursor:pointer;
+         background:var(--card2);color:var(--ink);padding:7px 14px}
+  button:hover{border-color:var(--blue)}
+  button:disabled{opacity:.45;cursor:default}
+  button.run{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+  button.run:disabled{background:var(--card2);border-color:var(--line);color:var(--muted)}
+  button.mini{padding:4px 10px;font-size:12.5px}
+  button.take{border-color:var(--good);color:var(--good)}
+  button.take:hover{background:rgba(12,163,12,.12)}
+  button.later{color:var(--ink2)}
+  button.trash{border-color:var(--crit);color:var(--crit)}
+  button.trash:hover{background:rgba(208,59,59,.12)}
+
+  /* консоль прогона */
+  .console{background:#0a0a0a;border:1px solid var(--grid);border-radius:8px;
+           font:12px/1.55 ui-monospace,Consolas,monospace;color:var(--ink2);
+           padding:12px;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .console:empty::before{content:"тут появится живой вывод, когда запустишь прогон";color:var(--muted)}
+  .runstate{font-size:12px;color:var(--muted);margin-top:6px}
+  .spin{display:inline-block;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* инбокс */
+  .idea{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+        padding:12px;margin-bottom:10px}
+  .idea .t{color:var(--ink);font-weight:600;margin-bottom:4px}
+  .idea .w{font-size:13px;color:var(--ink2)}
+  .idea .meta{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}
+  .tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}
+  .tag.llm{border-color:var(--blue);color:var(--blue)}
+  .idea .acts{display:flex;gap:8px;margin-top:10px}
+  .done-row{padding:6px 10px;border-bottom:1px solid var(--grid);font-size:13px;display:flex;gap:8px}
+  .done-row:last-child{border-bottom:0}
+  .st{font-size:11px;border-radius:999px;padding:1px 8px;flex:none;align-self:center}
+  .st.take{background:rgba(12,163,12,.15);color:var(--good)}
+  .st.later{background:rgba(250,178,25,.12);color:var(--warn)}
+  .st.trash{background:rgba(208,59,59,.14);color:var(--crit)}
+  .finish-card{border-left:3px solid var(--aqua)}
+  .capbar{display:flex;gap:4px;margin:2px 0 12px}
+  .capbar .slot{height:8px;flex:1;border-radius:4px;background:var(--grid)}
+  .capbar .slot.full{background:var(--yellow)}
+
+  /* журнал */
+  .runrow{padding:8px 0;border-bottom:1px solid var(--grid);font-size:13px}
+  .runrow:last-child{border-bottom:0}
+  .runrow .ts{color:var(--muted);font-size:11.5px}
+  .runrow .chain{color:var(--muted);font-size:12px}
+  .runrow .chain b{color:var(--ink2);font-weight:500}
+  .runrow .res{font-size:12px}
+  .res .okv{color:var(--good)} .res .zero{color:var(--muted)}
+
+  /* реестр */
+  .strip{display:flex;gap:2px;height:14px;border-radius:7px;overflow:hidden;margin:8px 0 6px}
+  .strip div{min-width:3px}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);flex-wrap:wrap}
+  .legend .dot{width:9px;height:9px;display:inline-block;margin-right:5px;border-radius:50%}
+  .pbars{margin-top:12px}
+  .pbar{display:grid;grid-template-columns:170px 1fr 30px;gap:8px;align-items:center;
+        font-size:12px;margin-bottom:4px}
+  .pbar .nm{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+  .pbar .bar{height:9px;border-radius:4px;background:var(--blue);min-width:2px}
+  .pbar .n{color:var(--muted)}
+  input[type=search]{background:var(--card2);border:1px solid var(--line);color:var(--ink);
+        border-radius:8px;padding:7px 12px;width:100%;font:inherit;margin:10px 0}
+  input[type=search]:focus{outline:none;border-color:var(--blue)}
+  .reg-list{max-height:340px;overflow:auto}
+  .reg-row{padding:7px 4px;border-bottom:1px solid var(--grid);font-size:12.5px}
+  .reg-row:last-child{border-bottom:0}
+  .reg-row .nm{color:var(--ink);font-weight:600}
+  .reg-row .pj{color:var(--muted)}
+  .reg-row .pp{color:var(--ink2);margin-top:2px}
+  .reg-row .keys{color:var(--warn);font-size:11px}
+  details summary{cursor:pointer;color:var(--muted);font-size:13px;user-select:none}
+  details[open] summary{margin-bottom:8px}
+
+  /* каркас киборга */
+  .skel-grid{display:grid;grid-template-columns:minmax(320px,620px) 1fr;gap:20px;align-items:start}
+  @media (max-width:900px){.skel-grid{grid-template-columns:1fr}}
+  #skel{max-width:620px;margin:0 auto}
+  #skel svg{width:100%;height:auto;display:block;touch-action:none;user-select:none}
+  #skel .draggable{cursor:grab}
+  #skel .draggable:active{cursor:grabbing}
+  #skel .slot-hint{fill:none;stroke:#3d3d36;stroke-width:1.5;stroke-dasharray:4 4}
+  #skel .bone{stroke:var(--grid);stroke-width:5;fill:none;stroke-linecap:round}
+  #skel .plate{fill:#161615;stroke:#34342f;stroke-width:1.5}
+  #skel .spinebone{stroke:#3d3d38;stroke-width:5;stroke-dasharray:7 6;fill:none}
+  #skel .nerve{stroke:#2e2e2b;stroke-width:1.2;stroke-dasharray:2 4;fill:none}
+  #skel .organ{cursor:pointer}
+  #skel .organ .nodebg{fill:#222220;stroke-width:2;transition:stroke-width .15s}
+  #skel .organ:hover .nodebg{stroke-width:3.5}
+  #skel .organ.sel .nodebg{stroke-width:4}
+  #skel .organ.work .nodebg{stroke:var(--warn) !important;stroke-width:4;animation:pulse 1s infinite}
+  #skel .builtin .ring{fill:transparent;stroke-width:2;stroke-dasharray:3 4;opacity:.65;transition:opacity .15s}
+  #skel .builtin:hover .ring{opacity:1;stroke-dasharray:none}
+  #skel .builtin.sel .ring{opacity:1;stroke-dasharray:none;stroke-width:3.5}
+  #skel .builtin.work .ring{stroke:var(--warn) !important;opacity:1;stroke-dasharray:none;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.3}}
+  #skel .lbl{font-size:10.5px;fill:var(--muted)}
+  #skel .leader{stroke:#3a3a36;stroke-width:1;fill:none}
+  #skel .eye{fill:#3a3a36}
+  #skel .organ.sel .eye,#skel .organ:hover .eye{fill:var(--aqua)}
+
+  /* оживление рыцаря: дыхание · пульс сердца · живые нервы */
+  #skel .breath{transform-box:fill-box;transform-origin:50% 100%;
+        animation:breathe 4.2s ease-in-out infinite}
+  #skel svg.running .breath{animation-play-state:paused}
+  @keyframes breathe{0%,100%{transform:translateY(0) scaleY(1)}
+        50%{transform:translateY(-2.4px) scaleY(1.014)}}
+  @media (prefers-reduced-motion:reduce){#skel .breath,#skel .heartbeat,#skel .nerve{animation:none}}
+
+  /* сердце-ромб: два толчка (систола-диастола), темп задаёт заполненность инбокса (--hb) */
+  #skel .heartbeat{fill:#e6484d;opacity:0;transform-box:fill-box;transform-origin:center;
+        pointer-events:none;animation:hb var(--hb,1.4s) ease-in-out infinite;
+        filter:drop-shadow(0 0 5px rgba(230,72,77,.7))}
+  @keyframes hb{
+        0%{transform:scale(.70);opacity:.14}
+        13%{transform:scale(1.14);opacity:.52}
+        26%{transform:scale(.88);opacity:.30}
+        40%{transform:scale(1.03);opacity:.44}
+        60%,100%{transform:scale(.70);opacity:.12}}
+  #skel .heartbeat.full{filter:drop-shadow(0 0 9px rgba(230,72,77,.9))}
+
+  /* нервы: тихий ток в простое, разгон и подсветка при прогоне */
+  #skel .nerve{animation:nflow 3s linear infinite}
+  @keyframes nflow{to{stroke-dashoffset:-18}}
+  #skel svg.running .nerve{stroke:var(--warn);stroke-opacity:.85;stroke-width:1.6;animation-duration:.7s}
+  .part-detail{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+        padding:14px;font-size:13.5px;min-height:120px}
+  .part-detail .pt{color:var(--ink);font-weight:700;font-size:15px;margin-bottom:6px}
+  .part-detail .io{color:var(--muted);font-size:12px;margin:8px 0}
+  .part-detail .hint{color:var(--muted)}
+  .skel-caption{color:var(--muted);font-size:11.5px;margin-top:8px}
+  .bodypick{margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .bodypick .lbl2{color:var(--muted);font-size:12px;margin-right:2px}
+  .bstyle.on{border-color:var(--blue);background:rgba(57,135,229,.15);color:var(--ink)}
+
+  /* гейты */
+  .gate{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);
+        border-radius:8px;margin-bottom:8px;background:var(--card2);font-size:13px;align-items:baseline}
+  .gate .ic{flex:none}
+  .gate b{color:var(--ink)}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:24px;text-align:center}
+  .err{color:var(--crit);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <h1>🤖 Киборг — пульт</h1>
+    <span class="upd" id="upd">загружаю…</span>
+  </div>
+
+  <div class="card">
+    <h2>Каркас <span class="sub">ткни в орган — расскажу, что делает, и дам задействовать</span></h2>
+    <div class="skel-grid">
+      <div id="skel"></div>
+      <div>
+        <div class="part-detail" id="part-detail"><span class="hint">Собери киборга: перетащи органы из лотка на тело. Клик по органу — что делает и кнопка задействовать.</span></div>
+        <div class="skel-caption">Пунктирные кружки — подсказки мест (магнитятся) · тащить можно куда угодно · назад в лоток — просто утащи вправо.<br>
+        🟡 жёлтая вспышка — орган отработал в прогоне · сердце, лоб и позвоночник — встроенные, их не подвинуть.</div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="mini" onclick="layoutHint()">✨ Подсказать расстановку</button>
+          <button class="mini" onclick="layoutClear()">↺ Всё в лоток</button>
+        </div>
+        <div class="bodypick" id="bodypick">
+          <span class="lbl2">облик рыцаря:</span>
+          <button class="mini bstyle" data-style="metal" onclick="setBody('metal')">⚔ Металл</button>
+          <button class="mini bstyle" data-style="flat" onclick="setBody('flat')">🛡 Плоский</button>
+          <button class="mini bstyle" data-style="poly" onclick="setBody('poly')">💠 Грани</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Работа 1: приносить идеи <span class="sub">конвейер органов</span></h2>
+      <div style="font-size:13px">Сходить за свежими новостями → придумать 6 идей → судья отберёт 3 лучшие → вычистить секреты → положить в инбокс.</div>
+      <div class="flow" id="flow-ideas"></div>
+      <div style="margin-top:12px"><button class="run" id="btn-ideas" onclick="runGoal('приноси свежие идеи')">▶ Принеси идеи</button></div>
+    </div>
+    <div class="card">
+      <h2>Работа 2: доделывать проекты <span class="sub">когда инбокс полон</span></h2>
+      <div style="font-size:13px">Достать «самый маленький шаг доделать» из карты твоих проектов (с ротацией) и положить в отдельный слот инбокса.</div>
+      <div class="flow" id="flow-finish"></div>
+      <div style="margin-top:12px"><button class="run" id="btn-finish" onclick="runGoal('доделать существующие проекты')">▶ Шаг «доделать»</button></div>
+    </div>
+  </div>
+  <div class="organ-detail" id="organ-detail"></div>
+
+  <div class="card">
+    <h2>Прогон вживую <span class="sub">что киборг делает прямо сейчас</span></h2>
+    <div class="console" id="console"></div>
+    <div class="runstate" id="runstate"></div>
+  </div>
+
+  <div class="card">
+    <h2>🗃 Копилка идей <span class="sub" id="stash-sub">автономный сбор — без потолка, разбирай не спеша</span></h2>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Когда киборга гоняют без тебя (я в автономном режиме), новые идеи копятся сюда горой — потолка 3 тут нет. Дедуп не даёт повторов.</div>
+    <div id="stash-list"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Инбокс идей <span class="sub" id="inbox-sub"></span></h2>
+      <div class="capbar" id="capbar"></div>
+      <div id="ideas-open"></div>
+      <div id="finish-slot"></div>
+      <details id="done-wrap"><summary id="done-sum"></summary><div id="ideas-done"></div></details>
+      <div class="err" id="inbox-err"></div>
+    </div>
+
+    <div class="card">
+      <h2>Журнал прогонов <span class="sub">runs.md, свежие сверху</span></h2>
+      <div id="runs" style="max-height:520px;overflow:auto"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Каталог органов <span class="sub" id="reg-sub">запас на рост — карточки из других проектов</span></h2>
+    <div class="strip" id="reg-strip"></div>
+    <div class="legend" id="reg-legend"></div>
+    <div class="pbars" id="reg-projects"></div>
+    <details style="margin-top:12px"><summary>Смотреть все карточки</summary>
+      <input type="search" id="reg-search" placeholder="поиск: имя, проект, что делает…" oninput="renderRegList()">
+      <div class="reg-list" id="reg-list"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>Ждёт твоего решения</h2>
+    <div id="gates"></div>
+  </div>
+
+  <div class="foot">Пульт только показывает и умеет две команды, что и так есть в CLI (разбор идей, запуск прогона).<br>
+  Ничего в коде киборга не меняет. 127.0.0.1:8737 · обновляется сам каждые 5 сек.</div>
+</div>
+
+<script src="/bodies.js"></script>
+<script>
+let S = null;          // последнее состояние /api/state
+let selOrgan = null;   // выбранный орган (детали)
+let runPolling = false;
+let running = false;    // идёт ли прогон (гоняет нервы/дыхание на каркасе)
+let bodyStyle = localStorage.getItem("kbodyStyle") || "metal";  // облик рыцаря
+
+function setBody(s){
+  if(!(window.KNIGHT_BODIES && KNIGHT_BODIES[s])) return;
+  bodyStyle = s;
+  localStorage.setItem("kbodyStyle", s);
+  document.querySelectorAll(".bstyle").forEach(b=>b.classList.toggle("on", b.dataset.style===s));
+  renderSkeleton();
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const ROLE_RU = {source:"источник", transform:"преобразует", sink:"доставка"};
+const STATUS_RU = {extracted:"готов", draft:"набросок", candidate:"кандидат"};
+const STATUS_COLOR = {extracted:"var(--blue)", draft:"var(--aqua)", candidate:"var(--yellow)"};
+const IDEA_ST = {take:"взял", later:"позже", trash:"мусор"};
+
+/* --- конвейеры: цепочка от источника по produces→consumes --- */
+function chainFrom(sourceName){
+  const byName = Object.fromEntries(S.organs.map(o=>[o.name,o]));
+  const chain = [];
+  let cur = byName[sourceName];
+  const seen = new Set();
+  while(cur && !seen.has(cur.name)){
+    chain.push(cur); seen.add(cur.name);
+    const next = S.organs.find(o => !seen.has(o.name) &&
+      o.consumes.some(k => cur.produces.includes(k)));
+    cur = next;
+  }
+  return chain;
+}
+
+function renderFlow(elId, chain){
+  const el = document.getElementById(elId);
+  el.innerHTML = chain.map((o,i)=>
+    (i? '<span class="arrow">→</span>':'') +
+    `<div class="node ${selOrgan===o.name?'sel':''}" onclick="showOrgan('${esc(o.name)}')">
+       <div class="nm">${esc(o.name)}</div><div class="rl">${ROLE_RU[o.role]||esc(o.role)}</div>
+     </div>`).join("");
+}
+
+function showOrgan(name){
+  selOrgan = (selOrgan===name ? null : name);
+  const el = document.getElementById("organ-detail");
+  const o = S.organs.find(x=>x.name===selOrgan);
+  if(!o){ el.className="organ-detail"; renderFlows(); return; }
+  const needs = [];
+  if(o.needs.network) needs.push("ходит в сеть");
+  if(o.needs.key) needs.push(`хочет ключ ${o.needs.key}` + (o.needs.stub_ok ? " (без ключа работает попроще)" : ""));
+  if(o.needs.prod) needs.push("трогает прод (в safe-режиме не запустится)");
+  el.innerHTML = `<span class="kv">${esc(o.name)}</span> — ${esc(o.purpose)}
+    <div class="io">берёт: ${o.consumes.length?esc(o.consumes.join(", ")):"ничего (сам источник)"} ·
+    отдаёт: ${esc(o.produces.join(", "))}${needs.length? " · "+esc(needs.join(" · ")):""}</div>`;
+  el.className = "organ-detail show";
+  renderFlows();
+}
+
+function renderFlows(){
+  renderFlow("flow-ideas", chainFrom("collect_source"));
+  renderFlow("flow-finish", chainFrom("finish_step"));
+}
+
+/* --- каркас киборга --- */
+let selPart = null;    // выбранная часть тела
+let workOrgan = null;  // орган, отработавший последним в живом прогоне
+
+const PARTS = {
+  ideate:        {part:"Мозг · генератор", icon:"💡", x:200, y:64,  color:"var(--blue)",
+                  goal:"приноси свежие идеи",
+                  blurb:"Придумывает 6 идей-кандидатов из увиденного. С ключом — живой Gemini, без ключа — простая болванка."},
+  rank_ideas:    {part:"Мозг · судья", icon:"⚖️", x:260, y:64, color:"var(--blue)",
+                  goal:"приноси свежие идеи",
+                  blurb:"Оценивает кандидатов (оригинальность · польза · выполнимость) и оставляет топ-3. Генератор не судит сам себя."},
+  collect_source:{part:"Глаза", icon:"👁", x:230, y:100, color:"var(--aqua)",
+                  goal:"приноси свежие идеи",
+                  blurb:"Смотрит в мир: тянет свежие заголовки с Hacker News — сырьё для идей. Если сети нет — берёт резерв и честно помечает degraded."},
+  scrub_secrets: {part:"Фильтр (печень)", icon:"🧼", x:230, y:268, color:"var(--blue)",
+                  goal:"приноси свежие идеи",
+                  blurb:"Вычищает ключи и пароли из текста, прежде чем что-то ляжет в инбокс или журнал. Три слоя защиты — это один из них."},
+  deliver:       {part:"Правая рука", icon:"✋", x:334, y:300, color:"#9085e9",
+                  goal:"приноси свежие идеи",
+                  blurb:"Кладёт готовые идеи в твой инбокс. Уважает потолок 3 — не заваливает, пока не разберёшь старые."},
+  finish_sink:   {part:"Левая рука", icon:"🤝", x:126, y:300, color:"#9085e9",
+                  goal:"доделать существующие проекты",
+                  blurb:"Доносит напоминание «доделать» до инбокса — в отдельный слот, не съедая место идей, и тоже через фильтр."},
+  finish_step:   {part:"Ноги", icon:"🦶", x:230, y:438, color:"var(--aqua)",
+                  goal:"доделать существующие проекты",
+                  blurb:"Шагает по твоим проектам по кругу и приносит самый маленький следующий шаг из карты панели проектов."},
+};
+
+function pseudoParts(){
+  const open = S ? S.inbox.ideas.filter(i=>i.status==="open").length : 0;
+  return {
+    heart:  {part:"Сердце · инбокс идей", icon:"❤", x:230, y:196, color:"#e66767",
+             blurb:`Очередь идей с потолком ${S?S.inbox.cap:3}: сейчас ${open}/${S?S.inbox.cap:3}. Пока не разберёшь — новые не придут (обратная тяга). Помнит уже предложенное (${S?S.inbox.seen_count:0} заголовков) и не повторяется.`},
+    planner:{part:"Лоб · мозг-планировщик", icon:"⚙", x:230, y:78, color:"var(--yellow)",
+             blurb: S && S.key.present
+               ? `Решает, какой орган звать следующим. Сейчас — надёжная детерминированная логика (так задумано), а сами идеи придумывает живой ${S.key.model}.`
+               : "Решает, какой орган звать следующим. Ключа нет — и планировщик, и идеи работают на болванке."},
+    spine:  {part:"Позвоночник · оркестратор", icon:"", x:230, y:250, color:"var(--muted)",
+             blurb:"Сам цикл жизни: роутер (нервы) отбирает подходящие органы, мозг выбирает следующий, исполнитель безопасно запускает, память копит результаты и блокирует упавших. До 8 шагов за прогон."},
+  };
+}
+
+// встроенные узлы (сердце=ромб, планировщик=лоб) — рыцарь уже их рисует,
+// поэтому узел прозрачный: кольцо + подсветка выбора, само тело просвечивает.
+function nodeSvg(id, p, extra){
+  const cls = `organ builtin${selPart===id?' sel':''}${workOrgan===id?' work':''}`;
+  return `<g class="${cls}" onclick="showPart('${id}')">${extra||""}
+    <circle class="ring" cx="${p.x}" cy="${p.y}" r="17" stroke="${p.color}"></circle>
+    <title>${esc(p.part)}</title></g>`;
+}
+
+/* --- конструктор: лоток + перетаскивание --- */
+let LAYOUT = {};      // орган -> {x,y} на теле; нет записи = лежит в лотке
+let drag = null;      // текущее перетаскивание
+
+const ORGAN_ORDER = Object.keys(PARTS);
+const SLOTS = ORGAN_ORDER.map(n=>({x:PARTS[n].x, y:PARTS[n].y}));  // подсказки мест (моя анатомия)
+const TRAY_X = 465;   // правее этой границы = лоток
+
+function trayPos(i){ return {x:562, y:96+i*60}; }
+
+function organSvg(name, i){
+  const p = PARTS[name];
+  const pos = LAYOUT[name] || trayPos(i);
+  const cls = `organ draggable${selPart===name?' sel':''}${workOrgan===name?' work':''}`;
+  return `<g class="${cls}" data-id="${name}" transform="translate(${pos.x},${pos.y})">
+    <circle class="nodebg" cx="0" cy="0" r="16" stroke="${p.color}"></circle>
+    <text x="0" y="5" text-anchor="middle" font-size="14">${p.icon}</text>
+    <text class="lbl" x="0" y="30" text-anchor="middle">${esc(p.part)}</text>
+    <title>${esc(p.part)}</title></g>`;
+}
+
+function renderSkeleton(){
+  if(!S || drag) return;   // во время перетаскивания не перерисовываем
+  const P = pseudoParts();
+  const open = S.inbox.ideas.filter(i=>i.status==="open").length;
+  const lbl = (x,y,anchor,text)=>`<text class="lbl" x="${x}" y="${y}" text-anchor="${anchor}">${esc(text)}</text>`;
+  const leader = (x1,y1,x2,y2)=>`<line class="leader" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  const key = v=>Math.round(v.x)+","+Math.round(v.y);
+  const taken = new Set(Object.values(LAYOUT).map(key));
+  const freeSlots = SLOTS.filter(s=>!taken.has(key(s)));
+  const nerves = Object.values(LAYOUT).map(v=>
+    `<path class="nerve" d="M230,230 Q${(230+v.x)/2},${(230+v.y)/2} ${v.x},${v.y}"/>`).join("");
+  const fill = S.inbox.cap ? open/S.inbox.cap : 0;          // 0..1 — полнее инбокс, чаще пульс
+  const hbDur = (1.6 - fill*0.9).toFixed(2);                // пусто ~1.6с … полно ~0.7с
+  document.getElementById("skel").innerHTML = `
+  <svg class="${running?'running':''}" viewBox="0 0 660 545" xmlns="http://www.w3.org/2000/svg">
+    <!-- тело рыцаря (выбранный стиль) — дышит в простое -->
+    <g class="breath">${(window.KNIGHT_BODIES && KNIGHT_BODIES[bodyStyle]) || ''}</g>
+    <!-- лоток -->
+    <rect class="plate" x="480" y="42" width="166" height="466" rx="12"/>
+    ${lbl(563,68,"middle","ЛОТОК · тащи на тело")}
+    <!-- свободные места (подсказки) -->
+    ${freeSlots.map(s=>`<circle class="slot-hint" cx="${s.x}" cy="${s.y}" r="16"/>`).join("")}
+    <!-- нервы к расставленным органам -->
+    ${nerves}
+    <!-- позвоночник (оркестратор) -->
+    <g class="organ${selPart==='spine'?' sel':''}" onclick="showPart('spine')">
+      <line class="spinebone" x1="230" y1="146" x2="230" y2="312"/>
+      <line x1="230" y1="146" x2="230" y2="312" stroke="transparent" stroke-width="18"/>
+      <title>Позвоночник — оркестратор</title></g>
+    <!-- встроенные части -->
+    ${nodeSvg('planner', P.planner)}
+    <!-- бьётся сердце-ромб (темп от заполненности инбокса) -->
+    <path class="heartbeat${fill>=1?' full':''}" d="M230,178 L248,196 L230,214 L212,196 Z" style="--hb:${hbDur}s"></path>
+    ${nodeSvg('heart', P.heart)}
+    ${leader(248,196,302,188)}${lbl(306,191,"start","сердце · инбокс "+open+"/"+S.inbox.cap)}
+    ${leader(212,78,160,84)}${lbl(156,87,"end","планировщик")}
+    <!-- органы (перетаскиваемые) -->
+    ${ORGAN_ORDER.map((n,i)=>organSvg(n,i)).join("")}
+  </svg>`;
+}
+
+function svgPt(svg,e){
+  const pt = new DOMPoint(e.clientX, e.clientY);
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+async function saveLayout(){
+  await fetch("/api/layout",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({layout:LAYOUT})}).catch(()=>{});
+}
+
+function layoutHint(){   // моя анатомия как отправная точка — дальше двигай сам
+  LAYOUT = {};
+  ORGAN_ORDER.forEach(n=>LAYOUT[n]={x:PARTS[n].x, y:PARTS[n].y});
+  renderSkeleton(); saveLayout();
+}
+function layoutClear(){ LAYOUT = {}; renderSkeleton(); saveLayout(); }
+
+document.getElementById("skel").addEventListener("pointerdown", e=>{
+  const g = e.target.closest(".draggable"); if(!g) return;
+  const svg = g.ownerSVGElement;
+  const id = g.dataset.id;
+  const cur = LAYOUT[id] || trayPos(ORGAN_ORDER.indexOf(id));
+  const p = svgPt(svg, e);
+  drag = {id, g, svg, offX:cur.x-p.x, offY:cur.y-p.y, sx:cur.x, sy:cur.y, cx:cur.x, cy:cur.y, moved:false};
+  try{ g.setPointerCapture(e.pointerId); }catch(_){}
+  e.preventDefault();
+});
+document.addEventListener("pointermove", e=>{
+  if(!drag) return;
+  const p = svgPt(drag.svg, e);
+  const nx = p.x+drag.offX, ny = p.y+drag.offY;
+  if(!drag.moved && Math.hypot(nx-drag.sx, ny-drag.sy) < 5) return;
+  drag.moved = true; drag.cx = nx; drag.cy = ny;
+  drag.g.setAttribute("transform", `translate(${nx},${ny})`);
+});
+document.addEventListener("pointerup", e=>{
+  const d = drag; if(!d) return; drag = null;
+  if(!d.moved){ showPart(d.id); return; }   // это был клик, не перенос
+  let x = d.cx, y = d.cy;
+  if(x > TRAY_X){ delete LAYOUT[d.id]; }    // вернул в лоток
+  else{
+    const key = v=>Math.round(v.x)+","+Math.round(v.y);
+    const taken = new Set(Object.entries(LAYOUT).filter(([k])=>k!==d.id).map(([,v])=>key(v)));
+    for(const s of SLOTS){                   // магнит к свободной подсказке рядом
+      if(!taken.has(key(s)) && Math.hypot(s.x-x, s.y-y) < 28){ x=s.x; y=s.y; break; }
+    }
+    LAYOUT[d.id] = {x:Math.round(Math.min(Math.max(x,26),440)), y:Math.round(Math.min(Math.max(y,26),512))};
+  }
+  renderSkeleton();
+  saveLayout();
+});
+
+function showPart(id){
+  selPart = (selPart===id ? null : id);
+  renderPartDetail();
+  renderSkeleton();
+}
+
+function renderPartDetail(){
+  const el = document.getElementById("part-detail");
+  if(!selPart){ el.innerHTML = '<span class="hint">Выбери часть тела на каркасе.</span>'; return; }
+  const id = selPart;
+  const meta = PARTS[id] || pseudoParts()[id];
+  const o = S.organs.find(x=>x.name===id);
+  let io = "";
+  if(o){
+    const needs = [];
+    if(o.needs.network) needs.push("ходит в сеть");
+    if(o.needs.key) needs.push("хочет ключ" + (o.needs.stub_ok? " (без него — попроще)":""));
+    io = `<div class="io">орган: <b style="color:var(--ink)">${esc(o.name)}</b> ·
+      берёт: ${o.consumes.length?esc(o.consumes.join(", ")):"ничего (источник)"} ·
+      отдаёт: ${esc(o.produces.join(", "))}${needs.length? " · "+esc(needs.join(" · ")):""}</div>`;
+  }
+  const btn = meta.goal
+    ? `<button class="run mini" onclick="runGoal('${meta.goal}')">▶ Задействовать (цель: «${esc(meta.goal)}»)</button>`
+    : (id==='heart' ? `<button class="mini" onclick="document.getElementById('inbox-sub').scrollIntoView({behavior:'smooth'})">показать инбокс ↓</button>` : "");
+  el.innerHTML = `<div class="pt">${meta.icon? meta.icon+" ":""}${esc(meta.part)}</div>
+    <div>${esc(meta.blurb)}</div>${io}<div style="margin-top:10px">${btn}</div>`;
+}
+
+/* --- шапка-чипы --- */
+function renderChips(){
+  const openN = S.inbox.ideas.filter(i=>i.status==="open").length;
+  const cap = S.inbox.cap;
+  const chips = [];
+  chips.push(S.key.present
+    ? `<span class="chip"><span class="dot good"></span>мозг идей: <b>${esc(S.key.model)}</b> (ключ на месте)</span>`
+    : `<span class="chip"><span class="dot crit"></span><b>ключа нет</b> — идеи будут шаблонные</span>`);
+  chips.push(`<span class="chip"><span class="dot blue"></span>органов в деле: <b>${S.organs.length}</b> · в каталоге: <b>${S.registry.total}</b></span>`);
+  chips.push(`<span class="chip"><span class="dot ${openN>=cap?'warn':'good'}"></span>инбокс: <b>${openN}/${cap}</b>${openN>=cap?' — полон, разбери':''}</span>`);
+  chips.push(S.lab.exists
+    ? (S.lab.locked
+        ? `<span class="chip"><span class="dot warn"></span>фабрика фич: <b>под замком</b> (пакет не разобран)</span>`
+        : `<span class="chip"><span class="dot good"></span>фабрика фич: свободна</span>`)
+    : `<span class="chip"><span class="dot good"></span>фабрика фич: песочница пуста</span>`);
+  chips.push(`<span class="chip"><span class="dot mut"></span>тик движка: <b>${S.inbox.tick}</b> · помнит заголовков: <b>${S.inbox.seen_count}</b></span>`);
+  document.getElementById("chips").innerHTML = chips.join("");
+}
+
+/* --- инбокс --- */
+function ideaCard(i){
+  return `<div class="idea">
+    <div class="t">${esc(i.title)}</div>
+    <div class="w">${esc(i.why)}</div>
+    <div class="meta">
+      <span class="tag">сложность: ${esc(i.effort||"?")}</span>
+      <span class="tag ${i.brain==='llm'?'llm':''}">${i.brain==='llm'?'придумано нейронкой':'придумано болванкой'}</span>
+      <span class="tag">откуда: ${esc(i.source||"?")}</span>
+      <span class="tag">#${i.id}</span>
+    </div>
+    <div class="acts">
+      <button class="mini take" onclick="ideaAct(${i.id},'take')">✓ Взять</button>
+      <button class="mini later" onclick="ideaAct(${i.id},'later')">⏳ Позже</button>
+      <button class="mini trash" onclick="ideaAct(${i.id},'trash')">✕ Мусор</button>
+    </div>
+  </div>`;
+}
+
+function renderInbox(){
+  const ib = S.inbox;
+  document.getElementById("inbox-err").textContent = ib.error ? "state.json не читается: "+ib.error : "";
+  const open = ib.ideas.filter(i=>i.status==="open");
+  const done = ib.ideas.filter(i=>i.status!=="open").slice().reverse();
+  document.getElementById("inbox-sub").textContent =
+    open.length ? "разбери — иначе новые идеи не придут" : "пусто — следующий прогон принесёт новые";
+  document.getElementById("capbar").innerHTML =
+    Array.from({length: ib.cap}, (_,k)=>`<div class="slot ${k<open.length?'full':''}"></div>`).join("");
+  document.getElementById("ideas-open").innerHTML =
+    open.length ? open.map(ideaCard).join("") : `<div style="color:var(--muted);font-size:13px;margin-bottom:10px">открытых идей нет</div>`;
+
+  const f = ib.finish;
+  document.getElementById("finish-slot").innerHTML = f ? `
+    <div class="idea finish-card">
+      <div class="t">🔧 ${esc(f.title)}</div>
+      <div class="w">${esc(f.why)}</div>
+      <div class="meta"><span class="tag">слот «доделать» (дорожка B)</span>
+      <span class="tag">проект: ${esc(f.folder||"?")}</span></div>
+    </div>` : "";
+
+  document.getElementById("done-sum").textContent = `разобранные (${done.length})`;
+  document.getElementById("done-wrap").style.display = done.length? "block":"none";
+  document.getElementById("ideas-done").innerHTML = done.map(i=>
+    `<div class="done-row"><span class="st ${esc(i.status)}">${IDEA_ST[i.status]||esc(i.status)}</span>
+     <span>${esc(i.title)}</span></div>`).join("");
+}
+
+async function ideaAct(id, status){
+  const r = await fetch("/api/idea", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({id, status})}).then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
+  if(!r.ok) alert("не вышло: " + (r.msg||""));
+  refresh();
+}
+
+/* --- журнал --- */
+function renderRuns(){
+  const el = document.getElementById("runs");
+  if(!S.runs.length){ el.innerHTML = '<div style="color:var(--muted)">прогонов ещё не было</div>'; return; }
+  el.innerHTML = S.runs.slice().reverse().map(r=>{
+    const v = r.value === "0" ? '<span class="zero">доставлено: 0 (ничего не добавилось)</span>'
+      : /^\d+$/.test(r.value) ? `<span class="okv">доставлено: ${esc(r.value)}</span>`
+      : esc(r.value);
+    return `<div class="runrow">
+      <div class="ts">${esc(r.ts)}</div>
+      <div><b style="color:var(--ink)">«${esc(r.goal)}»</b></div>
+      <div class="chain">${r.chain.map(c=>`<b>${esc(c)}</b>`).join(" → ")}</div>
+      <div class="res">${esc(r.deliverable)}: ${v}</div>
+    </div>`;
+  }).join("");
+}
+
+/* --- копилка --- */
+function renderStash(){
+  const st = S.stash || {total:0, latest:[]};
+  document.getElementById("stash-sub").textContent =
+    st.total ? `${st.total} идей накоплено · показаны свежие` : "пока пусто — соберётся в автономных прогонах";
+  const el = document.getElementById("stash-list");
+  if(!st.latest.length){ el.innerHTML = '<div style="color:var(--muted);font-size:13px">копилка пуста</div>'; return; }
+  el.innerHTML = st.latest.map(i=>`<div class="idea">
+    <div class="t">${esc(i.title)}</div>
+    <div class="w">${esc(i.why)}</div>
+    <div class="meta">
+      <span class="tag">сложность: ${esc(i.effort||"?")}</span>
+      <span class="tag ${i.brain==='llm'?'llm':''}">${i.brain==='llm'?'★ придумано ИИ':'болванка'}</span>
+      ${i.stashed_at?`<span class="tag">${esc(i.stashed_at)}</span>`:""}
+    </div></div>`).join("");
+}
+
+/* --- реестр --- */
+function renderRegistry(){
+  const rg = S.registry;
+  document.getElementById("reg-sub").textContent =
+    `${rg.total} карточек из ${Object.keys(rg.by_project).length} проектов; киборг исполняет ${S.organs.length}`;
+  const order = ["extracted","draft","candidate"];
+  const strip = document.getElementById("reg-strip");
+  strip.innerHTML = order.filter(s=>rg.by_status[s]).map(s=>
+    `<div style="flex:${rg.by_status[s]};background:${STATUS_COLOR[s]}"></div>`).join("");
+  document.getElementById("reg-legend").innerHTML = order.filter(s=>rg.by_status[s]).map(s=>
+    `<span><span class="dot" style="background:${STATUS_COLOR[s]}"></span>${STATUS_RU[s]} — ${rg.by_status[s]}</span>`).join("");
+  const prj = Object.entries(rg.by_project).sort((a,b)=>b[1]-a[1]);
+  const mx = Math.max(...prj.map(p=>p[1]), 1);
+  document.getElementById("reg-projects").innerHTML = prj.map(([p,n])=>
+    `<div class="pbar"><div class="nm" title="${esc(p)}">${esc(p)}</div>
+     <div><div class="bar" style="width:${Math.max(100*n/mx,2)}%"></div></div>
+     <div class="n">${n}</div></div>`).join("");
+  renderRegList();
+}
+
+function renderRegList(){
+  const q = (document.getElementById("reg-search").value||"").toLowerCase();
+  const rows = S.registry.cards.filter(c =>
+    !q || [c.name,c.project,c.purpose].join(" ").toLowerCase().includes(q));
+  document.getElementById("reg-list").innerHTML = rows.slice(0,200).map(c=>
+    `<div class="reg-row">
+       <span class="nm">${esc(c.name)}</span>
+       <span class="tag" style="border-color:${STATUS_COLOR[c.status]||'var(--line)'};color:${STATUS_COLOR[c.status]||'var(--muted)'}">${STATUS_RU[c.status]||esc(c.status)}</span>
+       <span class="pj"> · ${esc(c.project)}${c.language? " · "+esc(c.language):""}</span>
+       <div class="pp">${esc(c.purpose)}</div>
+       ${c.needs_keys.length? `<div class="keys">нужны ключи: ${esc(c.needs_keys.join(", "))}</div>`:""}
+     </div>`).join("") || '<div style="color:var(--muted);padding:8px">ничего не нашлось</div>';
+}
+
+/* --- гейты --- */
+function renderGates(){
+  const g = [];
+  const openN = S.inbox.ideas.filter(i=>i.status==="open").length;
+  if(!S.key.present)
+    g.push(`<div class="gate"><span class="ic">🔴</span><div><b>Ключа Gemini нет.</b> Киборг не сломается, но идеи станут шаблонными — и никакого предупреждения не будет. Верни файл gemini.md или задай GEMINI_KEY.</div></div>`);
+  if(openN >= S.inbox.cap)
+    g.push(`<div class="gate"><span class="ic">🟡</span><div><b>Инбокс полон (${openN}/${S.inbox.cap}).</b> Новые идеи не придут, пока не разберёшь карточки кнопками выше.</div></div>`);
+  if(S.lab.exists && S.lab.locked){
+    const fl = S.lab.features.map(f=>`«${esc(f.title)}»`).join(" и ");
+    g.push(`<div class="gate"><span class="ic">🟡</span><div><b>Фабрика фич под замком.</b> В песочнице .feature-lab лежит неразобранный пакет: ${fl}${S.lab.needs_manual? ` + ${S.lab.needs_manual} предложение(й) руками`:""}. Пока не разберёшь (пометить reviewed или удалить router.json) — ночная фабрика новый пакет не строит.</div></div>`);
+  }
+  g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Доставка только в файл.</b> Идеи падают в inbox.md, в Телеграм киборг писать пока не умеет — нужен токен твоего бота.</div></div>`);
+  g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Сам не просыпается.</b> Прогон запускается только руками (кнопки выше или CLI). Автоцикл по расписанию — твоё решение.</div></div>`);
+  g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Если интернет лежит</b> — киборг подставляет 4 запасных заголовка и идеи выходят «из резерва», а выглядят как свежие. Решить: глушить, помечать или оставить.</div></div>`);
+  document.getElementById("gates").innerHTML = g.join("");
+}
+
+/* --- прогон --- */
+async function runGoal(goal){
+  const r = await fetch("/api/run", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({goal})}).then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
+  if(!r.ok && r.msg) alert(r.msg);
+  if(r.ok) replayed = false;   // после финиша проиграть трассу на каркасе
+  pollRun();
+}
+
+let replayed = true;   // повтор трассы уже проигран (не проигрывать старый прогон при открытии страницы)
+
+async function pollRun(){
+  if(runPolling) return; runPolling = true;
+  const cons = document.getElementById("console");
+  const st = document.getElementById("runstate");
+  const btns = [document.getElementById("btn-ideas"), document.getElementById("btn-finish")];
+  try{
+    while(true){
+      const r = await fetch("/api/run").then(r=>r.json());
+      cons.textContent = (r.lines||[]).join("\n");
+      cons.scrollTop = cons.scrollHeight;
+      if(!!r.running !== running){ running = !!r.running; renderSkeleton(); }  // нервы/дыхание
+      // живая подсветка на каркасе: последний отработавший орган из трассы
+      const hits = [...(r.lines||[]).join("\n").matchAll(/шаг \d+: ([a-z_]+)/g)];
+      const cur = r.running && hits.length ? hits[hits.length-1][1] : null;
+      if(cur !== workOrgan){ workOrgan = cur; renderSkeleton(); }
+      if(r.running){
+        btns.forEach(b=>b.disabled=true);
+        st.innerHTML = `<span class="spin">⚙</span> работает: «${esc(r.goal)}»…`;
+        await new Promise(res=>setTimeout(res,900));
+      } else {
+        btns.forEach(b=>b.disabled=false);
+        // повтор на каркасе: киборг печатает трассу в конце разом, поэтому
+        // проигрываем цепочку по шагам — как органы реально отработали
+        if(hits.length && !replayed){
+          replayed = true;
+          for(const h of hits){
+            workOrgan = h[1]; renderSkeleton();
+            await new Promise(res=>setTimeout(res,650));
+          }
+        }
+        if(workOrgan){ workOrgan = null; renderSkeleton(); }
+        if(r.goal) st.textContent = r.rc===0
+          ? `готово: «${r.goal}» (без ошибок)` : r.rc==null ? "" : `завершился с кодом ${r.rc}`;
+        break;
+      }
+    }
+  } catch(e){
+    st.textContent = "пульт потерял сервер: "+e;
+    btns.forEach(b=>b.disabled=false);   // не оставляем кнопки залипшими
+  }
+  runPolling = false;
+  refresh();
+}
+
+/* --- главный цикл --- */
+async function refresh(){
+  try{
+    S = await fetch("/api/state").then(r=>r.json());
+    if(S.error) throw new Error(S.error);
+    document.getElementById("upd").textContent = "обновлено " + S.now;
+    if(!drag) LAYOUT = S.layout || {};
+    renderSkeleton(); renderPartDetail(); renderChips(); renderFlows(); renderInbox(); renderStash(); renderRuns(); renderRegistry(); renderGates();
+  } catch(e){
+    document.getElementById("upd").innerHTML = `<span class="err">сервер молчит: ${esc(e.message||e)}</span>`;
+  }
+}
+
+document.querySelectorAll(".bstyle").forEach(b=>b.classList.toggle("on", b.dataset.style===bodyStyle));
+refresh();
+pollRun();               // вдруг прогон уже шёл, когда открыли страницу
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
