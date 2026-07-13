@@ -218,6 +218,20 @@
   .ghost.on{border-style:solid;border-color:var(--aqua);color:var(--ink)}
   .ghost .gi{opacity:.75}
 
+  /* мозг — отделы */
+  .dept{display:flex;gap:10px;padding:9px 4px;border-bottom:1px solid var(--grid);align-items:baseline}
+  .dept:last-child{border-bottom:0}
+  .dept .di{flex:none;width:20px;text-align:center}
+  .dept .dn{color:var(--ink);font-weight:600;flex:none;min-width:128px}
+  .dept .dr{color:var(--ink2);flex:1;font-size:13px}
+  .dept .dr .org{color:var(--muted)}
+  .dept .ds{flex:none;font-size:11.5px;border-radius:999px;padding:1px 9px;white-space:nowrap;align-self:center}
+  .ds.live{background:rgba(12,163,12,.15);color:var(--good)}
+  .ds.stub{background:rgba(137,135,129,.18);color:var(--muted)}
+  .ds.sleep{background:rgba(250,178,25,.12);color:var(--warn)}
+  .brain-note{color:var(--muted);font-size:12.5px;margin-top:10px;border-top:1px solid var(--grid);padding-top:10px}
+  @media (max-width:640px){.dept{flex-wrap:wrap}.dept .dr{flex-basis:100%;order:3}}
+
   /* гейты */
   .gate{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);
         border-radius:8px;margin-bottom:8px;background:var(--card2);font-size:13px;align-items:baseline}
@@ -260,6 +274,12 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>🧠 Мозг — отделы <span class="sub">не одна деталь, а несколько отделов — у каждого честное состояние</span></h2>
+    <div id="brain-depts"></div>
+    <div class="brain-note" id="brain-note"></div>
   </div>
 
   <div class="chips" id="chips"></div>
@@ -526,8 +546,7 @@ const FUTURE = {
              blurb:"Тот же планировщик — но выбирает шаги живой цепочкой моделей (бесплатные первыми) вместо детерминированной логики. Нынешний планировщик надёжен и не болванка; это его апгрейд, когда у шагов появятся развилки для выбора. Так задумано."},
   imagine:  {sense:"Воображение · промпты картинок", icon:"🎨", name:"generate_image_prompts", project:"UPG", status:"готов",
              blurb:"Из идеи — готовые промпты для генератора картинок. Идея станет не только текстом, но и образом."},
-  council:  {sense:"Совет · взвешенное совещание", icon:"⚖", name:"mind.deliberate", project:"kiborg", status:"построен, выключен",
-             blurb:"Решать не одним судьёй, а тремя с весами: арбитр rank_ideas + интуиция ask_llm + совет N ревьюеров (Dual Mode). Уже написан и покрыт тестами в коде киборга — выключен за гейтом. Включение в живой цикл решаешь ты."},
+  // Совет больше НЕ в будущем: впаян в отбор идей (ход Г, 13.07) — живёт в карточке «🧠 Мозг — отделы».
 };
 
 function renderFuture(){
@@ -715,6 +734,38 @@ function renderPartDetail(){
     : (id==='heart' ? `<button class="mini" onclick="document.getElementById('inbox-sub').scrollIntoView({behavior:'smooth'})">показать инбокс ↓</button>` : "");
   el.innerHTML = `<div class="pt">${meta.icon? meta.icon+" ":""}${esc(meta.part)}</div>
     <div>${esc(meta.blurb)}</div>${io}<div style="margin-top:10px">${btn}</div>`;
+}
+
+/* --- мозг: отделы (честная карта думающих частей; состояние — архитектурное, не «жив ли прямо сейчас») --- */
+function renderBrain(){
+  const el = document.getElementById("brain-depts");
+  if(!el) return;
+  const gen = S && S.key.present;                       // генератор живой только с ключом идей
+  const depts = [
+    {ic:"🧭", nm:"Планировщик", org:"brain.py",
+     role:"решает, какой шаг делать следующим — сейчас берёт порядком списка, не суждением",
+     st:"на заглушке", cls:"stub"},
+    {ic:"💡", nm:"Генератор", org:"ideate",
+     role:"лепит 6 идей-кандидатов из увиденного",
+     st: gen ? "живой" : "болванка (нет ключа)", cls: gen ? "live" : "stub"},
+    {ic:"⚖️", nm:"Судья · арбитр", org:"rank_ideas",
+     role:"отбирает топ-3; в совете — главный голос, вес 0.41",
+     st:"живой", cls:"live"},
+    {ic:"🎯", nm:"Интуиция", org:"ask_llm",
+     role:"быстрый голос в совете, вес 0.39; отвечает, если ключ цепочки на месте, иначе воздерживается",
+     st:"впаяна в отбор", cls:"live"},
+    {ic:"🏛", nm:"Совет", org:"orchestra",
+     role:"7 рецензентов, вес 0.20; включён по умолчанию, будится когда интуиция сомневается",
+     st:"включён · по требованию", cls:"live"},
+  ];
+  el.innerHTML = depts.map(d=>
+    `<div class="dept"><span class="di">${d.ic}</span>
+       <span class="dn">${esc(d.nm)}</span>
+       <span class="dr">${esc(d.role)} <span class="org">· ${esc(d.org)}</span></span>
+       <span class="ds ${d.cls}">${esc(d.st)}</span></div>`).join("");
+  document.getElementById("brain-note").innerHTML =
+    "Судья + интуиция + совет вместе — это <b style='color:var(--ink2)'>совещание</b>, что судит отбор идей "
+    + "(впаяли 13.07). Планировщик — отдельный отдел, пока на заглушке: сам шаги ещё не выбирает.";
 }
 
 /* --- шапка-чипы --- */
@@ -1007,7 +1058,7 @@ async function refresh(){
     if(S.error) throw new Error(S.error);
     document.getElementById("upd").textContent = "обновлено " + S.now;
     if(!drag) LAYOUT = S.layout || {};
-    renderSkeleton(); renderPartDetail(); renderFuture(); renderChips(); renderFlows(); renderInbox(); renderStash(); renderSources(); renderRuns(); renderRegistry(); renderGates();
+    renderSkeleton(); renderPartDetail(); renderFuture(); renderBrain(); renderChips(); renderFlows(); renderInbox(); renderStash(); renderSources(); renderRuns(); renderRegistry(); renderGates();
   } catch(e){
     document.getElementById("upd").innerHTML = `<span class="err">сервер молчит: ${esc(e.message||e)}</span>`;
   }

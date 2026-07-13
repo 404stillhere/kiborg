@@ -57,9 +57,11 @@ def main(argv):
     chain = keychain.build_chain()
     if chain:
         env["llm_chain"] = chain
-    # ОРКЕСТР (7-модельный совет, вес 0.20) — за ОТДЕЛЬНЫМ гейтом: дорогой (N вызовов × модели).
-    # Просыпается только флагом KIBORG_WAKE_ORCHESTRA и только когда интуиция сомневается.
-    if os.environ.get("KIBORG_WAKE_ORCHESTRA"):
+    # ОРКЕСТР (7-модельный совет, вес 0.20) — ВКЛЮЧЁН по умолчанию (юзер 2026-07-13: «умный сомневается
+    # → зовёт совет»). Доступен всегда, но будится НЕ на каждом шаге — только когда интуиция сомневается
+    # (два лучших балла ближе escalate_gap). Дорогой (до N вызовов × модели), потому по требованию, не всегда.
+    # Заглушить совсем: KIBORG_SLEEP_ORCHESTRA=1. Нет ключей совета -> orchestra_context пусто -> тихо спит.
+    if not os.environ.get("KIBORG_SLEEP_ORCHESTRA"):
         orch = keychain.orchestra_context()
         if orch:
             env["orchestra"] = orch
