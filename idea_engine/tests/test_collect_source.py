@@ -49,6 +49,26 @@ class TestNewSources(unittest.TestCase):
         collect_source._get = self._orig_get
         collect_source.urllib.request.urlopen = self._orig_urlopen
 
+    def test_hn_happy_path_parses_topstories(self):
+        # _hn: GET topstories -> список id -> GET item по каждому -> {title,url,id}. Пост без
+        # title отбрасывается. (Раньше HN был покрыт ТОЛЬКО degrade-веткой, счастливый путь — нет.)
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "topstories" in url:
+                return [101, 102, 103]
+            iid = int(url.rsplit("/", 1)[1].split(".")[0])   # .../item/<id>.json
+            titles = {101: "Show HN: local-first thing", 102: "Ask HN: unattended agents", 103: ""}
+            return {"id": iid, "title": titles.get(iid, ""), "url": f"https://h/{iid}"}
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 3, "source": "hn"})
+        self.assertFalse(out["degraded"])
+        titles = [it["title"] for it in out["items"]]
+        self.assertIn("Show HN: local-first thing", titles)
+        self.assertNotIn("", titles)                          # пост без title отброшен
+        self.assertEqual(len(out["items"]), 2)                # 3 id, один без title
+        self.assertTrue(all(it["source"] == "hn" for it in out["items"]))
+        self.assertEqual(out["items"][0]["id"], 101)          # id проброшен из item
+
     def test_reddit_parses_children(self):
         def fake_get(url_or_req, timeout):
             return {"data": {"children": [
@@ -232,6 +252,71 @@ class TestTelegramSource(unittest.TestCase):
         self.assertFalse(out["degraded"])
         sources_seen = {it["source"] for it in out["items"]}
         self.assertEqual(sources_seen, {"reddit", "telegram"})
+
+    def test_payload_limit_per_channel_split(self):
+        # внутрянка _telegram: бюджет n делится на число каналов -> limit_per_channel = max(1, n//k).
+        # Раньше payload к subprocess не проверялся вообще (мок только отдавал stdout).
+        captured = {}
+
+        def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
+            captured["payload"] = json.loads(input.decode("utf-8"))
+            return _FakeProc(0, json.dumps(
+                {"items": [{"channel": "@a", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8"))
+        collect_source.subprocess.run = fake_run
+        collect_source.run({}, self._creds_env({"telegram_channels": ["@a", "@b"], "n": 4}))
+        inp = captured["payload"]["inputs"]
+        self.assertEqual(inp["limit_per_channel"], 2)          # max(1, 4//2)
+        self.assertEqual(set(inp["channels"]), {"@a", "@b"})   # каналов <= бюджета -> все идут
+
+    def test_channels_sampled_down_to_budget(self):
+        # каналов больше бюджета n -> случайная выборка ДО фетча ограничивает число каналов до n
+        # (чтоб не долбить все каждый прогон и дать хвосту списка шанс). Ассертим ЧИСЛО, не какие.
+        captured = {}
+
+        def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
+            captured["payload"] = json.loads(input.decode("utf-8"))
+            return _FakeProc(0, json.dumps(
+                {"items": [{"channel": "@x", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8"))
+        collect_source.subprocess.run = fake_run
+        pool = ["@a", "@b", "@c", "@d", "@e"]
+        collect_source.run({}, self._creds_env({"telegram_channels": pool, "n": 2}))
+        inp = captured["payload"]["inputs"]
+        self.assertEqual(len(inp["channels"]), 2)              # 5 каналов -> выборка до n=2
+        self.assertTrue(set(inp["channels"]).issubset(set(pool)))
+        self.assertEqual(inp["limit_per_channel"], 1)          # max(1, 2//2)
+
+
+class TestBudgetSplit(unittest.TestCase):
+    """per_n: общий бюджет n делится (ceil) между источниками и РЕАЛЬНО доходит до каждого fn.
+    Раньше слияние проверяло тег origin, но не сам разбитый бюджет."""
+
+    def setUp(self):
+        self._orig_sources = dict(collect_source._SOURCES)
+
+    def tearDown(self):
+        collect_source._SOURCES.clear()
+        collect_source._SOURCES.update(self._orig_sources)
+
+    def test_per_n_ceil_split_reaches_each_source(self):
+        seen = []
+
+        def spy(n, timeout, env):
+            seen.append(n)
+            return [{"title": "x", "url": "", "id": "1"}]
+        collect_source._SOURCES["reddit"] = spy
+        collect_source._SOURCES["lobsters"] = spy
+        collect_source.run({}, {"n": 7, "sources": ["reddit", "lobsters"]})
+        self.assertEqual(seen, [4, 4])            # ceil(7/2)=4 каждому (не floor=3)
+
+    def test_per_n_single_source_gets_full_budget(self):
+        seen = []
+
+        def spy(n, timeout, env):
+            seen.append(n)
+            return [{"title": "x", "url": "", "id": "1"}]
+        collect_source._SOURCES["reddit"] = spy
+        collect_source.run({}, {"n": 5, "source": "reddit"})
+        self.assertEqual(seen, [5])               # один источник -> весь бюджет
 
 
 if __name__ == "__main__":
