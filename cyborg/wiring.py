@@ -69,7 +69,7 @@ def _run_ideate(inputs, env):
     if env.get("filter_seen_items") and inp.get("items"):
         inp = dict(inp)
         inp["items"] = seen_items.filter_fresh(inp["items"])
-    e = {"k": 6}  # генерим БОЛЬШЕ кандидатов — судья (rank_ideas) отберёт лучшие
+    e = {"k": 12}  # режим «максимум качества»: генерим 12 кандидатов — судье есть из чего отобрать лучшее
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
@@ -181,7 +181,7 @@ def _run_readability(inputs, env):
     правим только текст why. Живёт ПОСЛЕ отбора (чиним лишь то, что реально уйдёт в кучу) и
     ДО scrub (переписанный текст тоже проходит вычистку секретов). Без ключа — passthrough."""
     env = env if isinstance(env, dict) else {}
-    e = {"min_score": float(env.get("read_min_score", 7))}
+    e = {"min_score": float(env.get("read_min_score", 8))}  # порог 8 (режим «максимум качества»): ниже 8 → переписать
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
@@ -190,7 +190,7 @@ def _run_readability(inputs, env):
 
 def _run_rank(inputs, env):
     env = env if isinstance(env, dict) else {}
-    e = {"keep": 3}  # оставить топ-3 из пула
+    e = {"keep": 5}  # режим «максимум качества»: оставить топ-5 из 12 (жёсткий отбор ~40%, куча без потолка)
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm

@@ -137,7 +137,7 @@ class TestRunIdeateFilterSeenItems(unittest.TestCase):
 
 
 class TestRunIdeateRankForcing(unittest.TestCase):
-    """_run_ideate/_run_rank: форсируют k=6/keep=3 и резолвят модель через _content_llm
+    """_run_ideate/_run_rank: форсируют k=12/keep=5 и резолвят модель через _content_llm
     (content_llm приоритетнее общего llm, не-callable не долетает до органа)."""
 
     def setUp(self):
@@ -148,7 +148,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         wiring.ideate.run = self._orig_ideate
         wiring.rank_ideas.run = self._orig_rank
 
-    def test_ideate_forces_k6_no_llm_by_default(self):
+    def test_ideate_forces_k12_no_llm_by_default(self):
         captured = {}
 
         def fake(inputs, env):
@@ -157,7 +157,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
 
         wiring.ideate.run = fake
         wiring._run_ideate({}, {})
-        self.assertEqual(captured["k"], 6)
+        self.assertEqual(captured["k"], 12)
         self.assertNotIn("llm", captured)
 
     def test_ideate_prefers_content_llm_over_generic_llm(self):
@@ -195,7 +195,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         wiring._run_ideate({}, {"llm": "не функция"})
         self.assertNotIn("llm", captured)
 
-    def test_rank_forces_keep3_no_llm_by_default(self):
+    def test_rank_forces_keep5_no_llm_by_default(self):
         captured = {}
 
         def fake(inputs, env):
@@ -204,7 +204,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
 
         wiring.rank_ideas.run = fake
         wiring._run_rank({}, {})
-        self.assertEqual(captured["keep"], 3)
+        self.assertEqual(captured["keep"], 5)
         self.assertNotIn("llm", captured)
 
     def test_rank_prefers_content_llm(self):
@@ -224,8 +224,10 @@ class TestRunRankCouncil(unittest.TestCase):
     """_run_rank со включённым советом (гейт снят 2026-07-13). Проверяем: совет судит идеи,
     НЕТ двойного платного вызова судьи (регресс от скептика), откат по сбою/деградации/гварду."""
 
+    # пул > keep(=5), иначе _rank_by_council вернёт «отбирать не из чего» до совета
     IDEAS = [{"title": "A", "why": "a"}, {"title": "B", "why": "b"}, {"title": "C", "why": "c"},
-             {"title": "D", "why": "d"}, {"title": "E", "why": "e"}]
+             {"title": "D", "why": "d"}, {"title": "E", "why": "e"}, {"title": "F", "why": "f"},
+             {"title": "G", "why": "g"}]
 
     def setUp(self):
         self._orig_deliberate = wiring.mind.deliberate
@@ -245,13 +247,14 @@ class TestRunRankCouncil(unittest.TestCase):
     def test_council_two_voices_ranks_by_score_no_double_call(self):
         def fake_think(q, options, council, context):
             return {"live": ["rank_ideas", "ask_llm"], "degraded": False, "council_woken": False,
-                    "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1}, "why": "тест"}
+                    "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3}, "why": "тест"}
 
         wiring.mind.deliberate = fake_think
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
         self.assertIn("council", out)
         self.assertFalse(out["council"]["solo"])
-        self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "C"])  # топ-3 по баллу
+        # топ-5 по баллу: D(.9) A(.8) F(.7) C(.5) G(.3)
+        self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "F", "C", "G"])
         self.assertTrue(all(i["judged"] == "council" for i in out["ideas_best"]))
         self.assertEqual(self.rank_calls, [])   # НИ ОДНОГО повторного вызова судьи
 
@@ -259,12 +262,13 @@ class TestRunRankCouncil(unittest.TestCase):
         # интуиция промолчала -> 1 голос (арбитр). Переиспользуем его результат, НЕ зовём судью снова.
         def fake_think(q, options, council, context):
             return {"live": ["rank_ideas"], "degraded": False, "council_woken": False,
-                    "scores": {0: 0.5, 1: 0.9, 2: 0.1, 3: 0.7, 4: 0.2}, "why": "solo"}
+                    "scores": {0: 0.5, 1: 0.9, 2: 0.1, 3: 0.7, 4: 0.2, 5: 0.6, 6: 0.4}, "why": "solo"}
 
         wiring.mind.deliberate = fake_think
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
         self.assertTrue(out["council"]["solo"])
-        self.assertEqual([i["title"] for i in out["ideas_best"]], ["B", "D", "A"])
+        # топ-5 по баллу: B(.9) D(.7) F(.6) A(.5) G(.4)
+        self.assertEqual([i["title"] for i in out["ideas_best"]], ["B", "D", "F", "A", "G"])
         self.assertTrue(all(i["judged"] == "solo" for i in out["ideas_best"]))
         self.assertEqual(self.rank_calls, [])   # ключевой регресс: второго платного вызова НЕТ
 
@@ -300,7 +304,7 @@ class TestRunRankCouncil(unittest.TestCase):
     def test_small_pool_returns_as_is_without_council(self):
         called = []
         wiring.mind.deliberate = lambda *a, **k: called.append(1) or {}
-        three = self.IDEAS[:3]                                  # <= keep=3 — отбирать не из чего
+        three = self.IDEAS[:3]                                  # <= keep=5 — отбирать не из чего
         out = wiring._run_rank({"ideas": three}, {"llm_chain": [{"id": "x"}]})
         self.assertEqual(out["ideas_best"], three)
         self.assertEqual(called, [])

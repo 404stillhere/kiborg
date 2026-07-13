@@ -178,11 +178,19 @@ class TestDedup(unittest.TestCase):
         self.assertFalse(s2.add_idea(_idea("проект альфа")))         # помнит между загрузками
 
     def test_seen_capped(self):
-        # журнал предложенного не растёт бесконечно — помним последние _SEEN_CAP (скептик #5)
-        s = Store(self.path, cap=100000)
-        for i in range(_SEEN_CAP + 50):
-            self.assertTrue(s.add_idea(_idea(f"уникальнаятема{i}")))
-        self.assertLessEqual(len(s.data["seen"]), _SEEN_CAP)
+        # журнал предложенного не растёт бесконечно — помним последние _SEEN_CAP (скептик #5).
+        # Вытеснение тестируем на МАЛЕНЬКОМ пороге (быстро) — логика та же, что на боевом 5000
+        # (боевой цикл на 5050 итераций с O(n²) дедупом крутился бы десятки секунд впустую).
+        import store as _store_mod
+        orig = _store_mod._SEEN_CAP
+        _store_mod._SEEN_CAP = 20
+        try:
+            s = Store(self.path, cap=100000)
+            for i in range(_store_mod._SEEN_CAP + 50):
+                self.assertTrue(s.add_idea(_idea(f"уникальнаятема{i}")))
+            self.assertLessEqual(len(s.data["seen"]), _store_mod._SEEN_CAP)
+        finally:
+            _store_mod._SEEN_CAP = orig
 
     def test_backfill_from_legacy_state(self):
         legacy = {"cap": 3, "tick": 1, "seq": 1, "cursor": 0, "finish": None,

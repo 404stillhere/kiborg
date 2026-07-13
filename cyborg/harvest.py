@@ -42,7 +42,9 @@ STATUS_FILE = os.path.join(DATA, "source_status.json")  # живой per-source 
 # слой = разнообразнее сырьё для ideate + гейт видит churn глубже (меньше холостых
 # пропусков). Это КОНФИГ (мой файл), а не правка ядра: collect_source читает n/sources из
 # env по дизайну. Тюнить — здесь.
-SOURCE_N = 30
+# Поднят 30→105 (режим «максимум качества», деньги/время не важны): 105 // 21 канал = 5 свежих
+# постов с каждого → ~105 заголовков-семян вместо 21. Больше и разнообразнее сырья для ideate.
+SOURCE_N = 105
 
 # Источники, что мержим за один прогон (2026-07-12: было только HN, потом +reddit/lobsters/
 # gh_trending). Product Hunt отложен — нужен токен (гейт юзера).
@@ -115,6 +117,7 @@ def _source_env():
         env["telegram_api_id"] = api_id
         env["telegram_api_hash"] = api_hash
         env["telegram_session"] = _KIBORG_TG_SESSION
+        env["telegram_timeout"] = 90   # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
     if ask_llm.available():
         env["content_llm"] = ask_llm.ask
     return env
