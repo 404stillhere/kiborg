@@ -15,14 +15,20 @@ IDEAS = [
 ]
 
 
-def _llm(score_json, why_new='{"why":"Переписано понятно с нуля"}'):
+def _llm(score_json, why_new='{"why":"Переписано понятно с нуля"}', rescore='{"scores":[9]}'):
+    """Фейк-llm. На промпт оценки — score_json; НО если в промпте виден переписанный текст
+    (это ре-оценка правки, отдельный проход) — отдаёт rescore; на промпт переписывания — why_new."""
+    marker = "Переписано понятно с нуля"
     def fn(prompt):
-        return score_json if '"scores"' in prompt else why_new
+        if '"scores"' in prompt:
+            return rescore if marker in prompt else score_json
+        return why_new
     return fn
 
 
 class TestReadabilityGate(unittest.TestCase):
     def test_rewrites_below_threshold_only(self):
+        # мутную (3) переписали, ре-оценка правки выше (9>3) -> правку берём
         out = readability_gate.run({"ideas_best": IDEAS}, {"llm": _llm('{"scores":[3,9]}'), "min_score": 7})
         ideas = out["ideas_polished"]
         self.assertEqual(len(ideas), 2)                       # количество не изменилось
@@ -30,8 +36,17 @@ class TestReadabilityGate(unittest.TestCase):
         self.assertEqual(ideas[0]["why"], "Переписано понятно с нуля")
         self.assertNotIn("read_fixed", ideas[1])              # ясную (9) не трогали
         self.assertEqual(ideas[1]["why"], IDEAS[1]["why"])
-        self.assertEqual(ideas[0]["read_score"], 3)
+        self.assertEqual(ideas[0]["read_score"], 9)           # балл отражает УЛУЧШЕННЫЙ финальный текст
         self.assertEqual(ideas[1]["read_score"], 9)
+
+    def test_rewrite_reverted_when_not_better(self):
+        # мутную (3) переписали, но ре-оценка правки НЕ выросла (3) -> откат к старому why
+        out = readability_gate.run({"ideas_best": IDEAS},
+                                   {"llm": _llm('{"scores":[3,9]}', rescore='{"scores":[3]}'), "min_score": 7})
+        ideas = out["ideas_polished"]
+        self.assertEqual(ideas[0]["why"], IDEAS[0]["why"])    # правку отбросили, старое не тронуто
+        self.assertNotIn("read_fixed", ideas[0])
+        self.assertEqual(ideas[0]["read_score"], 3)           # балл остался исходный
 
     def test_keeps_old_why_when_rewrite_fails(self):
         # судья говорит «мутно» (2), но редактор вернул мусор -> старое описание остаётся
