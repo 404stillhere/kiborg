@@ -8,10 +8,12 @@
 Идею не теряем, карточку не выкидываем, количество не меняем — правим текст на месте.
 
 Контракт: run(inputs, env) -> {"ideas_polished": [...]}.
-  env["llm"] — судья/редактор callable(prompt)->str; env["min_score"] — порог (default 7).
+  env["llm"] — редактор (переписывание) callable(prompt)->str; env["min_score"] — порог (default 7).
+  env["score_llm"] — ОТДЕЛЬНЫЙ судья балла (опционально): низкотемпературный вызов, чтобы оценка
+    всегда парсилась. Нет его — судим тем же env["llm"] (прежнее поведение).
 Без llm / при сбое парса — passthrough (карточки как есть). ВСЕГДА производит ideas_polished
 (даже без правок), иначе конвейер встанет на следующем звене (scrub его потребляет).
-Ключ/сеть орган сам НЕ трогает — только через env["llm"].
+Ключ/сеть орган сам НЕ трогает — только через env["llm"]/env["score_llm"].
 """
 import json
 import re
@@ -96,7 +98,14 @@ def run(inputs, env):
     llm = env.get("llm")
     if not callable(llm) or not ideas:
         return {"ideas_polished": ideas}       # без модели/идей — конвейер продолжается как есть
-    scores = _score(llm, ideas)
+    # ОЦЕНКУ балла судим ВЫДЕЛЕННЫМ низкотемпературным вызовом (score_llm), если дали: temp
+    # генератора (0.9) заставляла рассуждающую модель изредка не отдавать чистый JSON scores →
+    # карточка проходила без правки. Переписывание остаётся на llm (там нужна живость). Нет
+    # score_llm — судим тем же llm (прежнее поведение, тесты/чужой llm не трогаем).
+    judge = env.get("score_llm") if callable(env.get("score_llm")) else llm
+    scores = _score(judge, ideas)
+    if scores is None:
+        scores = _score(judge, ideas)          # один повтор: судья изредка шумит на первом заходе
     out = []
     for i, idea in enumerate(ideas):
         if not isinstance(idea, dict):

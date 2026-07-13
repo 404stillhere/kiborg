@@ -185,6 +185,15 @@ def _run_readability(inputs, env):
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
+        # ОЦЕНКА читаемости — детерминированный суд: даём ей ОТДЕЛЬНЫЙ низкотемпературный вызов,
+        # чтобы балл всегда парсился. temp 0.9 у ask — для генерации; рассуждающая модель на ней
+        # изредка не отдавала чистый JSON scores → карточка проходила без правки (наблюдалось
+        # живьём). score_llm строим ТОЛЬКО для ask_llm.ask (несёт kwarg temperature); чужой llm
+        # (тест/stub) — score_llm нет, оценка падает на llm, поведение байт-в-байт как раньше.
+        # Переписывание остаётся на llm (temp 0.9 — там живость нужна).
+        import ask_llm  # локально: используется только тут, top-level dep не плодим
+        if llm is ask_llm.ask:
+            e["score_llm"] = lambda p: ask_llm.ask(p, temperature=0.2)
     return readability_gate.run(inputs, e)
 
 

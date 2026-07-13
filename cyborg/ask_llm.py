@@ -44,15 +44,17 @@ def _strip_fence(t):
     return t
 
 
-def _run_chain(chain, prompt, timeout_ms):
+def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
     """Один прогон DarBench/organ.js по цепочке (тот же транспорт, что интуиция). Текст | "".
     max_tokens НЕ шлём — reasoning-модели (deepseek) при малом лимите тратят его на обдумывание
-    и молчат; берут свой дефолт-бюджет (organ.js: 8192). temperature 0.9 — генерация, не суд."""
+    и молчат; берут свой дефолт-бюджет (organ.js: 8192). temperature по умолчанию 0.9 —
+    генерация; СУДЕЙСКИЕ вызовы (оценка читаемости) передают низкую (~0.2), чтобы балл всегда
+    парсился (на 0.9 рассуждающая модель изредка не отдаёт чистый JSON — та же болячка судьи)."""
     if not chain or not os.path.exists(_ORGAN_JS):
         return ""
     n = max(1, len(chain))
     per_provider_ms = max(3000, timeout_ms // n)     # медленный провайдер не съедает весь бюджет
-    payload = {"inputs": {"prompt": prompt, "temperature": 0.9},
+    payload = {"inputs": {"prompt": prompt, "temperature": temperature},
                "env": {"chain": chain, "timeout_ms": per_provider_ms}}
     try:
         proc = subprocess.run([_NODE_EXE, _ORGAN_JS], input=json.dumps(payload),
@@ -69,12 +71,14 @@ def _run_chain(chain, prompt, timeout_ms):
     return _strip_fence(res.get("text") or "") if res.get("ok") else ""
 
 
-def ask(prompt, timeout_ms=None):
-    """prompt -> text по цепочке интуиции. "" при любом сбое (вызыватель уйдёт на stub)."""
+def ask(prompt, timeout_ms=None, temperature=0.9):
+    """prompt -> text по цепочке интуиции. "" при любом сбое (вызыватель уйдёт на stub).
+    temperature по умолчанию 0.9 (генерация); судейские вызовы шлют низкую (~0.2) для
+    стабильного парса балла — контракт органов callable(prompt)->str не меняется (kwarg опционален)."""
     chain = _chain()
     if not chain:
         return ""
-    return _run_chain(chain, prompt, timeout_ms or _TIMEOUT_MS)
+    return _run_chain(chain, prompt, timeout_ms or _TIMEOUT_MS, temperature)
 
 
 if __name__ == "__main__":
