@@ -24,18 +24,6 @@ from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже выч
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
-def _council_note(out):
-    """Одна честная строка про совещание на отборе: проснулся ли оркестр и кто голосовал.
-    Пусто, если отбор судил не совет (нет ключей -> обычный один судья)."""
-    c = out.get("council")
-    if not isinstance(c, dict):
-        return ""
-    live = c.get("live") or []
-    who = "+".join(str(x) for x in live) if live else "—"
-    woke = "оркестр ПРОСНУЛСЯ" if c.get("woken") else "оркестр спал"
-    return f"{woke} · голоса: {who}"
-
-
 def _log_run(out):
     """Читаемый след прогона — чтобы юзер утром видел, что киборг делал."""
     os.makedirs(DATA, exist_ok=True)
@@ -44,7 +32,7 @@ def _log_run(out):
     r = out.get("result")
     rv = (str(r)[:120] if r is not None else "нет")
     line = f"- [{ts}] «{out['goal']}» → {steps} | {out['deliverable']}={rv}"
-    note = _council_note(out)
+    note = harvest.council_note(out)
     if note:
         line += f" | совет: {note}"
     line += "\n"
@@ -104,7 +92,7 @@ def main(argv):
         print(line)
     r = out["result"]
     print("РЕЗУЛЬТАТ:", (str(r)[:900] if r is not None else "(нет)"))
-    note = _council_note(out)
+    note = harvest.council_note(out)
     if note:
         print("СОВЕТ НА ОТБОРЕ:", note)
     _log_run(out)

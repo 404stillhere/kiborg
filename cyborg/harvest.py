@@ -234,13 +234,32 @@ def _save_sig(sig):
     stash.Stash._atomic_write(STATE_FILE, json.dumps({"sig": sig}, ensure_ascii=False))
 
 
+def council_note(out):
+    """Одна честная строка про совещание на отборе: проснулся ли оркестр и кто голосовал.
+    Пусто, если отбор судил не совет (нет ключей -> обычный один судья). ЕДИНЫЙ форматтер
+    для ОБЕИХ кнопок (harvest._log + run.py) — чтобы история пульта одинаково показывала
+    совет и у авто-, и у ручного прогона (раньше фон логировался БЕЗ пометки → выглядел как
+    «судил один арбитр», хотя совет уже впаян)."""
+    c = out.get("council")
+    if not isinstance(c, dict):
+        return ""
+    live = c.get("live") or []
+    who = "+".join(str(x) for x in live) if live else "—"
+    woke = "оркестр ПРОСНУЛСЯ" if c.get("woken") else "оркестр спал"
+    return f"{woke} · голоса: {who}"
+
+
 def _log(goal, out):
     os.makedirs(DATA, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
     rv = (str(r)[:120] if r is not None else "нет")
-    line = f"- [{ts}] «{goal}» → {steps} | {out['deliverable']}={rv}\n"
+    line = f"- [{ts}] «{goal}» → {steps} | {out['deliverable']}={rv}"
+    note = council_note(out)
+    if note:
+        line += f" | совет: {note}"   # тот же хвост, что у ручного прогона — пульт его уже парсит
+    line += "\n"
     with open(os.path.join(DATA, "runs.md"), "a", encoding="utf-8") as f:
         f.write(scrub_secrets.scrub_text(line))
 
