@@ -18,8 +18,7 @@ from wiring import build_organs  # noqa: E402
 from orchestrator import Cyborg  # noqa: E402
 from registry import load_catalog  # noqa: E402
 import ask_llm  # noqa: E402
-import keychain  # noqa: E402  (ключи -> цепочка интуиции для совета на шаге отбора идей)
-import harvest  # noqa: E402  (_source_env: единый источник идей — те же каналы, что у автосбора)
+import harvest  # noqa: E402  (_source_env + wire_council: единый источник и впайка совета — как у автосбора)
 from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемся на граф)
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -70,23 +69,15 @@ def main(argv):
         brain_mode = f"идеи+интуиция={ask_llm._MODEL} (одна цепочка), планировщик=stub"
     else:
         brain_mode = "идеи=stub, планировщик=stub (ключа цепочки нет)"
-    # СОВЕТ на шаге отбора идей (гейт снят юзером 2026-07-13): цепочка интуиции из ключей
-    # киборга -> отбор судит взвешенный совет (арбитр+интуиция), а не один судья. Нет ключей
-    # -> цепочка пустая -> совет спит, отбор байт-в-байт как раньше.
-    chain = keychain.build_chain()
-    if chain:
-        env["llm_chain"] = chain
-    # ОРКЕСТР (7-модельный совет, вес 0.20) — ВКЛЮЧЁН по умолчанию и зовётся на КАЖДОМ отборе
-    # (юзер 2026-07-13: «умный сомневается всегда» — совет не пропускается, даже когда интуиция
-    # уверена; см. deliberate в wiring). Дорогой (идей × моделей вызовов за шаг) — плата за то,
-    # что второе мнение спрашивается всегда. Заглушить совсем: KIBORG_SLEEP_ORCHESTRA=1.
-    # Нет ключей совета -> orchestra_context пусто -> оркестр воздерживается.
-    if not os.environ.get("KIBORG_SLEEP_ORCHESTRA"):
-        orch = keychain.orchestra_context()
-        if orch:
-            env["orchestra"] = orch
+    # СОВЕТ на шаге отбора идей (гейт снят юзером 2026-07-13): цепочка интуиции + 7-модельный
+    # оркестр из ключей киборга -> отбор судит взвешенный совет, а не один судья. Впайка — через
+    # harvest.wire_council: ЕДИНЫЙ источник истины, тот же провод, что у автосбора (раньше блок
+    # жил только тут → фон судил одним арбитром; теперь оба пути зовут одну функцию, не разойдутся).
+    # Заглушить оркестр: KIBORG_SLEEP_ORCHESTRA=1. Нет ключей -> совет спит, отбор как раньше.
+    harvest.wire_council(env)
     # честно: пишем ДОСТУПНОСТЬ голосов, не факт голосования — кто в моменте ответит, тот и судит
     # (интуиция может воздержаться на сбое сети; реальные голоса прогона — в метаданных council).
+    chain = env.get("llm_chain")
     if chain:
         avail = f"интуиция×{len(chain)}"
         if env.get("orchestra"):

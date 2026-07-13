@@ -28,6 +28,7 @@ import json  # noqa: E402
 from wiring import build_organs  # noqa: E402  (та же цепочка, что у ручного прогона → deliver в инбокс)
 from orchestrator import Cyborg  # noqa: E402
 import ask_llm  # noqa: E402
+import keychain  # noqa: E402  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
 import stash  # noqa: E402
 import seen_items  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402
@@ -123,11 +124,31 @@ def _source_env():
     return env
 
 
+def wire_council(env):
+    """Впаять СОВЕТ на шаг отбора идей в готовый env (мутирует и возвращает его). ЕДИНЫЙ
+    источник истины для ОБЕИХ кнопок — ручной run.py и автосбора _harvest_env, чтобы пути не
+    разошлись снова (баг 2026-07-13: совет жил только в ручной кнопке, а фон судил ОДНИМ
+    арбитром → «максимум качества» был неполным). llm_chain — цепочка интуиции; orchestra —
+    7-модельный оркестр (спит при KIBORG_SLEEP_ORCHESTRA=1). Нет ключей → ключи не появляются,
+    отбор мягко падает на одного судью. Дёшево: чтение llm_keys.env, без сети (сеть — при
+    голосовании внутри отбора, не тут)."""
+    chain = keychain.build_chain()
+    if chain:
+        env["llm_chain"] = chain
+    if not os.environ.get("KIBORG_SLEEP_ORCHESTRA"):
+        orch = keychain.orchestra_context()
+        if orch:
+            env["orchestra"] = orch
+    return env
+
+
 def _harvest_env():
     """env АВТОСБОРА: тот же источник + фильтр «уже видели» (по ID items, не по тексту идей —
-    см. seen_items.py). Флаг ставит ТОЛЬКО автоцикл; ручной «Принеси идеи» его не ставит
-    (жмёшь — хочешь идей сейчас, даже если посты уже мелькали)."""
-    return {**_source_env(), "filter_seen_items": True}
+    см. seen_items.py) + СОВЕТ на отборе (wire_council — тот же провод, что у ручной кнопки,
+    чтобы фон судил взвешенным советом, а не одним арбитром). Флаг «уже видели» ставит ТОЛЬКО
+    автоцикл; ручной «Принеси идеи» его не ставит (жмёшь — хочешь идей сейчас, даже если посты
+    уже мелькали)."""
+    return wire_council({**_source_env(), "filter_seen_items": True})
 
 
 def _titles_sig(titles):
