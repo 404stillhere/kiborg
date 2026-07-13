@@ -8,7 +8,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
-from store import Store, OPEN, TAKE, LATER, TRASH, _SEEN_CAP  # noqa: E402
+from store import Store, OPEN, TAKE, LATER, TRASH  # noqa: E402
 import run  # noqa: E402
 
 

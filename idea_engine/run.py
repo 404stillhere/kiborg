@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from store import Store, OPEN  # noqa: E402
+from store import Store  # noqa: E402
 from organs import collect_source, ideate, finish_step  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
