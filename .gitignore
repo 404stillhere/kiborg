@@ -8,6 +8,10 @@ llm_keys.env
 cyborg/data/
 idea_engine/data/
 **/finish_cursor.json
+panel/auto.json
+
+# бэкапы-снапшоты редактора (панель) — не в git
+*.bak-*
 
 # python
 __pycache__/

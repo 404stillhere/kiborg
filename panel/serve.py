@@ -135,6 +135,51 @@ def _start_observe():
     return _start_proc("наблюдаю за источниками", ["observe_sources.py"])
 
 
+# --- автономный режим (рубильник): фон гоняет ТОТ ЖЕ сбор по таймеру ---
+AUTO_FILE = os.path.join(HERE, "auto.json")
+_AUTO = {"last": 0.0}
+_AUTO_MIN, _AUTO_MAX = 5, 240   # границы интервала, мин
+
+
+def _load_auto():
+    try:
+        with open(AUTO_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        iv = int(d.get("interval_min", 30))
+        return {"on": bool(d.get("on")), "interval_min": max(_AUTO_MIN, min(iv, _AUTO_MAX))}
+    except Exception:
+        return {"on": False, "interval_min": 30}
+
+
+def _save_auto(on, interval_min):
+    iv = max(_AUTO_MIN, min(int(interval_min), _AUTO_MAX))
+    tmp = AUTO_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"on": bool(on), "interval_min": iv}, f, ensure_ascii=False)
+    os.replace(tmp, AUTO_FILE)   # атомарно: обрыв записи не бьёт существующий флаг
+    return {"on": bool(on), "interval_min": iv}
+
+
+def _auto_loop():
+    """Фон-рубильник: пока автономность включена, раз в interval_min запускает автосбор
+    (harvest.py БЕЗ --force → гейт «есть что нового?» сам пропускает пустые прогоны). Один
+    прогон за раз — уважает тот же RUN-замок, что и кнопки. Выключен — просто спит."""
+    _AUTO["last"] = time.time()   # не палить прогон в первую же минуту после старта пульта
+    while True:
+        time.sleep(30)
+        st = _load_auto()
+        if not st["on"]:
+            continue
+        if time.time() - _AUTO["last"] < st["interval_min"] * 60:
+            continue
+        with _LOCK:
+            busy = RUN["running"]
+        if busy:
+            continue
+        _AUTO["last"] = time.time()
+        _start_proc("автосбор идей (по расписанию)", ["harvest.py", "1"])
+
+
 def _set_idea(idea_id, status):
     """Разбор идеи — через канонический CLI idea_engine (он же перерисует inbox.md)."""
     if status not in ("take", "later", "trash"):
@@ -211,11 +256,11 @@ def _read_inbox():
     try:
         with open(IDEA + "/data/state.json", encoding="utf-8") as f:
             s = json.load(f)
-        return {"cap": s.get("cap", 3), "tick": s.get("tick", 0),
+        return {"cap": s.get("cap", 0), "tick": s.get("tick", 0),
                 "ideas": s.get("ideas", []), "finish": s.get("finish"),
                 "seen_count": len(s.get("seen", []))}
     except Exception as e:
-        return {"error": str(e)[:200], "cap": 3, "tick": 0, "ideas": [], "finish": None, "seen_count": 0}
+        return {"error": str(e)[:200], "cap": 0, "tick": 0, "ideas": [], "finish": None, "seen_count": 0}
 
 
 def _read_registry():
@@ -298,8 +343,8 @@ def _api_state():
         "key": {"present": ask_llm.available(), "model": ask_llm._MODEL},
         "organs": wired,
         "inbox": _read_inbox(),
-        "stash": _read_stash(),
         "sources": _read_source_status(),
+        "auto": _load_auto(),
         "runs": _read_runs(),
         "registry": _read_registry(),
         "lab": _read_lab(),
@@ -377,6 +422,11 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/observe":
             ok = _start_observe()
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
+        elif self.path == "/api/auto":
+            res = _save_auto(bool(body.get("on")), body.get("interval_min", 30))
+            if res["on"]:
+                _AUTO["last"] = 0.0   # включили — дать сработать на ближайшем тике, не ждать интервал
+            self._json({"ok": True, **res})
         elif self.path == "/api/stop":
             ok = _stop_run()
             self._json({"ok": ok, "msg": "" if ok else "нечего останавливать"})
@@ -407,6 +457,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    threading.Thread(target=_auto_loop, daemon=True).start()   # фон-рубильник (по умолчанию выключен)
     print(f"Пульт киборга: http://127.0.0.1:{PORT}  (Ctrl+C — стоп)")
     try:
         srv.serve_forever()

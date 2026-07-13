@@ -42,9 +42,10 @@ class TestRegistry(unittest.TestCase):
         orgs = build_organs()
         # терминал цели «идеи» доходит до delivered ЧЕРЕЗ судью и scrub
         self.assertEqual(brain.infer_deliverable("приноси свежие идеи", orgs), "delivered")
-        # роутер отбирает ВЕСЬ конвейер идей (и не тянет ветку «доделай»)
-        picked = [o.name for o in router.route("приноси свежие идеи", orgs, k=5)]
-        for n in ("collect_source", "ideate", "rank_ideas", "scrub_secrets", "deliver"):
+        # роутер отбирает ВЕСЬ конвейер идей (6 звеньев с редактором читаемости; k>=6 после
+        # добавления readability_gate — раньше цепь была 5-звенной и k=5 хватало) и не тянет «доделай»
+        picked = [o.name for o in router.route("приноси свежие идеи", orgs, k=6)]
+        for n in ("collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets", "deliver"):
             self.assertIn(n, picked)
         self.assertNotIn("finish_sink", picked)
 

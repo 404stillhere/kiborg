@@ -76,8 +76,11 @@ class Store:
     def open_ideas(self):
         return [i for i in self.data["ideas"] if i["status"] == OPEN]
 
+    def _unlimited(self):
+        return self.data.get("cap") in (None, 0)   # 0/None = копилка без потолка
+
     def has_room(self):
-        return len(self.open_ideas()) < self.data["cap"]
+        return self._unlimited() or len(self.open_ideas()) < self.data["cap"]
 
     def _is_dup(self, idea):
         """Уже предлагали похожее? Сравнение по ЗНАЧИМЫМ словам заголовка (Jaccard>=0.6)."""

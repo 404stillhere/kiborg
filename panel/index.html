@@ -294,7 +294,7 @@
       <div style="margin-top:12px"><button class="run" id="btn-ideas" onclick="runGoal('приноси свежие идеи')">▶ Принеси идеи</button> <button class="stop" id="stop-ideas" onclick="stopRun()" disabled title="остановить текущий прогон">⏹ стоп</button></div>
     </div>
     <div class="card">
-      <h2>Работа 2: доделывать проекты <span class="sub">когда инбокс полон</span></h2>
+      <h2>Работа 2: доделывать проекты <span class="sub">второй вид работы</span></h2>
       <div style="font-size:13px">Достать «самый маленький шаг доделать» из карты твоих проектов (с ротацией) и положить в отдельный слот инбокса.</div>
       <div class="flow" id="flow-finish"></div>
       <div style="margin-top:12px"><button class="run" id="btn-finish" onclick="runGoal('доделать существующие проекты')">▶ Шаг «доделать»</button> <button class="stop" id="stop-finish" onclick="stopRun()" disabled title="остановить текущий прогон">⏹ стоп</button></div>
@@ -311,13 +311,15 @@
   </div>
 
   <div class="card">
-    <h2 class="sec-toggle" id="stash-head" onclick="toggleSec('stash')"><span class="caret">▾</span>🗃 Копилка идей <span class="sub" id="stash-sub">автономный сбор — без потолка, разбирай не спеша</span></h2>
-    <div class="sec-body" id="stash-body">
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Когда киборга гоняют без тебя (я в автономном режиме), новые идеи копятся сюда горой — потолка 3 тут нет. Дедуп не даёт повторов.</div>
-      <div style="margin-bottom:12px"><button class="mini" id="btn-harvest" onclick="harvest()">🌾 Собрать в копилку сейчас</button> <button class="stop mini" id="stop-harvest" onclick="stopRun()" disabled title="остановить текущий прогон">⏹ стоп</button>
-        <span class="sub" style="margin-left:6px">тянет свежие заголовки из активных источников идей и кладёт идеи в копилку; дедуп отсеет повторы</span></div>
+    <h2 class="sec-toggle" id="auto-head" onclick="toggleSec('auto')"><span class="caret">▾</span>🔌 Автономность <span class="sub" id="auto-sub">выключено — киборг ждёт кнопку</span></h2>
+    <div class="sec-body" id="auto-body">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Один рубильник. Включишь — киборг сам, по таймеру, ходит за идеями тем же конвейером, что и кнопка «Принеси идеи», и кладёт в тот же инбокс. Не повторяется, пустые обходы пропускает. Выключишь — работает только по кнопке.</div>
+      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="run mini" id="btn-auto" onclick="toggleAuto()">▶ Включить фон</button>
+        <label class="sub">каждые <input id="auto-interval" type="number" min="5" max="240" value="30" style="width:52px"> мин</label>
+        <span class="sub" id="auto-state"></span>
+      </div>
       <div id="source-health" class="src-row"></div>
-      <div id="stash-list"></div>
     </div>
   </div>
 
@@ -445,8 +447,7 @@ function showViaBrain(){
 // пример вывода органа: реальный артефакт из живого состояния, где есть; иначе — помеченный пример
 function organExample(name){
   const open = S.inbox.ideas.filter(i=>i.status==="open");
-  const sIdea = open.slice(-1)[0]
-             || (S.stash && S.stash.latest && S.stash.latest.length ? S.stash.latest[0] : null);
+  const sIdea = open.slice(-1)[0] || null;
   const fin = S.inbox.finish;
   const q = t => `<span style="color:var(--ink2)">«${esc(t)}»</span>`;
   const EX = {
@@ -454,7 +455,7 @@ function organExample(name){
     ideate:      sIdea ? `напридумывал, напр.: ${q(sIdea.title)}` : `из заголовка лепит 6 идей-кандидатов`,
     rank_ideas:  sIdea ? `оставил лучшее: ${q(sIdea.title)}${sIdea.effort?` · сложность ${esc(sIdea.effort)}`:""}` : `из 6 кандидатов — топ-3 по рубрике`,
     scrub_secrets: `вычистит секрет: <code>sk-ABC123…</code> → <code>***</code>`,
-    deliver:     sIdea ? `положил в инбокс: ${q(sIdea.title)}` : `кладёт готовую идею в инбокс (потолок 3)`,
+    deliver:     sIdea ? `положил в инбокс: ${q(sIdea.title)}` : `кладёт готовую идею в общую кучу инбокса`,
     finish_sink: fin ? `слот «доделать»: ${q(fin.title)}` : `кладёт напоминание «доделать» в отдельный слот`,
     finish_step: fin ? `следующий шаг: ${q(fin.title)}${fin.folder?` (${esc(fin.folder)})`:""}` : `берёт след. маленький шаг из карты проектов`,
   };
@@ -531,7 +532,7 @@ const PARTS = {
                   blurb:"Вычищает ключи и пароли из текста на ОБОИХ путях — и у новых идей, и у напоминаний «доделать» — прежде чем что-то ляжет в инбокс или журнал. Никакой другой орган секреты не чистит, только она."},
   deliver:       {part:"Правая рука", icon:"✋", x:334, y:300, color:"#9085e9",
                   goal:"приноси свежие идеи",
-                  blurb:"Кладёт готовые идеи в твой инбокс. Уважает потолок 3 — не заваливает, пока не разберёшь старые."},
+                  blurb:"Кладёт готовые идеи в твой инбокс — в общую кучу без потолка; дедуп не даёт повторов."},
   finish_sink:   {part:"Левая рука", icon:"🤝", x:126, y:300, color:"#9085e9",
                   goal:"доделать существующие проекты",
                   blurb:"Кладёт напоминание «доделать» в отдельный слот инбокса — не съедая место новых идей. Сама секреты НЕ чистит: их вычищает Печень ДО неё (в нервах). Рука только кладёт."},
@@ -567,7 +568,7 @@ function pseudoParts(){
   const open = S ? S.inbox.ideas.filter(i=>i.status==="open").length : 0;
   return {
     heart:  {part:"Сердце · инбокс идей", icon:"❤", x:230, y:196, color:"#e66767",
-             blurb:`Очередь идей с потолком ${S?S.inbox.cap:3}: сейчас ${open}/${S?S.inbox.cap:3}. Пока не разберёшь — новые не придут (обратная тяга). Помнит уже предложенное (${S?S.inbox.seen_count:0} заголовков) и не повторяется.`},
+             blurb:`Куча идей без потолка: сейчас ${open} в разборе. Дедуп помнит уже предложенное (${S?S.inbox.seen_count:0} заголовков) и не повторяется — разбираешь в своём темпе.`},
     planner:{part:"Лоб · мозг-планировщик", icon:"⚙", x:230, y:78, color:"var(--yellow)",
              blurb: S && S.key.present
                ? `Решает, какой орган звать следующим. Сейчас — надёжная детерминированная логика (так задумано), а сами идеи придумывает живой ${S.key.model}.`
@@ -618,7 +619,7 @@ function renderSkeleton(){
   const freeSlots = SLOTS.filter(s=>!taken.has(key(s)));
   const nerves = Object.values(LAYOUT).map(v=>
     `<path class="nerve" d="M230,230 Q${(230+v.x)/2},${(230+v.y)/2} ${v.x},${v.y}"/>`).join("");
-  const fill = S.inbox.cap ? open/S.inbox.cap : 0;          // 0..1 — полнее инбокс, чаще пульс
+  const fill = Math.min(open/10, 1);                       // 0..1 — больше идей в разборе, чаще пульс (10+ = полно)
   const hbDur = (1.6 - fill*0.9).toFixed(2);                // пусто ~1.6с … полно ~0.7с
   document.getElementById("skel").innerHTML = `
   <svg class="${running?'running':''}" viewBox="83 28 569 509" xmlns="http://www.w3.org/2000/svg">
@@ -641,7 +642,7 @@ function renderSkeleton(){
     <!-- бьётся сердце-ромб (темп от заполненности инбокса) -->
     <path class="heartbeat${fill>=1?' full':''}" d="M230,178 L248,196 L230,214 L212,196 Z" style="--hb:${hbDur}s"></path>
     ${nodeSvg('heart', P.heart)}
-    ${leader(248,196,302,188)}${lbl(306,191,"start","сердце · инбокс "+open+"/"+S.inbox.cap)}
+    ${leader(248,196,302,188)}${lbl(306,191,"start","сердце · инбокс "+open)}
     ${leader(212,78,160,84)}${lbl(156,87,"end","планировщик")}
     <!-- органы (перетаскиваемые) -->
     ${ORGAN_ORDER.map((n,i)=>organSvg(n,i)).join("")}
@@ -773,13 +774,12 @@ function renderBrain(){
 /* --- шапка-чипы --- */
 function renderChips(){
   const openN = S.inbox.ideas.filter(i=>i.status==="open").length;
-  const cap = S.inbox.cap;
   const chips = [];
   chips.push(S.key.present
     ? `<span class="chip"><span class="dot good"></span>мозг идей: <b>${esc(S.key.model)}</b> (ключ на месте)</span>`
     : `<span class="chip"><span class="dot crit"></span><b>ключа нет</b> — идеи будут шаблонные</span>`);
   chips.push(`<span class="chip"><span class="dot blue"></span>органов в деле: <b>${S.organs.length}</b> · в каталоге: <b>${S.registry.total}</b></span>`);
-  chips.push(`<span class="chip"><span class="dot ${openN>=cap?'warn':'good'}"></span>инбокс: <b>${openN}/${cap}</b>${openN>=cap?' — полон, разбери':''}</span>`);
+  chips.push(`<span class="chip"><span class="dot ${openN?'good':'mut'}"></span>инбокс: <b>${openN}</b> идей в разборе</span>`);
   chips.push(S.lab.exists
     ? (S.lab.locked
         ? `<span class="chip"><span class="dot warn"></span>фабрика фич: <b>под замком</b> (пакет не разобран)</span>`
@@ -820,9 +820,8 @@ function renderInbox(){
   const open = ib.ideas.filter(i=>i.status==="open");
   const done = ib.ideas.filter(i=>i.status!=="open").slice().reverse();
   document.getElementById("inbox-sub").textContent =
-    open.length ? "разбери — иначе новые идеи не придут" : "пусто — следующий прогон принесёт новые";
-  document.getElementById("capbar").innerHTML =
-    Array.from({length: ib.cap}, (_,k)=>`<div class="slot ${k<open.length?'full':''}"></div>`).join("");
+    open.length ? `${open.length} идей в разборе — куча без потолка` : "пусто — следующий сбор принесёт новые";
+  document.getElementById("capbar").innerHTML = "";   // потолка нет — ячейки-слоты убраны
   document.getElementById("ideas-open").innerHTML =
     open.length ? open.map(ideaCard).join("") : `<div style="color:var(--muted);font-size:13px;margin-bottom:10px">открытых идей нет</div>`;
 
@@ -867,17 +866,17 @@ function renderRuns(){
   }).join("");
 }
 
-/* --- копилка --- */
-function renderStash(){
-  const st = S.stash || {total:0, latest:[]};
-  document.getElementById("stash-sub").textContent =
-    st.total ? `${st.total} идей накоплено · показаны свежие` : "пока пусто — соберётся в автономных прогонах";
-  const el = document.getElementById("stash-list");
-  if(!st.latest.length){ el.innerHTML = '<div style="color:var(--muted);font-size:13px">копилка пуста</div>'; return; }
-  el.innerHTML = st.latest.map(i=>`<div class="idea">
-    ${ideaBody(i, i.brain==='llm'?'★ придумано ИИ':'болванка',
-               i.stashed_at?`<span class="tag">${esc(i.stashed_at)}</span>`:"")}
-  </div>`).join("");
+/* --- автономность (рубильник) --- */
+function renderAuto(){
+  const a = S.auto || {on:false, interval_min:30};
+  const btn = document.getElementById("btn-auto");
+  const sub = document.getElementById("auto-sub");
+  const state = document.getElementById("auto-state");
+  const iv = document.getElementById("auto-interval");
+  if(btn) btn.textContent = a.on ? "⏸ Выключить фон" : "▶ Включить фон";
+  if(sub) sub.textContent = a.on ? `включено — сам каждые ${a.interval_min} мин` : "выключено — киборг ждёт кнопку";
+  if(state) state.textContent = a.on ? "🟢 фон работает" : "⚪ фон выключен";
+  if(iv && document.activeElement!==iv) iv.value = a.interval_min;   // не перебивать ввод юзера
 }
 
 /* --- живой статус источников (пишет harvest на авто-прогонах) --- */
@@ -942,14 +941,14 @@ function renderGates(){
   const openN = S.inbox.ideas.filter(i=>i.status==="open").length;
   if(!S.key.present)
     g.push(`<div class="gate"><span class="ic">🔴</span><div><b>Ключа Gemini нет.</b> Киборг не сломается, но идеи станут шаблонными — и никакого предупреждения не будет. Верни файл gemini.md или задай GEMINI_KEY.</div></div>`);
-  if(openN >= S.inbox.cap)
-    g.push(`<div class="gate"><span class="ic">🟡</span><div><b>Инбокс полон (${openN}/${S.inbox.cap}).</b> Новые идеи не придут, пока не разберёшь карточки кнопками выше.</div></div>`);
   if(S.lab.exists && S.lab.locked){
     const fl = S.lab.features.map(f=>`«${esc(f.title)}»`).join(" и ");
     g.push(`<div class="gate"><span class="ic">🟡</span><div><b>Фабрика фич под замком.</b> В песочнице .feature-lab лежит неразобранный пакет: ${fl}${S.lab.needs_manual? ` + ${S.lab.needs_manual} предложение(й) руками`:""}. Пока не разберёшь (пометить reviewed или удалить router.json) — ночная фабрика новый пакет не строит.</div></div>`);
   }
   g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Доставка только в файл.</b> Идеи падают в inbox.md, в Телеграм киборг писать пока не умеет — нужен токен твоего бота.</div></div>`);
-  g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Сам не просыпается.</b> Прогон запускается только руками (кнопки выше или CLI). Автоцикл по расписанию — твоё решение.</div></div>`);
+  g.push(S.auto && S.auto.on
+    ? `<div class="gate"><span class="ic">🟢</span><div><b>Автономный режим включён.</b> Киборг сам ходит за идеями каждые ${S.auto.interval_min} мин и кладёт в инбокс. Выключить — рубильник «Автономность».</div></div>`
+    : `<div class="gate"><span class="ic">⚪</span><div><b>Фон выключен.</b> Прогон только руками (кнопки или CLI). Включить автоцикл — рубильник «Автономность» выше.</div></div>`);
   g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Если интернет лежит</b> — киборг подставляет 4 запасных заголовка и идеи выходят «из резерва», а выглядят как свежие. Решить: глушить, помечать или оставить.</div></div>`);
   document.getElementById("gates").innerHTML = g.join("");
 }
@@ -963,11 +962,13 @@ async function runGoal(goal){
   pollRun();
 }
 
-async function harvest(){
-  const r = await fetch("/api/harvest",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
-    .then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
+async function toggleAuto(){
+  const cur = (S.auto && S.auto.on) || false;
+  const iv = parseInt(document.getElementById("auto-interval").value, 10) || 30;
+  const r = await fetch("/api/auto",{method:"POST",headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({on: !cur, interval_min: iv})}).then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
   if(!r.ok && r.msg) alert(r.msg);
-  pollRun();   // тот же живой вывод + refresh в конце перечитает копилку
+  refresh();
 }
 
 async function observe(){
@@ -990,9 +991,9 @@ async function pollRun(){
   const cons = document.getElementById("console");
   const st = document.getElementById("runstate");
   const btns = [document.getElementById("btn-ideas"), document.getElementById("btn-finish"),
-                document.getElementById("btn-harvest"), document.getElementById("btn-observe")].filter(Boolean);
+                document.getElementById("btn-observe")].filter(Boolean);
   const stopBtns = [document.getElementById("stop-ideas"), document.getElementById("stop-finish"),
-                     document.getElementById("stop-harvest"), document.getElementById("stop-observe")].filter(Boolean);
+                     document.getElementById("stop-observe")].filter(Boolean);
   try{
     while(true){
       const r = await fetch("/api/run").then(r=>r.json());
@@ -1034,7 +1035,7 @@ async function pollRun(){
   refresh();
 }
 
-/* --- сворачиваемые секции (копилка / инбокс / журнал), состояние в localStorage --- */
+/* --- сворачиваемые секции (автономность / инбокс / журнал), состояние в localStorage --- */
 function collapsedState(){ try{ return JSON.parse(localStorage.getItem("kiborg-collapsed")||"{}"); }catch(e){ return {}; } }
 function toggleSec(key){
   const body = document.getElementById(key+"-body"), head = document.getElementById(key+"-head");
@@ -1045,7 +1046,7 @@ function toggleSec(key){
 }
 function applyCollapsed(){
   const st = collapsedState();
-  for(const key of ["stash","inbox","runs"]){
+  for(const key of ["auto","inbox","runs"]){
     const body = document.getElementById(key+"-body"), head = document.getElementById(key+"-head");
     if(!body || !head) continue;
     const closed = !!st[key];
@@ -1061,7 +1062,7 @@ async function refresh(){
     if(S.error) throw new Error(S.error);
     document.getElementById("upd").textContent = "обновлено " + S.now;
     if(!drag) LAYOUT = S.layout || {};
-    renderSkeleton(); renderPartDetail(); renderFuture(); renderBrain(); renderChips(); renderFlows(); renderInbox(); renderStash(); renderSources(); renderRuns(); renderRegistry(); renderGates();
+    renderSkeleton(); renderPartDetail(); renderFuture(); renderBrain(); renderChips(); renderFlows(); renderInbox(); renderAuto(); renderSources(); renderRuns(); renderRegistry(); renderGates();
   } catch(e){
     document.getElementById("upd").innerHTML = `<span class="err">сервер молчит: ${esc(e.message||e)}</span>`;
   }

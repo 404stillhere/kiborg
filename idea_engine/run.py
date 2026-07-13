@@ -28,8 +28,8 @@ INBOX = os.path.join(DATA, "inbox.md")
 NOTIFY = os.path.join(DATA, "notify.md")
 
 CFG = {
-    "cap": 3,
-    "n": 8,                # сколько заголовков тянуть
+    "cap": 0,              # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
+    "n": 8,                # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
     "source": "hn",
     "k": 3,                # сколько идей за раз
     "recon_path": "M:/projects/panelofprojects/recon.json",
@@ -77,12 +77,14 @@ def tick(store, seed_path=None):
 def _write_inbox(store):
     d = store.data
     lines = ["# Инбокс идей киборга", ""]
-    lines.append(f"Потолок дорожки идей: {d['cap']} | tick: {d['tick']} | разобрано: {store.cleared_count()}")
-    lines.append("")
-    lines.append("## Дорожка A — новые идеи (разгреби, чтобы пришли следующие)")
     op = store.open_ideas()
+    cap = d.get("cap") or 0
+    cap_txt = "без потолка" if cap in (0, None) else f"потолок {cap}"
+    lines.append(f"Идей в разборе: {len(op)} ({cap_txt}) | tick: {d['tick']} | разобрано: {store.cleared_count()}")
+    lines.append("")
+    lines.append("## Дорожка A — новые идеи (разбирай: взять / позже / мусор)")
     if not op:
-        lines.append("_пусто — на следующем tick придут новые_")
+        lines.append("_пусто — киборг принесёт на следующем сборе_")
     for i in op:
         lines.append(f"- **#{i['id']}** [{i.get('effort', '?')}] {i.get('title', '')}")
         if i.get("why"):

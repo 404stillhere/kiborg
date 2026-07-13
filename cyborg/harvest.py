@@ -1,15 +1,15 @@
-"""Автономный сбор идей в КОПИЛКУ (для моментов, когда Claude гоняет киборга сам).
+"""Автономный сбор идей — «фон» киборга (когда он гоняет сам по таймеру с пульта).
 
-Тот же конвейер, что «приноси идеи» (collect -> ideate -> rank -> scrub), но финальный
-sink — копилка БЕЗ потолка (stash), а не инбокс с потолком 3. Идеи копятся горой, дедуп
-отсеивает повторы; разберёт человек, когда вернётся.
+ТОТ ЖЕ конвейер и ТА ЖЕ куча, что у ручной кнопки «Принеси идеи» (collect -> ideate ->
+rank -> scrub -> deliver в инбокс). Разница только в поведении фона: гейт «есть что нового?»
+(пустые прогоны пропускаем) + фильтр «уже видели» (не тащим одни и те же посты). Идеи
+копятся в одну кучу без потолка, дедуп отсеивает повторы; разбираешь в своём темпе.
 
 Запуск:
     python harvest.py         — один прогон
     python harvest.py 5       — 5 прогонов подряд (за один вызов набрать больше)
 
-Результат: cyborg/data/idea_stash.md (человеку) + idea_stash.jsonl (машине).
-Каждый прогон логируется в data/runs.md (как и обычные прогоны).
+Каждый прогон логируется в data/runs.md (как и ручные прогоны).
 """
 import datetime
 import os
@@ -25,7 +25,7 @@ except Exception:
 import hashlib  # noqa: E402
 import json  # noqa: E402
 
-from wiring import build_harvest_organs  # noqa: E402
+from wiring import build_organs  # noqa: E402  (та же цепочка, что у ручного прогона → deliver в инбокс)
 from orchestrator import Cyborg  # noqa: E402
 import ask_llm  # noqa: E402
 import stash  # noqa: E402
@@ -57,22 +57,20 @@ SOURCES = ["telegram"]
 
 # Каналы под тематику kiborg (тех/AI/pet-проекты) — НЕ список darbot (тот про новости/политику/
 # экономику, другая тема). @tproger — мой стартовый кандидат, подтверждён живым смоуком 2026-07-12.
-# Остальные 20 — из папки юзера (t.me/addlist/gUpAozY8_SI0ZTVi, тема "AI 🤖"), разрешена read-only
-# (chatlists.CheckChatlistInvite — НЕ подписка, только просмотр состава) 2026-07-12, все настоящие.
-# Урезано до 1 канала (2026-07-12) по просьбе юзера — чтобы НАГЛЯДНО наблюдать работу органа
-# источников на одном пабликe (зашёл → прочитал пост → подумал). 2026-07-13: добавлен второй,
-# выбран случайно (random.choice) из оставшихся 19 — @ai_machinelearning_big_data. Остальные 18
-# сохранены ниже закомментированными: вернуть полный охват — просто раскомментировать (список
-# подтверждён живым в этот же день). @tproger — стартовый канал, подтверждён живым смоуком.
+# 21 канал: @tproger (стартовый, подтверждён живым смоуком) + 20 из папки юзера
+# (t.me/addlist/gUpAozY8_SI0ZTVi, тема "AI 🤖"), разрешена read-only (chatlists.CheckChatlistInvite
+# — НЕ подписка, только просмотр состава) 2026-07-12, все настоящие, список подтверждён живым 2026-07-13.
+# История охвата: 2026-07-12 урезан до 1 канала для наглядного наблюдения органа источников →
+# 2026-07-13 второй → 2026-07-13 ВОЗВРАЩЁН полный охват (20 AI + tproger) по просьбе юзера.
+# Список длиннее бюджета n — _telegram() берёт случайную выборку каждый прогон (ротация по времени).
 TELEGRAM_CHANNELS = [
     "@tproger",
-    "@ai_machinelearning_big_data",  # выбран случайно 2026-07-13, подтверждён смоуком ниже
-    # --- временно отключены (наблюдательный режим на 2 каналах) ---
-    # "@unitool", "@llm_under_hood", "@gpt_news", "@hiaimedia", "@openai_fan",
-    # "@data_secrets", "@machinelearning_interview", "@data_analysis_ml", "@neuro_code",
-    # "@neuraldvig", "@aitshnya", "@seeallochnaya", "@gptpublic", "@ai_newz",
-    # "@notboring_tech", "@lovedeathtransformers", "@machinelearning_ru", "@boris_again",
-    # "@techsparks",
+    "@ai_machinelearning_big_data",
+    "@unitool", "@llm_under_hood", "@gpt_news", "@hiaimedia", "@openai_fan",
+    "@data_secrets", "@machinelearning_interview", "@data_analysis_ml", "@neuro_code",
+    "@neuraldvig", "@aitshnya", "@seeallochnaya", "@gptpublic", "@ai_newz",
+    "@notboring_tech", "@lovedeathtransformers", "@machinelearning_ru", "@boris_again",
+    "@techsparks",
 ]
 
 # Какие источники ЛИЧНО проверены юзером (не «бета»). Пока — только telegram: каналы юзер
@@ -105,11 +103,12 @@ def _load_darbot_tg_creds():
     return vals.get("TG_API_ID"), vals.get("TG_API_HASH")
 
 
-def _harvest_env():
-    """env харвест-прогона: живой мозг (если есть ключ) + ШИРОКИЙ смешанный источник
-    + фильтр «уже видели» (по ID items, не по тексту идей — см. seen_items.py). Флаг
-    ТОЛЬКО здесь: интерактивный «приноси идеи» (панель, ручной клик) его не ставит."""
-    env = {"n": SOURCE_N, "sources": SOURCES, "filter_seen_items": True}
+def _source_env():
+    """Единый ИСТОЧНИК идей для ОБЕИХ кнопок: ручной «Принеси идеи» (cyborg/run.py) и
+    автосбор (main тут). Широкий слой (n=SOURCE_N) + телеграм-каналы + живой мозг. БЕЗ
+    фильтра «уже видели» — его навешивает только автоцикл (см. _harvest_env). Так у ручного
+    и автономного прогона один и тот же источник, а не две разные ленты."""
+    env = {"n": SOURCE_N, "sources": SOURCES}
     api_id, api_hash = _load_darbot_tg_creds()
     if api_id and api_hash and os.path.exists(_KIBORG_TG_SESSION):
         env["telegram_channels"] = TELEGRAM_CHANNELS
@@ -119,6 +118,13 @@ def _harvest_env():
     if ask_llm.available():
         env["content_llm"] = ask_llm.ask
     return env
+
+
+def _harvest_env():
+    """env АВТОСБОРА: тот же источник + фильтр «уже видели» (по ID items, не по тексту идей —
+    см. seen_items.py). Флаг ставит ТОЛЬКО автоцикл; ручной «Принеси идеи» его не ставит
+    (жмёшь — хочешь идей сейчас, даже если посты уже мелькали)."""
+    return {**_source_env(), "filter_seen_items": True}
 
 
 def _titles_sig(titles):
@@ -220,12 +226,12 @@ def main(argv):
     nums = [a for a in argv if a.isdigit()]
     n = int(nums[0]) if nums else 1
     n = max(1, min(n, 50))  # предохранитель: не больше 50 прогонов за вызов
-    goal = "приноси свежие идеи в копилку"
+    goal = "приноси свежие идеи"   # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
     env = _harvest_env()
     mode = (f"идеи={ask_llm._MODEL}" if ask_llm.available() else "идеи=stub (ключа нет)") \
         + f" · источники={'+'.join(SOURCES)} (бюджет {SOURCE_N})" + (" · force" if force else "")
 
-    cy = Cyborg(build_harvest_organs(), safe_mode=True)
+    cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     total, skipped = 0, 0
     for i in range(n):
         # гейт «есть что нового?» — не гоняем Gemini впустую (а) на неизменной ленте ИЛИ

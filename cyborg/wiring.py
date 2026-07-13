@@ -14,7 +14,7 @@ if _IDEA not in sys.path:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from organs import collect_source, ideate, finish_step, rank_ideas  # noqa: E402
+from organs import collect_source, ideate, finish_step, rank_ideas, readability_gate  # noqa: E402
 from core import Organ  # noqa: E402
 import deliver  # noqa: E402  (cyborg/deliver.py — sink в инбокс idea_engine)
 import finish_sink  # noqa: E402  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
@@ -175,6 +175,19 @@ def _rank_by_council(inputs, env, keep):
                         "why": verdict.get("why")}}
 
 
+def _run_readability(inputs, env):
+    """Редактор читаемости: карточкам-победителям (ideas_best) ставит балл читаемости и
+    описание ниже порога переписывает самонесущим. Идею НЕ теряем, карточку НЕ выкидываем —
+    правим только текст why. Живёт ПОСЛЕ отбора (чиним лишь то, что реально уйдёт в кучу) и
+    ДО scrub (переписанный текст тоже проходит вычистку секретов). Без ключа — passthrough."""
+    env = env if isinstance(env, dict) else {}
+    e = {"min_score": float(env.get("read_min_score", 7))}
+    llm = _content_llm(env)
+    if llm:
+        e["llm"] = llm
+    return readability_gate.run(inputs, e)
+
+
 def _run_rank(inputs, env):
     env = env if isinstance(env, dict) else {}
     e = {"keep": 3}  # оставить топ-3 из пула
@@ -252,7 +265,7 @@ def _run_stash(inputs, env):
 
 def _run_scrub(inputs, env):
     inp = inputs or {}
-    ideas = list(inp.get("ideas_best") or inp.get("ideas") or [])
+    ideas = list(inp.get("ideas_polished") or inp.get("ideas_best") or inp.get("ideas") or [])
     out, red = [], 0
     for idea in ideas:
         if isinstance(idea, dict):
@@ -300,9 +313,16 @@ def build_organs():
             needs={},
         ),
         Organ(
+            name="readability_gate",
+            purpose="Редактор читаемости: карточку с мутным описанием (балл<7) переписывает самонесущей, идею не теряя.",
+            run=_run_readability, role="transform", produces=["ideas_polished"], consumes=["ideas_best"],
+            tags=["читаемость", "понятно", "описание", "идеи", "редактор", "ясно"],
+            needs={"key": "LLM_KEY", "stub_ok": True},
+        ),
+        Organ(
             name="scrub_secrets",
             purpose="Защитный проход: вычищает креды (sk-/ghp-/AIza/KEY=…) из текста идей перед доставкой.",
-            run=_run_scrub, role="transform", produces=["ideas_safe"], consumes=["ideas_best"],
+            run=_run_scrub, role="transform", produces=["ideas_safe"], consumes=["ideas_polished"],
             tags=["безопасно", "секрет", "очистить", "идеи", "защита"],
             needs={},
         ),
@@ -329,7 +349,7 @@ def build_harvest_organs():
     Для прогонов, когда Claude гоняет киборга сам: идеи копятся горой, разберёт юзер.
     """
     chain = [o for o in build_organs()
-             if o.name in ("collect_source", "ideate", "rank_ideas", "scrub_secrets")]
+             if o.name in ("collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets")]
     chain.append(Organ(
         name="stash_ideas",
         purpose="Копит идеи в копилку без потолка (для автономных прогонов), с дедупом.",

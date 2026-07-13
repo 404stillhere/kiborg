@@ -19,6 +19,7 @@ from orchestrator import Cyborg  # noqa: E402
 from registry import load_catalog  # noqa: E402
 import ask_llm  # noqa: E402
 import keychain  # noqa: E402  (ключи -> цепочка интуиции для совета на шаге отбора идей)
+import harvest  # noqa: E402  (_source_env: единый источник идей — те же каналы, что у автосбора)
 from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемся на граф)
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -59,11 +60,12 @@ def main(argv):
         cat_n = len(load_catalog())
     except Exception as e:
         cat_n = "?(" + str(e)[:30] + ")"
-    cy = Cyborg(build_organs(), safe_mode=True)
-    # живая модель для генератора идей (ключ из gemini.md / GEMINI_KEY); планировщик — stub
-    env = {}
-    if ask_llm.available():
-        env["content_llm"] = ask_llm.ask
+    cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
+    # ЕДИНЫЙ источник: те же каналы/настройки, что у автосбора (harvest._source_env), БЕЗ
+    # фильтра «уже видели» — ручной клик приносит что нашёл сейчас. Раньше env был пуст → collect
+    # молча падал на дефолт HN(n=8), и «Принеси идеи» ходила мимо телеграм-пула. Это чинит ту дырку.
+    env = harvest._source_env()
+    if env.get("content_llm"):
         # генератор идей идёт по ТОЙ ЖЕ цепочке, что интуиция (один провайдер/ключ closerouter)
         brain_mode = f"идеи+интуиция={ask_llm._MODEL} (одна цепочка), планировщик=stub"
     else:

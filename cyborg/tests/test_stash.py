@@ -136,9 +136,10 @@ class TestStash(unittest.TestCase):
     def test_harvest_terminal_and_no_inbox(self):
         harvest = wiring.build_harvest_organs()
         names = [o.name for o in harvest]
-        # цепочка идей есть, инбокс-доставка (deliver) и finish — НЕТ
+        # цепочка идей есть (вкл. редактор читаемости), инбокс-доставка (deliver) и finish — НЕТ
         self.assertEqual(set(names),
-                         {"collect_source", "ideate", "rank_ideas", "scrub_secrets", "stash_ideas"})
+                         {"collect_source", "ideate", "rank_ideas", "readability_gate",
+                          "scrub_secrets", "stash_ideas"})
         self.assertNotIn("deliver", names)
         self.assertNotIn("finish_sink", names)
         # мозг доводит «идеи» до терминала delivered через stash-сток
