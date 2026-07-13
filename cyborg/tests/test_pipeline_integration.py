@@ -18,7 +18,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 sys.path.insert(0, os.path.join(os.path.dirname(BASE), "idea_engine"))
 
-from wiring import build_organs  # noqa: E402
+from wiring import build_organs, build_harvest_organs  # noqa: E402
 
 IDEA_PATH = ["collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets", "deliver"]
 
@@ -55,6 +55,22 @@ class TestPipelineKeysChain(unittest.TestCase):
         self.assertEqual(fs.produces, ["nudge"])
         self.assertEqual(fk.consumes, ["nudge"])
         self.assertIn("delivered", fk.produces)
+
+    def test_harvest_path_keys_chain_to_stash(self):
+        # АВТОНОМНЫЙ путь (build_harvest_organs): те же трансформы, но терминал — stash (копилка),
+        # не deliver (инбокс). Стык scrub->stash (ideas_safe) отдельно от инбокс-пути — проверяем.
+        h = {o.name: o for o in build_harvest_organs()}
+        self.assertIn("stash_ideas", h)
+        self.assertNotIn("deliver", h)                 # автономный сбор идёт в копилку, не в инбокс
+        self.assertEqual(h["stash_ideas"].consumes, ["ideas_safe"])   # стыкуется с выходом scrub
+        self.assertIn("delivered", h["stash_ideas"].produces)
+        order = ["collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets", "stash_ideas"]
+        available = set()
+        for name in order:
+            for c in h[name].consumes:
+                self.assertIn(c, available, f"harvest: {name} потребляет '{c}', не произведённое выше по цепи")
+            available.update(h[name].produces)
+        self.assertIn("delivered", available)          # автономная цепь тоже доходит до терминала
 
 
 class TestPipelineDataFlow(unittest.TestCase):
