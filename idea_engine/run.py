@@ -33,6 +33,7 @@ CFG = {
     "source": "hn",
     "k": 3,                # сколько идей за раз
     "recon_path": "M:/projects/panelofprojects/recon.json",
+    "skip_folders": [],    # folder'ы режима B, которые не толкать (пусто = не фильтровать); knob finish_step
 }
 
 
@@ -63,7 +64,8 @@ def tick(store, seed_path=None):
         info = {"mode": "A", "added": added, "brain": ",".join(sorted(brains)) or "-",
                 "degraded": raw.get("degraded", False)}
     else:
-        out = finish_step.run({}, {"recon_path": CFG["recon_path"], "cursor": store.data["cursor"]})
+        out = finish_step.run({}, {"recon_path": CFG["recon_path"], "cursor": store.data["cursor"],
+                                   "skip_folders": CFG["skip_folders"]})
         if out.get("nudge"):
             store.set_finish(out["nudge"], out.get("next_cursor", store.data["cursor"]))
         info = {"mode": "B", "nudge": bool(out.get("nudge")), "pool": out.get("pool")}

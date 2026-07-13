@@ -25,6 +25,7 @@ import mind  # noqa: E402  (движок взвешенного совещани
 import advisors  # noqa: E402  (три советника: арбитр rank_ideas + интуиция ask_llm + оркестр)
 
 RECON = "M:/projects/panelofprojects/recon.json"
+SKIP_FOLDERS = []  # folder'ы, которые режим B не толкает (пусто = не фильтровать); knob finish_step
 
 
 def _run_collect(inputs, env):
@@ -233,7 +234,7 @@ def _run_finish(inputs, env):
             cursor = int(json.load(f).get("cursor", 0))
     except Exception:
         pass
-    out = finish_step.run(inputs, {"recon_path": RECON, "cursor": cursor})
+    out = finish_step.run(inputs, {"recon_path": RECON, "cursor": cursor, "skip_folders": SKIP_FOLDERS})
     try:
         os.makedirs(os.path.dirname(_CURSOR_FILE), exist_ok=True)
         with open(_CURSOR_FILE, "w", encoding="utf-8") as f:
