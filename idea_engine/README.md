@@ -23,9 +23,15 @@ python run.py show
 ## Органы (контракт `run(inputs, env)`)
 | Орган | Что делает | Среда через env |
 |---|---|---|
-| `organs/collect_source.py` | тянет свежие items | `source`, `n`, `timeout` (edge/IO-орган: сеть по назначению, конфиг инжектится) |
-| `organs/ideate.py` | items → 3 идеи с ценником | `llm` (callable; в проде ask_llm с ключом), `k` |
+| `organs/collect_source.py` | тянет свежие items | `source`/`sources`, `n`, `timeout` (edge/IO-орган: сеть по назначению, конфиг инжектится) |
+| `organs/ideate.py` | items → идеи с ценником | `llm` (callable; в проде ask_llm с ключом), `k` |
+| `organs/rank_ideas.py` | судит идеи по рубрике, берёт топ (генератор себя сам не судит) | `llm`, `keep` |
+| `organs/readability_gate.py` | ставит `why` балл читаемости, ниже порога переписывает самонесущим; правку берёт, только если балл вырос | `llm`/`score_llm`, `min_score` |
 | `organs/finish_step.py` | режим B: шаг доделать | `recon_path`, `cursor`, `skip_folders` |
+
+> `rank_ideas` и `readability_gate` физически лежат здесь, но в цепочку их включает ПЛАТФОРМА
+> `../cyborg/` (wiring: `collect→ideate→rank→readability→scrub→deliver`). Демо-`tick` в `run.py`
+> намеренно короткий (`collect→ideate→finish`) — это первый срез, не весь конвейер.
 
 Ядро (`store.py`) — чистая логика: потолок, статусы, две дорожки. Сети и ключей внутри нет.
 
@@ -42,9 +48,12 @@ python run.py show
   извлечённые органы из `_shared/organs.json` — тоже следующий шаг.
 
 ## Проверено
-- `python -m unittest tests.test_store` — 17/17 (потолок, обратная тяга, разбор
-  освобождает место, A↔B, статусы, персистентность, защита id/status от подделки,
-  переоткрытие уважает потолок, дедуп предложенного).
+- `tests.test_store` — ядро store (потолок, обратная тяга, разбор освобождает место, A↔B,
+  статусы, персистентность, защита id/status от подделки, переоткрытие уважает потолок, дедуп).
+- Органы пакета покрыты своими модулями: `test_collect_source` (5 лент, честный degrade без
+  ложного `error`, per_n-split, telegram payload), `test_ideate`, `test_rank_ideas`,
+  `test_readability_gate` (балл читаемости, переписывание, ре-оценка правки). Прогон всего
+  пакета — `python ../run_tests.py` из корня kiborg (голый `pytest` врёт из-за коллизии имён).
 - Живой end-to-end: наполнил 3 (llm) → полно → режим B (пул 17) → разобрал → долил (stub).
 - Состязательная проверка 3 скептиками (прод-безопасность GREEN, контракт YELLOW-ок).
   Нашли RED: потолок пробивался через `set_status(id,"open")` — **исправлено**:
