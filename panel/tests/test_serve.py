@@ -195,5 +195,47 @@ class TestStopRun(unittest.TestCase):
         self.assertFalse(serve._stop_run())
 
 
+class TestAutoConfig(unittest.TestCase):
+    """_load_auto/_save_auto — конфиг автономности: clamp интервала в [_AUTO_MIN,_AUTO_MAX],
+    дефолт на битом/отсутствующем файле, атомарная запись (os.replace). Раньше не покрыто."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_auto_")
+        self.f = os.path.join(self.tmp, "auto.json")
+        self._orig = serve.AUTO_FILE
+        serve.AUTO_FILE = self.f
+
+    def tearDown(self):
+        serve.AUTO_FILE = self._orig
+
+    def test_save_load_roundtrip(self):
+        serve._save_auto(True, 60)
+        self.assertEqual(serve._load_auto(), {"on": True, "interval_min": 60})
+
+    def test_save_clamps_interval_high_and_low(self):
+        serve._save_auto(True, 9999)
+        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)   # верх -> 240
+        serve._save_auto(True, 1)
+        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MIN)   # низ -> 5
+
+    def test_load_defaults_when_file_missing(self):
+        self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})  # нет файла -> off/30
+
+    def test_load_defaults_on_corrupt_json(self):
+        with open(self.f, "w", encoding="utf-8") as fh:
+            fh.write("{битый json")
+        self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})
+
+    def test_load_clamps_stored_out_of_range(self):
+        with open(self.f, "w", encoding="utf-8") as fh:
+            json.dump({"on": True, "interval_min": 9999}, fh)
+        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)     # clamp и на чтении
+
+    def test_save_is_atomic_no_tmp_leftover(self):
+        serve._save_auto(False, 45)
+        self.assertFalse(os.path.exists(self.f + ".tmp"))    # os.replace убрал tmp
+        self.assertTrue(os.path.exists(self.f))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
