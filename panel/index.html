@@ -122,6 +122,8 @@
   .runrow .chain b{color:var(--ink2);font-weight:500}
   .runrow .res{font-size:12px}
   .res .okv{color:var(--good)} .res .zero{color:var(--muted)}
+  .runrow .council-note{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .runrow .council-note.woke{color:var(--warn);font-weight:600}
 
   /* реестр */
   .strip{display:flex;gap:2px;height:14px;border-radius:7px;overflow:hidden;margin:8px 0 6px}
@@ -860,6 +862,7 @@ function renderRuns(){
       <div><b style="color:var(--ink)">«${esc(r.goal)}»</b></div>
       <div class="chain">${r.chain.map(c=>`<b>${esc(c)}</b>`).join(" → ")}</div>
       <div class="res">${esc(r.deliverable)}: ${v}</div>
+      ${r.council ? `<div class="council-note ${/ПРОСНУЛСЯ/.test(r.council)?'woke':''}">🏛 ${esc(r.council)}</div>` : ""}
     </div>`;
   }).join("");
 }

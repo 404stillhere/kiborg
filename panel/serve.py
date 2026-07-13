@@ -158,10 +158,14 @@ def _read_runs():
                 if not m:
                     continue
                 res = m.group("res")
+                council = None
+                if " | совет: " in res:                 # опциональный хвост «проснулся ли оркестр»
+                    res, council = res.split(" | совет: ", 1)
                 key, _, val = res.partition("=")
                 runs.append({"ts": m.group("ts"), "goal": m.group("goal"),
                              "chain": [s.strip() for s in m.group("chain").split("->")],
-                             "deliverable": key, "value": val})
+                             "deliverable": key, "value": val,
+                             "council": council.strip() if council else None})
     except Exception:
         pass
     return runs

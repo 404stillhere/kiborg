@@ -49,6 +49,7 @@ class Cyborg:
             "goal": goal,
             "deliverable": deliverable,
             "result": mem.data.get(deliverable) if deliverable else None,
+            "council": mem.data.get("council"),  # метаданные совещания на отборе (если совет судил)
             "memory_keys": list(mem.data.keys()),
             "trace": trace,
             "steps": len(trace),
