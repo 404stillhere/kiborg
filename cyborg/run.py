@@ -18,6 +18,7 @@ from wiring import build_organs  # noqa: E402
 from orchestrator import Cyborg  # noqa: E402
 from registry import load_catalog  # noqa: E402
 import ask_llm  # noqa: E402
+import keychain  # noqa: E402  (ключи -> цепочка интуиции для совета на шаге отбора идей)
 from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемся на граф)
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -43,13 +44,34 @@ def main(argv):
     except Exception as e:
         cat_n = "?(" + str(e)[:30] + ")"
     cy = Cyborg(build_organs(), safe_mode=True)
-    # живая модель для генератора идей (ключ из gemini.md / GEMINI_KEY); мозг оставлен на stub
+    # живая модель для генератора идей (ключ из gemini.md / GEMINI_KEY); планировщик — stub
     env = {}
     if ask_llm.available():
         env["content_llm"] = ask_llm.ask
-        brain_mode = f"идеи=Gemini({ask_llm._MODEL}), мозг=stub"
+        brain_mode = f"идеи=Gemini({ask_llm._MODEL}), планировщик=stub"
     else:
-        brain_mode = "идеи=stub, мозг=stub (ключа нет)"
+        brain_mode = "идеи=stub, планировщик=stub (ключа нет)"
+    # СОВЕТ на шаге отбора идей (гейт снят юзером 2026-07-13): цепочка интуиции из ключей
+    # киборга -> отбор судит взвешенный совет (арбитр+интуиция), а не один судья. Нет ключей
+    # -> цепочка пустая -> совет спит, отбор байт-в-байт как раньше.
+    chain = keychain.build_chain()
+    if chain:
+        env["llm_chain"] = chain
+    # ОРКЕСТР (7-модельный совет, вес 0.20) — за ОТДЕЛЬНЫМ гейтом: дорогой (N вызовов × модели).
+    # Просыпается только флагом KIBORG_WAKE_ORCHESTRA и только когда интуиция сомневается.
+    if os.environ.get("KIBORG_WAKE_ORCHESTRA"):
+        orch = keychain.orchestra_context()
+        if orch:
+            env["orchestra"] = orch
+    # честно: пишем ДОСТУПНОСТЬ голосов, не факт голосования — кто в моменте ответит, тот и судит
+    # (интуиция может воздержаться на сбое сети; реальные голоса прогона — в метаданных council).
+    if chain:
+        avail = f"интуиция×{len(chain)}"
+        if env.get("orchestra"):
+            avail += f"+оркестр×{len(env['orchestra']['models'])}"
+        brain_mode += f" | отбор: совет вкл (доступно: {avail}; кто ответит — тот голосует)"
+    else:
+        brain_mode += " | отбор: один судья"
     out = cy.run(goal, env=env)
 
     print(f"КАТАЛОГ: {cat_n} органов | ИСПОЛНЯЕМЫХ подключено: {len(cy.organs)} | {brain_mode}")

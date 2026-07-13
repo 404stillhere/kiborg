@@ -5,6 +5,7 @@
 """
 import json
 import os
+import subprocess
 import sys
 
 _IDEA = "M:/projects/kiborg/idea_engine"
@@ -20,6 +21,8 @@ import finish_sink  # noqa: E402  (sink: доводит nudge «доделай»
 import stash_sink  # noqa: E402  (sink: копит идеи в копилку без потолка — для автономных прогонов)
 import seen_items  # noqa: E402  (фильтр «уже видели» по ID сырых items — только для харвеста)
 from organs_vendored import scrub_secrets  # noqa: E402  (вендорен из реестра, чистый)
+import mind  # noqa: E402  (движок взвешенного совещания — отбор идей советом, не одним судьёй)
+import advisors  # noqa: E402  (три советника: арбитр rank_ideas + интуиция ask_llm + оркестр)
 
 RECON = "M:/projects/panelofprojects/recon.json"
 
@@ -73,11 +76,109 @@ def _run_ideate(inputs, env):
     return ideate.run(inp, e)
 
 
+class _IntuitionNoCap(advisors.AskLlmAdvisor):
+    """Интуиция (ask_llm) БЕЗ потолка на ответ (реш. юзера 2026-07-13: «убрать ограничение
+    вообще»). Рассуждающие модели closerouter при max_tokens=256 тратят весь лимит на скрытое
+    рассуждение и возвращают пусто → интуиция молчит. Проверено: без max_tokens deepseek
+    досказывает рассуждение (~1000 токенов) и отдаёт баллы.
+
+    Копия родительского _ask с одним отличием — в payload НЕТ ключа max_tokens (модель берёт
+    свой дефолт-бюджет). Это единственный обход чужого хардкода: их advisors.py не трогаем.
+    Когда параллельная сессия добавит max_tokens в context — этот подкласс удалить."""
+
+    def _ask(self, chain, prompt, budget_ms):
+        if not os.path.exists(self._js):
+            return None
+        n = max(1, len(chain))
+        per_provider_ms = max(3000, budget_ms // n)
+        payload = {"inputs": {"prompt": prompt, "temperature": 0.2},   # без max_tokens — потолок снят
+                   "env": {"chain": chain, "timeout_ms": per_provider_ms}}
+        try:
+            proc = subprocess.run([self._node, self._js], input=json.dumps(payload),
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  timeout=max(5, budget_ms // 1000 + 5))
+        except Exception:
+            return None
+        if proc.returncode != 0 and not proc.stdout.strip():
+            return None
+        try:
+            res = json.loads(proc.stdout.strip().splitlines()[-1])
+        except Exception:
+            return None
+        return res.get("text") if res.get("ok") else None
+
+
+def _council_no_cap(context=None):
+    """Тот же совет (advisors.build_council), но голос интуиции — БЕЗ потолка (_IntuitionNoCap).
+    Арбитр и оркестр берём как есть из их модуля; подменяем только ask_llm."""
+    return [_IntuitionNoCap() if getattr(a, "name", "") == "ask_llm" else a
+            for a in advisors.build_council(context)]
+
+
+def _rank_by_council(inputs, env, keep):
+    """Отбор топ-keep идей ВЗВЕШЕННЫМ СОВЕТОМ (mind.think), а не одиночным судьёй.
+
+    Совет = арбитр rank_ideas (0.41) + интуиция ask_llm (0.39); оркестр (0.20) спит, пока
+    вызыватель явно не даст env['orchestra'] (отдельный гейт — дорогой). Совет ставит балл
+    каждой идее, берём топ-keep по итоговому баллу — так форма ideas_best (список) цела,
+    downstream (scrub/deliver) не трогаем.
+
+    Возвращает {'ideas_best':[...]} когда проголосовал хоть один советник (арбитр внутри
+    mind.think опрашивается первым, живой моделью — его результат и переиспользуем, чтобы НЕ
+    звать rank_ideas.run повторно). solo=True в метаданных = по факту судил один арбитр.
+    None только если воздержались ВСЕ (degraded) -> вызыватель идёт на плоский rank_ideas."""
+    ideas = list((inputs or {}).get("ideas") or [])
+    if len(ideas) <= keep:
+        return {"ideas_best": ideas}                # отбирать не из чего — отдаём как есть
+    # варианты для совета: копия идей с явным id=индекс, чтобы вернуть ИСХОДНЫЕ дикты по id
+    options, orig = [], {}
+    for i, d in enumerate(ideas):
+        base = dict(d) if isinstance(d, dict) else {"title": str(d)}
+        options.append({**base, "id": i})
+        orig[i] = d
+    context = {
+        "content_llm": _content_llm(env),           # оживляет арбитра живой моделью (иначе фолбэк-порядок)
+        "llm_chain": env.get("llm_chain"),          # оживляет интуицию (цепочка провайдеров с ключами)
+        "orchestra": env.get("orchestra"),          # оркестр (по умолчанию None -> спит за своим гейтом)
+        "escalate_gap": env.get("escalate_gap", 0.15),
+        "llm_timeout_ms": env.get("llm_timeout_ms", 45000),
+    }
+    verdict = mind.think(
+        "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость.",
+        options, _council_no_cap(context), context)
+    live = verdict.get("live") or []
+    if verdict.get("degraded") or not live:          # никто не проголосовал -> плоский откат на судью
+        return None
+    # Арбитр внутри mind.think УЖЕ отработал живой моделью (его опрашивают первым). Поэтому и
+    # когда голос один (интуиция/оркестр промолчали), берём готовый результат ОТСЮДА, а не зовём
+    # rank_ideas.run повторно — иначе второй платный вызов той же модели (нашёл скептик 2026-07-13).
+    scores = verdict.get("scores") or {}
+    ranked = sorted(orig, key=lambda oid: (-float(scores.get(oid, 0.0)), oid))  # по баллу, стабильно
+    solo = len(live) < 2                             # по факту судил один арбитр (честная пометка)
+    tag = "solo" if solo else "council"
+    best = [dict(orig[oid], judged=tag) if isinstance(orig[oid], dict) else orig[oid]
+            for oid in ranked[:keep]]
+    return {"ideas_best": best,
+            "council": {"live": live, "solo": solo, "woken": verdict.get("council_woken"),
+                        "why": verdict.get("why")}}
+
+
 def _run_rank(inputs, env):
+    env = env if isinstance(env, dict) else {}
     e = {"keep": 3}  # оставить топ-3 из пула
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
+    # СОВЕТ в живом цикле (гейт снят юзером 2026-07-13, ход Г): идеи судит взвешенный совет,
+    # если есть 2-й живой голос (в env принесли цепочку интуиции / оркестр). Иначе — прежний
+    # одиночный судья, офлайн байт-в-байт. Любой сбой совета -> тихий откат, конвейер не встаёт.
+    if env.get("council") is not False and (env.get("llm_chain") or env.get("orchestra")):
+        try:
+            out = _rank_by_council(inputs, env, keep=int(e["keep"]))
+            if out is not None:
+                return out
+        except Exception:
+            pass                                     # совет никогда не роняет отбор идей
     return rank_ideas.run(inputs, e)
 
 

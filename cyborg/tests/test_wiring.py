@@ -4,6 +4,7 @@
 переданный env и жёстко звал collect_source.run(inputs, {"n": 8, "source": "hn"}) —
 harvest.py-шный SOURCE_N=30 и список sources реально не долетали до живого прогона.
 """
+import json
 import os
 import sys
 import tempfile
@@ -217,6 +218,120 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         content = lambda p: "c"
         wiring._run_rank({}, {"content_llm": content, "llm": lambda p: "g"})
         self.assertIs(captured["llm"], content)
+
+
+class TestRunRankCouncil(unittest.TestCase):
+    """_run_rank со включённым советом (гейт снят 2026-07-13). Проверяем: совет судит идеи,
+    НЕТ двойного платного вызова судьи (регресс от скептика), откат по сбою/деградации/гварду."""
+
+    IDEAS = [{"title": "A", "why": "a"}, {"title": "B", "why": "b"}, {"title": "C", "why": "c"},
+             {"title": "D", "why": "d"}, {"title": "E", "why": "e"}]
+
+    def setUp(self):
+        self._orig_think = wiring.mind.think
+        self._orig_rank = wiring.rank_ideas.run
+        self.rank_calls = []
+
+        def fake_rank(inputs, env):
+            self.rank_calls.append(env)
+            return {"ideas_best": [{"title": "FALLBACK"}]}
+
+        wiring.rank_ideas.run = fake_rank
+
+    def tearDown(self):
+        wiring.mind.think = self._orig_think
+        wiring.rank_ideas.run = self._orig_rank
+
+    def test_council_two_voices_ranks_by_score_no_double_call(self):
+        def fake_think(q, options, council, context):
+            return {"live": ["rank_ideas", "ask_llm"], "degraded": False, "council_woken": False,
+                    "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1}, "why": "тест"}
+
+        wiring.mind.think = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        self.assertIn("council", out)
+        self.assertFalse(out["council"]["solo"])
+        self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "C"])  # топ-3 по баллу
+        self.assertTrue(all(i["judged"] == "council" for i in out["ideas_best"]))
+        self.assertEqual(self.rank_calls, [])   # НИ ОДНОГО повторного вызова судьи
+
+    def test_solo_arbiter_reuses_no_second_judge_call(self):
+        # интуиция промолчала -> 1 голос (арбитр). Переиспользуем его результат, НЕ зовём судью снова.
+        def fake_think(q, options, council, context):
+            return {"live": ["rank_ideas"], "degraded": False, "council_woken": False,
+                    "scores": {0: 0.5, 1: 0.9, 2: 0.1, 3: 0.7, 4: 0.2}, "why": "solo"}
+
+        wiring.mind.think = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        self.assertTrue(out["council"]["solo"])
+        self.assertEqual([i["title"] for i in out["ideas_best"]], ["B", "D", "A"])
+        self.assertTrue(all(i["judged"] == "solo" for i in out["ideas_best"]))
+        self.assertEqual(self.rank_calls, [])   # ключевой регресс: второго платного вызова НЕТ
+
+    def test_degraded_all_abstain_falls_back_to_single_judge(self):
+        wiring.mind.think = lambda q, o, c, ctx: {"live": [], "degraded": True, "scores": {}}
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})
+        self.assertEqual(len(self.rank_calls), 1)   # ровно один — прежний судья
+
+    def test_council_exception_silent_fallback(self):
+        def boom(q, o, c, ctx):
+            raise RuntimeError("совет упал")
+
+        wiring.mind.think = boom
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})   # конвейер не встал
+        self.assertEqual(len(self.rank_calls), 1)
+
+    def test_no_chain_no_council(self):
+        called = []
+        wiring.mind.think = lambda *a, **k: called.append(1) or {"live": ["x", "y"], "scores": {}}
+        out = wiring._run_rank({"ideas": self.IDEAS}, {})       # нет llm_chain/orchestra
+        self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})
+        self.assertEqual(called, [])                            # в совет даже не заходили
+
+    def test_council_false_flag_disables(self):
+        called = []
+        wiring.mind.think = lambda *a, **k: called.append(1) or {"live": ["x", "y"], "scores": {}}
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "council": False})
+        self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})
+        self.assertEqual(called, [])
+
+    def test_small_pool_returns_as_is_without_council(self):
+        called = []
+        wiring.mind.think = lambda *a, **k: called.append(1) or {}
+        three = self.IDEAS[:3]                                  # <= keep=3 — отбирать не из чего
+        out = wiring._run_rank({"ideas": three}, {"llm_chain": [{"id": "x"}]})
+        self.assertEqual(out["ideas_best"], three)
+        self.assertEqual(called, [])
+
+
+class TestIntuitionNoCap(unittest.TestCase):
+    """_IntuitionNoCap — интуиция БЕЗ потолка: payload к organ.js не должен нести max_tokens
+    (иначе рассуждающие модели тратят лимит на обдумывание и молчат)."""
+
+    def test_ask_payload_has_no_max_tokens(self):
+        captured = {}
+
+        class _Proc:
+            returncode = 0
+            stdout = json.dumps({"ok": True, "text": '{"scores":{"0":50}}'})
+
+        def fake_run(cmd, input=None, **kw):
+            captured["payload"] = json.loads(input)
+            return _Proc()
+
+        orig_run, orig_exists = wiring.subprocess.run, wiring.os.path.exists
+        wiring.subprocess.run = fake_run
+        wiring.os.path.exists = lambda p: True
+        try:
+            txt = wiring._IntuitionNoCap()._ask([{"id": "deepseek"}], "prompt", 45000)
+        finally:
+            wiring.subprocess.run = orig_run
+            wiring.os.path.exists = orig_exists
+        self.assertNotIn("max_tokens", captured["payload"]["inputs"])   # потолок снят
+        self.assertIn("chain", captured["payload"]["env"])
+        self.assertEqual(txt, '{"scores":{"0":50}}')
 
 
 if __name__ == "__main__":
