@@ -5,8 +5,9 @@
 мутную карточку (ссылка на отсутствующее, термины вместо картинки). Отдельный ОЦЕНОЧНЫЙ проход
 (тот же принцип, что у rank_ideas — генератор не судит себя сам; но тут судим ЧИТАЕМОСТЬ, а не
 пользу) ставит каждому why балл 0-10 и НИЖЕ ПОРОГА переписывает ТОЛЬКО описание самонесущим.
-Переписанное ПЕРЕ-оценивает тем же судьёй и оставляет правку ТОЛЬКО если балл вырос —
-слабый rewrite не должен уходить хуже исходного (иначе возвращаем старое). Идею не теряем,
+Переписанное СРАВНИВАЕТ со старым в ОДНОМ вызове судьи (пара old|new — иначе несравнимо:
+батчевый и сольный балл судья калибрует по-разному) и берёт правку ТОЛЬКО если новый текст
+строго лучше И реально отличается — слабый rewrite не уходит хуже исходного. Идею не теряем,
 карточку не выкидываем, количество не меняем — правим текст на месте.
 
 Контракт: run(inputs, env) -> {"ideas_polished": [...]}.
@@ -118,18 +119,25 @@ def run(inputs, env):
         if sc is not None:
             card["read_score"] = round(sc, 1)
             if sc < min_score:
-                new_why = _rewrite(llm, card.get("title", ""), card.get("why", ""))
-                if new_why:
-                    # РЕ-ОЦЕНКА переписанного: правку оставляем ТОЛЬКО если балл СТРОГО вырос —
-                    # слабый rewrite не должен уходить хуже исходного (тот и так ниже порога).
-                    # Судим тем же судьёй (score_llm/llm), +1 повтор на шум, как у исходной оценки.
-                    probe = [{"title": card.get("title", ""), "why": new_why}]
-                    ns = _score(judge, probe) or _score(judge, probe)
-                    new_sc = ns[0] if (ns and ns[0] is not None) else None
-                    if new_sc is not None and new_sc > sc:
+                title = card.get("title", "")
+                old_why = card.get("why", "")
+                new_why = _rewrite(llm, title, old_why)
+                if new_why and new_why != old_why:
+                    # РЕ-ОЦЕНКА: старый и новый текст судим В ОДНОМ вызове (пара old|new), иначе
+                    # несравнимо — батчевый sc и сольный балл судья калибрует по-разному (по
+                    # соседям в промпте), и сольная оценка систематически выше. Правку берём ТОЛЬКО
+                    # если новый СТРОГО лучше старого В ТЕХ ЖЕ УСЛОВИЯХ. +1 повтор на шум/частичный
+                    # парс. Не лучше → откат на старое (карточка не должна стать хуже).
+                    pair = [{"title": title, "why": old_why}, {"title": title, "why": new_why}]
+                    ps = _score(judge, pair)
+                    if not ps or len(ps) < 2 or ps[0] is None or ps[1] is None:
+                        ps = _score(judge, pair)
+                    old_s = ps[0] if (ps and len(ps) > 0) else None
+                    new_s = ps[1] if (ps and len(ps) > 1) else None
+                    if old_s is not None and new_s is not None and new_s > old_s:
                         card["why"] = new_why
                         card["read_fixed"] = True
-                        card["read_score"] = round(new_sc, 1)   # балл отражает финальный текст
+                        card["read_score"] = round(new_s, 1)   # балл финального текста (в паре)
         out.append(card)
     return {"ideas_polished": out}
 
@@ -137,9 +145,9 @@ def run(inputs, env):
 if __name__ == "__main__":
     NEW = "Ошейник для собаки с микрофоном: распознаёт лай и шлёт хозяину, что это было."
     def fake(p):
+        # батч [c0,c1]: c0 мутная (3) -> перепишем; пара [old,new]: new (9) > old (3) -> правку берём
         if '"scores"' in p:
-            # ре-оценка переписанного (в промпте виден новый текст) даёт высокий балл -> правку берём
-            return '{"scores":[9]}' if "распознаёт лай и шлёт" in p else '{"scores":[3,9]}'
+            return '{"scores":[3,9]}'
         return '{"why":"%s"}' % NEW
     demo = [{"title": "BarkTalk", "why": "На базе идеи говорящего ошейника — ключевые звуки (щенка в пути)"},
             {"title": "PayWhenEarn", "why": "Платишь только когда заработал — простая понятная схема без аванса"}]
