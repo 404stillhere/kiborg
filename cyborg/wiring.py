@@ -116,11 +116,13 @@ def _council_no_cap(context=None):
 
 
 def _rank_by_council(inputs, env, keep):
-    """Отбор топ-keep идей ВЗВЕШЕННЫМ СОВЕТОМ (mind.think), а не одиночным судьёй.
+    """Отбор топ-keep идей ВЗВЕШЕННЫМ СОВЕТОМ (mind.deliberate), а не одиночным судьёй.
 
-    Совет = арбитр rank_ideas (0.41) + интуиция ask_llm (0.39); оркестр (0.20) спит, пока
-    вызыватель явно не даст env['orchestra'] (отдельный гейт — дорогой). Совет ставит балл
-    каждой идее, берём топ-keep по итоговому баллу — так форма ideas_best (список) цела,
+    Совет = арбитр rank_ideas (0.41) + интуиция ask_llm (0.39) + оркестр (0.20). Оркестр
+    голосует ВСЕГДА, когда есть ключи (реш. юзера: совет зовётся всегда, а не по сомнению
+    интуиции — «умный сомневается всегда»). Потому deliberate (плоский, все голосуют
+    безусловно), а НЕ think (там оркестр за эскалацией). Совет ставит балл каждой идее,
+    берём топ-keep по итоговому баллу — так форма ideas_best (список) цела,
     downstream (scrub/deliver) не трогаем.
 
     Возвращает {'ideas_best':[...]} когда проголосовал хоть один советник (арбитр внутри
@@ -136,14 +138,24 @@ def _rank_by_council(inputs, env, keep):
         base = dict(d) if isinstance(d, dict) else {"title": str(d)}
         options.append({**base, "id": i})
         orig[i] = d
+    # Оркестр теперь голосует на КАЖДОМ отборе (горячий путь) и судит весь пул идей подряд.
+    # Чтобы 6 идей × рецензент не вылезли за таймаут пульта (180с): гоним ВСЕХ рецензентов
+    # параллельно (max_workers = число моделей) и держим короткий бюджет на идею. Настройки
+    # кладём в cfg здесь — keychain/advisors их принимают, но сами не трогаются.
+    orch = env.get("orchestra")
+    if isinstance(orch, dict) and orch.get("models"):
+        orch = {**orch, "max_workers": len(orch["models"]),
+                "timeout_sec": int(env.get("orchestra_timeout_sec", 45))}
     context = {
         "content_llm": _content_llm(env),           # оживляет арбитра живой моделью (иначе фолбэк-порядок)
         "llm_chain": env.get("llm_chain"),          # оживляет интуицию (цепочка провайдеров с ключами)
-        "orchestra": env.get("orchestra"),          # оркестр (по умолчанию None -> спит за своим гейтом)
-        "escalate_gap": env.get("escalate_gap", 0.15),
+        "orchestra": orch,                          # оркестр: голосует всегда (параллельно, короткий бюджет)
         "llm_timeout_ms": env.get("llm_timeout_ms", 45000),
     }
-    verdict = mind.think(
+    # deliberate = плоский совет: арбитр + интуиция + оркестр голосуют ВСЕ и ВСЕГДА (кто без
+    # ключа — сам воздержится). Не think: там оркестр спал, пока интуиция не засомневается —
+    # ровно та «пропущу совет, раз уверен» логика, которую юзер не хотел.
+    verdict = mind.deliberate(
         "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость.",
         options, _council_no_cap(context), context)
     live = verdict.get("live") or []
@@ -159,7 +171,7 @@ def _rank_by_council(inputs, env, keep):
     best = [dict(orig[oid], judged=tag) if isinstance(orig[oid], dict) else orig[oid]
             for oid in ranked[:keep]]
     return {"ideas_best": best,
-            "council": {"live": live, "solo": solo, "woken": verdict.get("council_woken"),
+            "council": {"live": live, "solo": solo, "woken": ("orchestra" in live),
                         "why": verdict.get("why")}}
 
 

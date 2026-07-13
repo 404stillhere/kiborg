@@ -1,82 +1,85 @@
-"""ask_llm — адаптер к живой модели (Google Gemini) для генератора идей (и, при желании,
-мозга). Контракт органов: env['llm'] = callable(prompt:str) -> str. Здесь эта функция.
+"""ask_llm — речевой центр генератора идей. Идёт по ТОЙ ЖЕ цепочке, что интуиция мозга:
+closerouter (deepseek → glm5 → muse → codex), один ключ CLOSEROUTER_API_KEY.
 
-Ключ НЕ в коде: читается из env-переменной (GEMINI_KEY / LLM_KEY) или из файла
-(по умолчанию M:/projects/kiborg/gemini.md). Значение ключа НИКОГДА не логируем.
-Только stdlib (urllib) — без внешних зависимостей.
+Раньше это был ОТДЕЛЬНЫЙ провод к Gemini (свой ключ gemini.md, свой эндпоинт). Юзер свёл
+генератор и интуицию на ОДИН провайдер/ключ (2026-07-13): Gemini на этой сети недоступен
+(SSL-таймаут), и генератор молча падал на заглушку. Теперь цепочку/ключи держит keychain
+(llm_keys.env, .gitignore), транспорт — DarBench/organ.js (node), тот же, что у интуиции.
 
-Промпт и разбор ответа делает КАЖДЫЙ вызыватель сам (ideate строит свой промпт и парсит
-JSON-строки идей; brain — планирующий JSON). ask() лишь гоняет prompt -> text и снимает
-markdown-заборчик ```json```. При любой ошибке (нет ключа/сеть/HTTP/пустой ответ)
-возвращает "" — вызыватель тогда честно падает на stub. Наружу утечь секрету неоткуда:
-ключ уходит только в query-параметр запроса к Google, в возврат/лог не попадает.
+Контракт для органов НЕ изменился: env['llm'] = callable(prompt:str) -> str. При любой
+ошибке (нет ключа / сеть / пустой ответ) -> "" -> вызыватель (ideate) честно падает на stub.
+Значение ключа НИКОГДА не логируем и не возвращаем — оно уходит только в chain -> organ.js.
+Только stdlib (subprocess/json) + keychain.
 """
 import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
+import subprocess
 
-_KEY_FILE = os.environ.get("GEMINI_KEY_FILE", "M:/projects/kiborg/gemini.md")
-_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+import keychain  # цепочка интуиции (та же, что кормит совет) — единый источник ключей
+
+_NODE_EXE = os.environ.get("KIBORG_NODE_EXE", "node")
+_ORGAN_JS = os.environ.get("KIBORG_ASK_LLM_JS", "M:/projects/DarBench/organ.js")
+_TIMEOUT_MS = int(os.environ.get("KIBORG_ASK_LLM_TIMEOUT_MS", "60000"))
+
+# Ярлык для пульта/логов (serve.py, harvest.py, run.py читают ask_llm._MODEL). Реальная
+# модель — первая живая в цепочке; тут статичное человекочитаемое имя провайдера.
+_MODEL = "deepseek/closerouter"
 
 
-def load_key():
-    """Ключ из env или файла. Пусто -> "" (вызыватель уйдёт на stub). Значение не логируем."""
-    k = os.environ.get("GEMINI_KEY") or os.environ.get("LLM_KEY")
-    if k:
-        return k.strip()
-    try:
-        with open(_KEY_FILE, encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception:
-        return ""
+def _chain():
+    """Цепочка интуиции из keychain (deepseek→glm5→muse→codex на одном ключе). Пусто -> []."""
+    return keychain.build_chain()
 
 
 def available():
-    return bool(load_key())
+    """Жив ли генератор — есть ли ключ цепочки (ровно тот же, что у интуиции)."""
+    return len(_chain()) > 0
 
 
 def _strip_fence(t):
-    """Снять обёртку ```json ... ``` — вызыватели парсят по строкам, заборчик им мешает."""
+    """Снять обёртку ```json ... ``` — ideate парсит по строкам, заборчик ему мешает."""
     t = (t or "").strip()
     if t.startswith("```"):
         t = "\n".join(ln for ln in t.splitlines() if not ln.strip().startswith("```")).strip()
     return t
 
 
-def _extract(j):
-    cand = (j.get("candidates") or [{}])[0]
-    parts = (cand.get("content") or {}).get("parts") or []
-    return _strip_fence("".join(p.get("text", "") for p in parts))
-
-
-def ask(prompt, key=None, model=None, timeout=60, max_tokens=2048, temperature=0.9):
-    key = key or load_key()
-    if not key:
+def _run_chain(chain, prompt, timeout_ms):
+    """Один прогон DarBench/organ.js по цепочке (тот же транспорт, что интуиция). Текст | "".
+    max_tokens НЕ шлём — reasoning-модели (deepseek) при малом лимите тратят его на обдумывание
+    и молчат; берут свой дефолт-бюджет (organ.js: 8192). temperature 0.9 — генерация, не суд."""
+    if not chain or not os.path.exists(_ORGAN_JS):
         return ""
-    url = _ENDPOINT.format(model=model or _MODEL, key=urllib.parse.quote(key))
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingBudget": 0},  # без «размышления»: дешевле/быстрее для генерации
-        },
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    n = max(1, len(chain))
+    per_provider_ms = max(3000, timeout_ms // n)     # медленный провайдер не съедает весь бюджет
+    payload = {"inputs": {"prompt": prompt, "temperature": 0.9},
+               "env": {"chain": chain, "timeout_ms": per_provider_ms}}
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return _extract(json.loads(r.read().decode("utf-8", "replace")))
+        proc = subprocess.run([_NODE_EXE, _ORGAN_JS], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8",
+                              timeout=max(5, timeout_ms // 1000 + 5))
     except Exception:
-        return ""  # сеть/HTTP/парс упали — вызыватель уйдёт на stub, цикл не роняем
+        return ""                                    # node/сеть упали -> "" -> вызыватель на stub
+    if proc.returncode != 0 and not proc.stdout.strip():
+        return ""
+    try:
+        res = json.loads(proc.stdout.strip().splitlines()[-1])
+    except Exception:
+        return ""
+    return _strip_fence(res.get("text") or "") if res.get("ok") else ""
+
+
+def ask(prompt, timeout_ms=None):
+    """prompt -> text по цепочке интуиции. "" при любом сбое (вызыватель уйдёт на stub)."""
+    chain = _chain()
+    if not chain:
+        return ""
+    return _run_chain(chain, prompt, timeout_ms or _TIMEOUT_MS)
 
 
 if __name__ == "__main__":
     if not available():
-        print("SMOKE SKIP: ключа нет (gemini.md / GEMINI_KEY)")
+        print("SMOKE SKIP: цепочки нет (llm_keys.env / CLOSEROUTER_API_KEY)")
     else:
         out = ask('Верни РОВНО одну строку JSON и ничего больше: {"ok":true}')
         print("SMOKE", "OK" if '"ok"' in out or "ok" in out.lower() else "FAIL", "|", repr(out[:160]))

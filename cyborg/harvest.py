@@ -222,7 +222,7 @@ def main(argv):
     n = max(1, min(n, 50))  # предохранитель: не больше 50 прогонов за вызов
     goal = "приноси свежие идеи в копилку"
     env = _harvest_env()
-    mode = (f"идеи=Gemini({ask_llm._MODEL})" if ask_llm.available() else "идеи=stub (ключа нет)") \
+    mode = (f"идеи={ask_llm._MODEL}" if ask_llm.available() else "идеи=stub (ключа нет)") \
         + f" · источники={'+'.join(SOURCES)} (бюджет {SOURCE_N})" + (" · force" if force else "")
 
     cy = Cyborg(build_harvest_organs(), safe_mode=True)
