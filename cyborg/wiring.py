@@ -15,6 +15,7 @@ if _IDEA not in sys.path:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from organs import collect_source, ideate, finish_step, rank_ideas, readability_gate  # noqa: E402
+from store import state_lock  # noqa: E402  (O_EXCL-замок; тот же примитив, что вокруг state.json)
 from core import Organ  # noqa: E402
 import deliver  # noqa: E402  (cyborg/deliver.py — sink в инбокс idea_engine)
 import finish_sink  # noqa: E402  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
@@ -25,6 +26,24 @@ import advisors  # noqa: E402  (три советника: арбитр rank_ide
 
 RECON = "M:/projects/panelofprojects/recon.json"
 SKIP_FOLDERS = []  # folder'ы, которые режим B не толкает (пусто = не фильтровать); knob finish_step
+
+
+# Телеграм-сессия (pyrogram/SQLite) не терпит двух процессов разом ('database is locked'):
+# гейт-проба, живой прогон и внешний CLI могут пересечься на одном .session. Сериализуем ДОСТУП
+# O_EXCL-замком на файле сессии (тот же примитив, что вокруг state.json) — второй процесс ЖДЁТ
+# освобождения, а не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался,
+# а не прошёл вслепую. Замороженный collect_source НЕ трогаем — оборачиваем его ВЫЗОВ. Нет
+# телеграма (нет telegram_session) → без замка, как раньше.
+_TG_LOCK_TIMEOUT = 130.0
+
+
+def _collect_locked(inputs, env):
+    """collect_source.run под замком tg-сессии, когда телеграм в игре (иначе — как есть)."""
+    sess = (env or {}).get("telegram_session")
+    if sess:
+        with state_lock(sess, timeout=_TG_LOCK_TIMEOUT, poll=0.2):
+            return collect_source.run(inputs, env)
+    return collect_source.run(inputs, env)
 
 
 def _run_collect(inputs, env):
@@ -54,7 +73,7 @@ def _run_collect(inputs, env):
     # Глаза ТОЛЬКО смотрят — приносят всё, что увидели, без фильтра «уже видели». Помнить,
     # что уже обдумывали, — работа Мозга (см. _run_ideate): фильтр переехал туда 2026-07-13,
     # чтобы метафора не врала (смотреть ≠ помнить).
-    return collect_source.run(inputs, e)
+    return _collect_locked(inputs, e)   # под замком tg-сессии, если телеграм в игре
 
 
 def _content_llm(env):

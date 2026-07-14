@@ -471,5 +471,62 @@ class TestRunIdeateDeferredSeen(unittest.TestCase):
         self.assertEqual(seen_items.load(), {"hn:1", "hn:2"})
 
 
+class TestCollectLockedTgSession(unittest.TestCase):
+    """Замок tg-сессии (вариант А): collect_source под O_EXCL, пока телеграм в игре — два
+    процесса не лезут в один .session разом ('database is locked'). Примитив от ОС — оффлайн-тест."""
+
+    def setUp(self):
+        self._orig = wiring.collect_source.run
+        self.tmp = tempfile.mkdtemp(prefix="tglock_")
+        self.sess = os.path.join(self.tmp, "kiborg_tg.session")
+
+    def tearDown(self):
+        wiring.collect_source.run = self._orig
+
+    def test_lock_held_during_fetch_and_released_after(self):
+        held = {}
+
+        def fake(inputs, env):
+            held["lock"] = os.path.exists(self.sess + ".lock")   # замок держится В МОМЕНТ фетча
+            return {"items": [], "degraded": False}
+
+        wiring.collect_source.run = fake
+        wiring._collect_locked({}, {"telegram_session": self.sess})
+        self.assertTrue(held["lock"])                            # держали эксклюзивно во время фетча
+        self.assertFalse(os.path.exists(self.sess + ".lock"))   # снят после выхода
+
+    def test_no_lock_without_telegram(self):
+        seen = {}
+
+        def fake(inputs, env):
+            seen["called"] = True
+            seen["any_lock"] = any(f.endswith(".lock") for f in os.listdir(self.tmp))
+            return {"items": []}
+
+        wiring.collect_source.run = fake
+        wiring._collect_locked({}, {"n": 8})                     # нет telegram_session -> без замка
+        self.assertTrue(seen["called"])                         # фетч всё равно прошёл
+        self.assertFalse(seen.get("any_lock"))                  # замка не было
+
+    def test_second_caller_waits_then_proceeds_no_deadlock(self):
+        # «чужой процесс» держит лок -> ждём до таймаута и ПРОХОДИМ (без дедлока), чужой лок не трогаем
+        open(self.sess + ".lock", "w").close()
+        orig_to = wiring._TG_LOCK_TIMEOUT
+        wiring._TG_LOCK_TIMEOUT = 0.2                            # короткий таймаут — тест быстрый
+        proceeded = {}
+
+        def fake(inputs, env):
+            proceeded["yes"] = True
+            return {"items": []}
+
+        wiring.collect_source.run = fake
+        try:
+            wiring._collect_locked({}, {"telegram_session": self.sess})
+        finally:
+            wiring._TG_LOCK_TIMEOUT = orig_to
+        self.assertTrue(proceeded["yes"])                       # прошёл по таймауту, не завис
+        self.assertTrue(os.path.exists(self.sess + ".lock"))    # ЧУЖОЙ лок не тронут
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -25,7 +25,7 @@ except Exception:
 import hashlib  # noqa: E402
 import json  # noqa: E402
 
-from wiring import build_organs  # noqa: E402  (та же цепочка, что у ручного прогона → deliver в инбокс)
+from wiring import build_organs, _collect_locked  # noqa: E402  (цепочка + фетч под замком tg-сессии)
 from orchestrator import Cyborg  # noqa: E402
 import ask_llm  # noqa: E402
 import keychain  # noqa: E402  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
@@ -211,12 +211,13 @@ def _source_signature():
     NB: count_fresh — non-mutating, ничего не отмечает виденным (отметка — только в реальном
     прогоне, внутри wiring._run_collect, чтобы не терять сырьё на прогонах, что сами же пропустили)."""
     try:
-        from organs import collect_source  # idea_engine/organs (путь добавлен wiring)
         # ПОЛНЫЙ env прогона (вкл. telegram-креды), а не голые n/sources — чтобы отпечаток И статус
         # видели ВСЕ 5 источников так же, как реальный прогон. Иначе telegram без кредов в пробе
         # ложно «упал» (no channels), а он в прогоне работает. Цена — один pyrogram-спавн на
         # гейт-проверку (раз в ~30 мин); зато gate ловит и telegram-churn, а статус честен.
-        out = collect_source.run({}, _harvest_env())
+        # Под замком tg-сессии (_collect_locked): гейт-проба — отдельный фетч телеги, её тоже
+        # сериализуем, иначе проба и внешний прогон могли бы столкнуться на одном .session.
+        out = _collect_locked({}, _harvest_env())
     except Exception as e:
         # не молчим: без отпечатка _should_run пустит прогон ВСЛЕПУЮ — покажем причину
         print(f"гейт-проба источника упала ({type(e).__name__}: {e}) — прогон пойдёт без отпечатка")
