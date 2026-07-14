@@ -55,6 +55,15 @@ class TestRankIdeas(unittest.TestCase):
         self.assertEqual(titles, ["Идея 1", "Идея 2", "Идея 0"])  # дубль схлопнут + добор до keep
         self.assertEqual([b["judged"] for b in out["ideas_best"]], ["llm", "llm", "fill"])
 
+    def test_direction_steers_rubric(self):
+        # направление попадает в рубрику судьи (при прочих равных — тема в приоритете)
+        seen = {}
+        rank_ideas.run({"ideas": POOL},
+                       {"keep": 3, "direction": "здоровье",
+                        "llm": lambda p: seen.setdefault("p", p) or '{"top":[0,1,2]}'})
+        self.assertIn("здоровье", seen["p"])
+        self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

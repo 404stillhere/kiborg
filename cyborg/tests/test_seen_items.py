@@ -60,6 +60,21 @@ class TestSeenItems(unittest.TestCase):
         fresh = seen_items.filter_fresh([{"title": "B", "source": "reddit", "id": 1}])
         self.assertEqual(len(fresh), 1)  # разные источники — разные ключи, не путаются
 
+    def test_filter_fresh_mark_false_does_not_persist(self):
+        # mark=False: только фильтрует, файл не трогает (пометка отложена до успешной генерации)
+        items = [{"title": "A", "source": "hn", "id": 1}]
+        self.assertEqual(len(seen_items.filter_fresh(items, mark=False)), 1)
+        self.assertNotIn("hn:1", seen_items.load())                 # НЕ отмечено
+        self.assertEqual(len(seen_items.filter_fresh(items, mark=False)), 1)  # всё ещё свежий
+
+    def test_mark_seen_persists(self):
+        items = [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}]
+        seen_items.filter_fresh(items, mark=False)                  # не метит
+        seen_items.mark_seen(items)                                 # метит явно
+        self.assertIn("hn:1", seen_items.load())
+        self.assertIn("hn:2", seen_items.load())
+        self.assertEqual(seen_items.filter_fresh(items, mark=False), [])  # теперь всё виденное
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -35,6 +35,9 @@ def _log_run(out):
     note = harvest.council_note(out)
     if note:
         line += f" | совет: {note}"
+    dn = harvest._degrade_note(out)
+    if dn:
+        line += f" | ⚠ {dn}"          # деградация видна в истории (обе кнопки согласованы)
     line += "\n"
     # защита класса: даже если в результат/цель просочился секрет — в лог он не ляжет
     with open(os.path.join(DATA, "runs.md"), "a", encoding="utf-8") as f:
@@ -75,6 +78,8 @@ def main(argv):
         brain_mode += " | отбор: один судья"
     out = cy.run(goal, env=env)
 
+    if env.get("direction"):
+        print(f"НАПРАВЛЕНИЕ: идеи в сторону «{env['direction']}»")
     print(f"КАТАЛОГ: {cat_n} органов | ИСПОЛНЯЕМЫХ подключено: {len(cy.organs)} | {brain_mode}")
     print(f"ЦЕЛЬ: {out['goal']}  ->  нужен результат-ключ: {out['deliverable']}")
     print(f"РОУТЕР отобрал: {out['routed']}")
@@ -95,6 +100,9 @@ def main(argv):
     note = harvest.council_note(out)
     if note:
         print("СОВЕТ НА ОТБОРЕ:", note)
+    dn = harvest._degrade_note(out)
+    if dn:
+        print("⚠ ДЕГРАДАЦИЯ:", dn)
     _log_run(out)
     print("след прогона ->", os.path.join(DATA, "runs.md"))
 

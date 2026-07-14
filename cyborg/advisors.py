@@ -83,9 +83,14 @@ class RankIdeasAdvisor:
         # Исключение: при 1 варианте keep=1=len — модель не зовётся, но единственный вариант
         # тривиально получает 1.0, судить нечего.
         keep = max(1, len(ideas) - 1)
+        rank_env = {"keep": keep}
+        if callable(llm):
+            rank_env["llm"] = llm
+        if ctx.get("direction"):                    # руль темы долетает и до арбитра (рубрика rank_ideas)
+            rank_env["direction"] = ctx["direction"]
         try:
             run = self._load()
-            out = run({"ideas": ideas}, {"keep": keep, **({"llm": llm} if callable(llm) else {})})
+            out = run({"ideas": ideas}, rank_env)
         except Exception:
             return None
         best = out.get("ideas_best") or []
@@ -99,7 +104,19 @@ class RankIdeasAdvisor:
             order.append(oid)
         for o in options:                           # варианты, не попавшие в ранжирование -> 0
             scores.setdefault(o["id"], 0.0)
-        judged = "llm" if callable(llm) else "fallback(порядок)"
+        # честный статус судьи из ВЫВОДА органа, а не «был ли передан llm»: rank_ideas метит
+        # карточки judged=llm/fill (живой суд) или fallback (стр.74/77). Нет ни одной метки llm =
+        # живой вызов не сработал (502/непарс) ИЛИ llm не было → это ПОРЯДОК, не суждение. Раньше
+        # мерили по callable(llm) → при мёртвой сети рапортовали «llm», хотя по факту фолбэк (root #1).
+        was_live = any(b.get("judged") == "llm" for b in best)
+        # Ключ БЫЛ (llm передан), но живой суд не сработал (502/непарс → rank_ideas на порядок-фолбэк):
+        # это НЕ суждение арбитра, а порядок. ВОЗДЕРЖИВАЕМСЯ (None) — иначе совет зачтёт фолбэк как
+        # полноценный голос (вес 0.41) и рапортует «арбитр судил» на мусоре (audit medium, часть-b).
+        # mind.deliberate воздержание обрабатывает: если и другие молчат — degraded → плоский откат.
+        # БЕЗ ключа (offline) порядок-фолбэк — ШТАТНЫЙ детерминированный судья → голосуем как раньше.
+        if callable(llm) and not was_live:
+            return None
+        judged = "llm" if was_live else "fallback(порядок)"
         return mind.opinion(scores, rationale=f"рубрика/{judged}: топ {order[:3]}", raw=out)
 
 
@@ -184,10 +201,21 @@ class AskLlmAdvisor:
             return None
         # ЭСКАЛАЦИЯ: интуиция САМА решает звать ли совет (think()). Эвристика — разброс:
         # два лучших варианта близки => интуиция не уверена => поднять флаг. Порог из ctx.
+        # Считаем на ФАКТИЧЕСКИХ баллах (реальный разброс мнения), ДО импутации.
         gap = float(ctx.get("escalate_gap", 0.15))
         top = sorted(scores.values(), reverse=True)
         escalate = len(top) >= 2 and (top[0] - top[1]) < gap
-        return mind.opinion(scores, rationale=f"модель оценила {len(scores)} вар.",
+        # ИМПУТАЦИЯ пропущенных id: модель могла НЕ вернуть часть вариантов (ошибка форматирования —
+        # промпт просил оценить КАЖДЫЙ, это не «я против»). Без этого mind._tally зачёл бы им жёсткий
+        # 0 и утопил бы идею, которую судья ценит (audit medium, mind.py:84). Ставим СРЕДНЕЕ реальных
+        # баллов — нейтраль вместо 0. Фикс advisor-side: mind.py заморожен (контракт _tally цел — он
+        # по-прежнему 0-дефолтит, просто интуиция больше не отдаёт частичное).
+        n_rated = len(scores)
+        if n_rated < len(options):
+            mean = sum(scores.values()) / n_rated
+            for o in options:
+                scores.setdefault(o["id"], mean)
+        return mind.opinion(scores, rationale=f"модель оценила {n_rated}/{len(options)} вар.",
                             raw=text, escalate=escalate)
 
 
@@ -224,6 +252,15 @@ class OrchestraAdvisor:
             self._run = mod.run
         return self._run
 
+    @staticmethod
+    def _score_verdicts(verdicts):
+        """Средний балл рецензентов по варианту. Вердикт НОРМАЛИЗУЕМ (регистр/пробелы) — «APPROVE»
+        и « blocked » матчат ключи. Неизвестный/None → 0.0 (fail-closed: как parse_review в
+        organ.py, неразобранное = НЕ одобрение), а НЕ нейтральные 0.5 — те копили пропуск как
+        «серединку» и подтягивали зарубленную идею вверх, а мис-регистр одобрения топили вниз."""
+        vals = [OrchestraAdvisor._VERDICT_SCORE.get(str(v).strip().lower(), 0.0) for v in verdicts]
+        return sum(vals) / len(vals) if vals else 0.0
+
     def opine(self, question, options, context):
         ctx = context or {}
         cfg = ctx.get("orchestra")                  # {models:[...], chat|darbench_gateway:...}
@@ -248,8 +285,7 @@ class OrchestraAdvisor:
             verdicts = [r.get("verdict") for r in (out.get("reviewers") or []) if r.get("status") == "ok"]
             if not verdicts:
                 continue
-            vals = [self._VERDICT_SCORE.get(str(v), 0.5) for v in verdicts]
-            scores[o["id"]] = sum(vals) / len(vals)     # средний вердикт совета по варианту
+            scores[o["id"]] = self._score_verdicts(verdicts)   # средний вердикт совета по варианту
         if not scores:
             return None
         return mind.opinion(scores, rationale=f"совет оценил {len(scores)} вар.", raw=None)

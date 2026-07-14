@@ -28,6 +28,10 @@ ARRAY = """[
 JSONL = ('{"title":"Идея A","why":"раз","effort":"легко"}\n'
          '{"title":"Идея B","why":"два","effort":"тяжело"}')
 
+# модель обернула список в объект — частый ответ рассуждающих моделей на JSON-схему
+WRAPPED = ('{"ideas":[{"title":"Идея A","why":"раз","effort":"легко"},'
+           '{"title":"Идея B","why":"два","effort":"средне"}]}')
+
 
 class TestIdeateParse(unittest.TestCase):
     def test_parses_gemini_array(self):
@@ -43,6 +47,14 @@ class TestIdeateParse(unittest.TestCase):
         self.assertEqual([i["title"] for i in out["ideas"]], ["Идея A", "Идея B"])
         self.assertTrue(all(i["brain"] == "llm" for i in out["ideas"]))
 
+    def test_parses_wrapped_ideas_object(self):
+        # модель обернула список в объект {"ideas":[...]} — достаём реальные идеи,
+        # а не пустую карточку-обёртку (и не глушим фолбэк на stub пустышкой)
+        out = ideate.run({"items": ITEMS}, {"k": 3, "llm": lambda p: WRAPPED})
+        self.assertEqual([i["title"] for i in out["ideas"]], ["Идея A", "Идея B"])
+        self.assertTrue(all(i["brain"] == "llm" for i in out["ideas"]))
+        self.assertTrue(all(i["title"] for i in out["ideas"]))   # карточки не пустые
+
     def test_respects_k_limit(self):
         out = ideate.run({"items": ITEMS}, {"k": 1, "llm": lambda p: ARRAY})
         self.assertEqual(len(out["ideas"]), 1)
@@ -55,6 +67,20 @@ class TestIdeateParse(unittest.TestCase):
     def test_no_llm_is_stub(self):
         out = ideate.run({"items": ITEMS}, {"k": 2})
         self.assertTrue(all(i["brain"] == "stub" for i in out["ideas"]))
+
+    def test_direction_steers_prompt(self):
+        # руль темы попадает в запрос модели (генератор гнёт идеи в направление)
+        seen = {}
+        ideate.run({"items": ITEMS},
+                   {"k": 2, "direction": "железки", "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        self.assertIn("железки", seen["p"])
+        self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
+
+    def test_no_direction_no_steer(self):
+        # без направления руль в запрос НЕ вставляется (поведение как раньше)
+        seen = {}
+        ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        self.assertNotIn("НАПРАВЛЕНИЕ", seen["p"])
 
 
 if __name__ == "__main__":

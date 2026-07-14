@@ -42,6 +42,22 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(names, ["collect_source", "ideate"])  # порядок дата-флоу
         self.assertEqual(out["trace"][-1].get("action"), "finish")
 
+    def test_degraded_signal_surfaces_in_output(self):
+        # root #1: degraded из источника выходит В ВЫХЛОП (не тонет в mem.data), а dropped_stub
+        # без доставки = 0 (не падает). Так лог/пульт могут показать сбой, а не «доставлено N».
+        def src_degraded(inputs, env):
+            return {"items": [1, 2], "degraded": True}
+
+        organs = [
+            Organ("collect_source", "собрать свежие идеи источник", src_degraded, role="source",
+                  produces=["items"], tags=["идеи", "собрать", "свежие"]),
+            Organ("ideate", "придумать идеи предложить", xf, role="transform",
+                  produces=["ideas"], consumes=["items"], tags=["идея", "идеи"]),
+        ]
+        out = Cyborg(organs, max_steps=6).run("приноси свежие идеи", env={})
+        self.assertTrue(out["degraded"])
+        self.assertEqual(out["dropped_stub"], 0)
+
     def test_router_selects_relevant_subset(self):
         many = base_organs() + [Organ("noise%d" % i, "нерелевантный шум",
                                        lambda i, e: {}, tags=["zzz"]) for i in range(12)]

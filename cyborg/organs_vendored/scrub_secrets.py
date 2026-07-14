@@ -14,11 +14,24 @@ import re
 NEEDS_KEYS: list = []
 
 _SECRET_PATTERNS = [
-    re.compile(r"(?i)(sk|xai|ghp|gho|ghs|github_pat|AIza)[-_][A-Za-z0-9_\-]{16,}"),
+    re.compile(r"(?i)(sk|xai|ghp|gho|ghs|github_pat)[-_][A-Za-z0-9_\-]{16,}"),
+    # Google/Gemini API key: AIza + 35 символов, БЕЗ разделителя после префикса. Реальные
+    # ключи — AIzaSy…, не AIza-… (прежний паттерн требовал [-_] и не ловил их НИКОГДА, хотя
+    # именно этот класс ключа проект и держит — GEMINI_API_KEY). Вынесен в свой паттерн.
+    re.compile(r"AIza[0-9A-Za-z_\-]{35}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
+    # JWT: три base64url-сегмента через точку, начинается с eyJ (base64 от '{"'). Ловит
+    # session/id-токены, что прежние паттерны пропускали (не sk-/KEY=/bearer).
+    re.compile(r"eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"),
     re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]{20,}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(?im)^(\s*(?:[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)\s*[=:]\s*)\S+"),
+    # инлайн-креды в URI: scheme://user:password@host — редактим пару user:pass, @host цел
+    # (lookahead не съедает @). Ловит mongodb://user:pass@…, redis://…, postgres://… и т.п.
+    re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)[^\s:/@]+:[^\s:/@]+(?=@)"),
+    # вебхуки Slack/Discord — секрет прямо в URL, редактим целиком
+    re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/_\-]{20,}"),
+    re.compile(r"(?i)https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\-]{20,}"),
     # сырой Telegram bot-token <id>:<auth> — ровно тот класс креда, что лежит
     # открытым текстом в recon.next_step по проектам («ротация токена бота 12345:AAH…»);
     # не покрывался прежними паттернами (нет sk-/KEY=/bearer). 30+ символов auth-части

@@ -241,3 +241,70 @@ def test_council_offline_only_arbiter_alive():
     assert v["live"] == ["rank_ideas"]
     assert v["degraded"] is False
     assert v["choice_id"] == "A"
+
+
+def test_orchestra_score_verdicts_normalizes_and_fail_closed():
+    # неизвестный/None вердикт -> 0.0 (fail-closed, как parse_review в organ.py), НЕ нейтральные
+    # 0.5; регистр/пробелы нормализуются, чтобы мис-регистр одобрения не топился вниз.
+    S = advisors.OrchestraAdvisor._score_verdicts
+    assert S(["approve"]) == 1.0
+    assert S(["APPROVE"]) == 1.0            # регистр нормализован
+    assert S([" blocked "]) == 0.0         # пробелы обрезаны
+    assert S(["changes_requested"]) == 0.5
+    assert S(["reject"]) == 0.0            # неизвестный -> fail-closed 0.0 (раньше было бы 0.5)
+    assert S([None]) == 0.0                # None -> fail-closed
+    assert S(["approve", "blocked"]) == 0.5   # среднее двух
+    assert S([]) == 0.0                    # пусто -> 0.0, без деления на ноль
+
+
+def test_arbiter_abstains_when_key_present_but_call_fails():
+    # content_llm ПЕРЕДАН, но вернул мусор -> rank_ideas на fallback. Арбитр ВОЗДЕРЖИВАЕТСЯ (None),
+    # а НЕ голосует порядком как «живой» голос совета (audit medium, часть-b): фолбэк при живом
+    # ключе = сбой сети/парса, не суждение. mind увидит воздержание и не зачтёт вес 0.41 на мусоре.
+    adv = advisors.RankIdeasAdvisor()
+    opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
+    op = adv.opine("отбери лучшую", opts, {"content_llm": lambda p: "не json мусор"})
+    assert op is None
+
+
+def test_arbiter_votes_offline_with_fallback_rationale():
+    # БЕЗ ключа (offline) порядок-фолбэк — ШТАТНЫЙ детерминированный судья: арбитр ГОЛОСУЕТ
+    # (не воздерживается), а rationale честно «fallback(порядок)».
+    adv = advisors.RankIdeasAdvisor()
+    opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
+    op = adv.opine("отбери лучшую", opts, {})   # нет content_llm/llm
+    assert op is not None
+    assert "fallback(порядок)" in op["rationale"]
+    assert "рубрика/llm" not in op["rationale"]
+
+
+def test_intuition_imputes_mean_for_omitted_ids():
+    # модель НЕ вернула балл для id "C" (ошибка форматирования) -> интуиция ставит СРЕДНЕЕ реальных
+    # баллов, а НЕ жёсткий 0 (иначе mind._tally утопил бы вариант, что судья ценит — mind.py:84).
+    adv = advisors.AskLlmAdvisor()
+    adv._ask = lambda chain, prompt, budget: '{"scores":{"A":80,"B":40}}'   # id C пропущен
+    opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
+    op = adv.opine("оцени", opts, {"llm_chain": [{"id": "x"}]})
+    assert op is not None
+    sc = op["scores"]
+    assert sc["A"] == 0.8 and sc["B"] == 0.4
+    assert "C" in sc                               # пропущенный НЕ потерян
+    assert abs(sc["C"] - 0.6) < 1e-9               # среднее (0.8+0.4)/2, НЕ 0
+    assert "2/3" in op["rationale"]                # честно: оценено 2 из 3
+
+
+def test_intuition_no_imputation_when_all_rated():
+    adv = advisors.AskLlmAdvisor()
+    adv._ask = lambda chain, prompt, budget: '{"scores":{"A":80,"B":40,"C":60}}'
+    opts = [{"id": "A", "title": "а"}, {"id": "B", "title": "б"}, {"id": "C", "title": "в"}]
+    op = adv.opine("оцени", opts, {"llm_chain": [{"id": "x"}]})
+    assert op["scores"] == {"A": 0.8, "B": 0.4, "C": 0.6}
+
+
+def test_arbiter_rationale_honest_on_live():
+    # валидный ответ судьи -> rationale честно «llm»
+    adv = advisors.RankIdeasAdvisor()
+    opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
+    op = adv.opine("отбери лучшую", opts, {"content_llm": lambda p: '{"top":[2,0]}'})
+    assert op is not None
+    assert "рубрика/llm" in op["rationale"]

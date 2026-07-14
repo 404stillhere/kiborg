@@ -54,4 +54,9 @@ class Cyborg:
             "trace": trace,
             "steps": len(trace),
             "routed": [o.name for o in router_mod.route(goal, self.organs, self.k)],
+            # сигналы деградации наружу (root #1: провенанс не только ВНУТРИ mem.data, но и в
+            # выхлопе — чтобы лог/пульт показывали «источник в фолбэке» / «отсеяно болванок»,
+            # а не рапортовали здоровье на мусоре). observe() кладёт ВСЕ ключи результата органа.
+            "degraded": bool(mem.data.get("degraded")),
+            "dropped_stub": int(mem.data.get("dropped_stub") or 0),
         }

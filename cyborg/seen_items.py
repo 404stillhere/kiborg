@@ -48,10 +48,13 @@ def count_fresh(items):
     return sum(1 for it in items if _item_key(it) not in seen or _item_key(it) is None)
 
 
-def filter_fresh(items):
-    """Возвращает items МИНУС уже виденные и отмечает возвращённые (с id) виденными.
-    Items без id (никогда не должно случиться для наших источников, но на всякий) —
-    всегда проходят: лучше лишний раз показать, чем молча потерять сырьё."""
+def filter_fresh(items, mark=True):
+    """Возвращает items МИНУС уже виденные. По умолчанию (mark=True) СРАЗУ отмечает
+    возвращённые (с id) виденными и персистит — прежнее поведение. mark=False: только
+    фильтрует, файл НЕ трогает — пометку делает отдельный mark_seen ПОСЛЕ успешной генерации,
+    чтобы транзиентная осечка ideate не сожгла сырьё безвозвратно (см. wiring._run_ideate).
+    Items без id (не должно случаться для наших источников, но на всякий) — всегда проходят:
+    лучше лишний раз показать, чем молча потерять сырьё."""
     seen = load()
     original = set(seen)
     fresh = []
@@ -59,8 +62,22 @@ def filter_fresh(items):
         key = _item_key(it)
         if key is None or key not in original:
             fresh.append(it)
+        if mark and key is not None:
+            seen.add(key)
+    if mark and seen != original:
+        _save(seen)
+    return fresh
+
+
+def mark_seen(items):
+    """Отметить items (с id) виденными и персистить. Вызывать ПОСЛЕ успешной генерации идей,
+    чтобы транзиентный сбой ideate (осечка парса / обрыв сети → болванки) не сжёг сырьё:
+    непомеченные посты пройдут filter_fresh на следующем тике и получат ещё один шанс."""
+    seen = load()
+    original = set(seen)
+    for it in items:
+        key = _item_key(it)
         if key is not None:
             seen.add(key)
     if seen != original:
         _save(seen)
-    return fresh

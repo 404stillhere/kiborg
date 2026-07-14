@@ -82,6 +82,40 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         self.assertNotIn("telegram_channels", captured)
         self.assertNotIn("telegram_session", captured)
 
+    def test_prefetched_out_reused_without_second_fetch(self):
+        # гейт уже сфетчил (harvest кладёт prefetched_out) -> _run_collect возвращает его,
+        # collect_source ВТОРОЙ раз НЕ зовётся (не тянем телегу дважды за тик)
+        def boom(inputs, env):
+            raise AssertionError("collect_source не должен вызываться при валидном prefetched_out")
+
+        wiring.collect_source.run = boom
+        pf = {"items": [{"title": "из гейта", "id": 1, "source": "telegram"}], "degraded": False}
+        out = wiring._run_collect({}, {"prefetched_out": pf})
+        self.assertIs(out, pf)                        # тот же выхлоп гейта, без нового фетча
+
+    def test_no_prefetch_fetches_normally(self):
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured["called"] = True
+            return {"items": [], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"n": 30, "sources": ["telegram"]})
+        self.assertTrue(captured.get("called"))       # без prefetch — фетчим как раньше
+
+    def test_invalid_prefetch_falls_back_to_fetch(self):
+        # prefetched_out без ключа items (невалидно, напр. сбой гейта) -> фетчим сами
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured["called"] = True
+            return {"items": [], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"prefetched_out": {"degraded": True}})   # нет items
+        self.assertTrue(captured.get("called"))
+
 
 class TestRunCollectDoesNotFilter(unittest.TestCase):
     """Глаза (2026-07-13): фильтр «уже видели» переехал в Мозг (_run_ideate) — collect_source
@@ -219,6 +253,39 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         wiring._run_rank({}, {"content_llm": content, "llm": lambda p: "g"})
         self.assertIs(captured["llm"], content)
 
+    def test_ideate_threads_direction(self):
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas": []}
+
+        wiring.ideate.run = fake
+        wiring._run_ideate({}, {"direction": "железки"})
+        self.assertEqual(captured["direction"], "железки")   # руль долетел до генератора
+
+    def test_ideate_no_direction_key_when_absent(self):
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas": []}
+
+        wiring.ideate.run = fake
+        wiring._run_ideate({}, {})
+        self.assertNotIn("direction", captured)              # без руля ключа нет
+
+    def test_rank_threads_direction(self):
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas_best": []}
+
+        wiring.rank_ideas.run = fake
+        wiring._run_rank({}, {"direction": "игры"})          # без совета -> фолбэк-судья с рулём
+        self.assertEqual(captured["direction"], "игры")
+
 
 class TestRunRankCouncil(unittest.TestCase):
     """_run_rank со включённым советом (гейт снят 2026-07-13). Проверяем: совет судит идеи,
@@ -309,6 +376,32 @@ class TestRunRankCouncil(unittest.TestCase):
         self.assertEqual(out["ideas_best"], three)
         self.assertEqual(called, [])
 
+    def test_council_question_and_context_carry_direction(self):
+        # руль долетает до совета: интуиция/оркестр видят тему в ВОПРОСЕ, арбитр — в КОНТЕКСТЕ
+        seen = {}
+
+        def fake_think(q, options, council, context):
+            seen["q"], seen["ctx"] = q, context
+            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
+                    "scores": {i: 0.5 for i in range(len(options))}, "why": "t"}
+
+        wiring.mind.deliberate = fake_think
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "direction": "здоровье"})
+        self.assertIn("здоровье", seen["q"])
+        self.assertEqual(seen["ctx"]["direction"], "здоровье")
+
+    def test_council_question_plain_without_direction(self):
+        seen = {}
+
+        def fake_think(q, options, council, context):
+            seen["q"] = q
+            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
+                    "scores": {i: 0.5 for i in range(len(options))}, "why": "t"}
+
+        wiring.mind.deliberate = fake_think
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        self.assertNotIn("направлении", seen["q"])              # без руля вопрос обычный
+
 
 class TestIntuitionNoCap(unittest.TestCase):
     """_IntuitionNoCap — интуиция БЕЗ потолка: payload к organ.js не должен нести max_tokens
@@ -336,6 +429,46 @@ class TestIntuitionNoCap(unittest.TestCase):
         self.assertNotIn("max_tokens", captured["payload"]["inputs"])   # потолок снят
         self.assertIn("chain", captured["payload"]["env"])
         self.assertEqual(txt, '{"scores":{"0":50}}')
+
+
+class TestRunIdeateDeferredSeen(unittest.TestCase):
+    """_run_ideate метит сырьё виденным ТОЛЬКО после успешной генерации — не жжёт при осечке."""
+
+    def setUp(self):
+        self._orig_seen_path = seen_items.PATH
+        self._tmp = tempfile.mkdtemp(prefix="wiring_seen_")
+        seen_items.PATH = os.path.join(self._tmp, "seen_items.json")
+        self._orig_ideate = wiring.ideate.run
+
+    def tearDown(self):
+        seen_items.PATH = self._orig_seen_path
+        wiring.ideate.run = self._orig_ideate
+
+    @staticmethod
+    def _items():
+        return [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}]
+
+    def test_stub_failure_does_not_burn_items(self):
+        # живой ключ + осечка -> болванки brain='stub'. Посты НЕ метятся: сбой транзиентный,
+        # повторим на следующем тике (раньше метились ДО генерации и сгорали навсегда).
+        wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "болванка", "brain": "stub"}]}
+        out = wiring._run_ideate({"items": self._items()},
+                                 {"filter_seen_items": True, "content_llm": lambda p: "x"})
+        self.assertTrue(out["ideas"])
+        self.assertEqual(seen_items.load(), set())               # ничего не сожжено
+        self.assertEqual(len(seen_items.filter_fresh(self._items(), mark=False)), 2)  # оба ещё свежи
+
+    def test_real_generation_marks_items(self):
+        wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "реальная", "brain": "llm"}]}
+        wiring._run_ideate({"items": self._items()},
+                           {"filter_seen_items": True, "content_llm": lambda p: "x"})
+        self.assertEqual(seen_items.load(), {"hn:1", "hn:2"})     # успех -> отмечены
+
+    def test_stub_marks_when_no_key(self):
+        # без ключа (stub-режим) болванки ожидаемы -> метим как обычно
+        wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "болванка", "brain": "stub"}]}
+        wiring._run_ideate({"items": self._items()}, {"filter_seen_items": True})
+        self.assertEqual(seen_items.load(), {"hn:1", "hn:2"})
 
 
 if __name__ == "__main__":

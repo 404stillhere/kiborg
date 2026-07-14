@@ -61,7 +61,12 @@ def run(inputs, env):
     if callable(llm):
         items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')[:100]}"
                           for i, d in enumerate(ideas))
-        idxs = _pick(llm(RUBRIC.format(n=len(ideas), keep=keep, items=items)), len(ideas), keep)
+        prompt = RUBRIC.format(n=len(ideas), keep=keep, items=items)
+        direction = (env.get("direction") or "").strip()
+        if direction:                       # при прочих равных — идеи В НАПРАВЛЕНИИ выше
+            prompt = (f"Отбираешь под НАПРАВЛЕНИЕ «{direction}»: при прочих равных идея, "
+                      f"бьющая в «{direction}», предпочтительнее.\n" + prompt)
+        idxs = _pick(llm(prompt), len(ideas), keep)
         if idxs:
             picked = set(idxs)
             chosen = list(idxs)

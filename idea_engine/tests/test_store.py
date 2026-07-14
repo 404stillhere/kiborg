@@ -94,6 +94,56 @@ class TestStore(unittest.TestCase):
         self.assertEqual(s2.data["tick"], 5)
         self.assertEqual(len(s2.open_ideas()), 1)
 
+    def test_save_atomic_valid_no_tmp(self):
+        # save пишет валидный JSON и не оставляет .tmp-огрызок рядом
+        s = Store(self.path, cap=0)
+        s.add_idea(_idea("идея одна"))
+        s.save()
+        with open(self.path, encoding="utf-8") as f:
+            json.load(f)                       # читается как валидный JSON
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
+
+    def test_save_atomic_keeps_original_on_failure(self):
+        # обрыв сериализации НЕ усекает существующий state.json + чистит огрызок
+        s = Store(self.path, cap=0)
+        s.add_idea(_idea("валидная идея"))
+        s.save()
+        before = open(self.path, encoding="utf-8").read()
+        s.data["bad"] = {1, 2, 3}              # set не сериализуется json.dump -> TypeError
+        with self.assertRaises(TypeError):
+            s.save()
+        after = open(self.path, encoding="utf-8").read()
+        self.assertEqual(before, after)        # оригинал цел, не усечён
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
+
+    def test_state_lock_acquires_and_releases(self):
+        from store import state_lock
+        lp = self.path + ".lock"
+        with state_lock(self.path, timeout=1.0) as held:
+            self.assertTrue(held)                    # взяли эксклюзивно
+            self.assertTrue(os.path.exists(lp))      # lockfile существует, пока держим
+        self.assertFalse(os.path.exists(lp))         # снят после выхода
+
+    def test_state_lock_proceeds_when_foreign_held(self):
+        import time as _t
+        from store import state_lock
+        lp = self.path + ".lock"
+        open(lp, "w").close()                        # «другой процесс» держит лок
+        t0 = _t.time()
+        with state_lock(self.path, timeout=0.2, poll=0.05) as held:
+            self.assertFalse(held)                   # не смогли взять -> прошли по timeout (без дедлока)
+        self.assertGreaterEqual(_t.time() - t0, 0.2)  # реально ждали timeout
+        self.assertTrue(os.path.exists(lp))          # ЧУЖОЙ лок не тронули
+
+    def test_state_lock_mutual_exclusion(self):
+        # ядро гарантии (O_EXCL): двое не держат лок одновременно
+        from store import state_lock
+        with state_lock(self.path, timeout=1.0) as first:
+            self.assertTrue(first)
+            with state_lock(self.path, timeout=0.15, poll=0.05) as second:
+                self.assertFalse(second)             # второй не взял, пока первый держит
+        self.assertFalse(os.path.exists(self.path + ".lock"))  # первый вышел -> снято
+
 
 class TestTickModes(unittest.TestCase):
     """Режимы A/B на подменённых органах — без сети."""
@@ -169,6 +219,30 @@ class TestDedup(unittest.TestCase):
         self.assertTrue(s.add_idea(_idea("Бот для трекинга финансов")))   # РАЗНАЯ тема
         self.assertTrue(s.add_idea(_idea("Бот для трекинга привычек")))    # и ещё одна
         self.assertEqual(len(s.open_ideas()), 3)
+
+    def test_superset_adds_word_not_dup(self):
+        # регресс аудита 2026-07-14: подмножество НЕ должно схлопывать более богатую идею.
+        # «трекер сна» уже был → «трекер сна и настроения» несёт новое (настроение) → пропускаем.
+        # Раньше схлопывалось: Jaccard {трекер,сна}/{трекер,сна,настроения} = 2/3 = 0.67 >= 0.6.
+        s = Store(self.path, cap=5)
+        self.assertTrue(s.add_idea(_idea("Трекер сна")))
+        self.assertTrue(s.add_idea(_idea("Трекер сна и настроения")))
+        self.assertEqual(len(s.open_ideas()), 2)
+
+    def test_subset_of_seen_is_dup(self):
+        # обратный порядок: богатую видели → бедное подмножество нового не даёт → дубль
+        s = Store(self.path, cap=5)
+        self.assertTrue(s.add_idea(_idea("Трекер сна и настроения")))
+        self.assertFalse(s.add_idea(_idea("Трекер сна")))            # «сна» уже покрыто богатой
+        self.assertEqual(len(s.open_ideas()), 1)
+
+    def test_near_overlap_still_dedups(self):
+        # ветка Jaccard жива: почти одинаковые со взаимно-уникальными словами схлопываются.
+        # {трекер,сна,привычек,дыхания} vs {…,питания}: пересечение 3, объединение 5 → 0.6 → дубль
+        s = Store(self.path, cap=5)
+        self.assertTrue(s.add_idea(_idea("трекер сна привычек дыхания")))
+        self.assertFalse(s.add_idea(_idea("трекер сна привычек питания")))
+        self.assertEqual(len(s.open_ideas()), 1)
 
     def test_seen_persists_across_load(self):
         s = Store(self.path, cap=3)

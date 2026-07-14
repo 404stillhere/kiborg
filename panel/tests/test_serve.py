@@ -2,7 +2,7 @@
 
 Прицел — не UI, а места, где сервер трогает диск и чужой ввод:
   1. _save_layout — ЕДИНСТВЕННАЯ запись POST-данных браузера на диск: валидатор + атомарность + потолок.
-  2. _read_stash / _read_runs — парсинг файлов состояния, устойчивость к мусору/отсутствию.
+  2. _read_runs — парсинг файла журнала прогонов, устойчивость к мусору/отсутствию.
   3. _set_idea — гейт статуса ДО subprocess (никаких сторонних значений в CLI).
 Пишем во временные папки через монкипатч глобалей serve.* — реальные файлы пульта не трогаем.
 Только stdlib. Запуск: cd panel && python -m unittest discover -s tests -p "test_*.py"
@@ -59,31 +59,6 @@ class TestSaveLayout(unittest.TestCase):
         big = {f"k{i}": {"x": i, "y": i} for i in range(serve._LAYOUT_MAX_KEYS + 30)}
         serve._save_layout(big)
         self.assertLessEqual(len(self._read()), serve._LAYOUT_MAX_KEYS)
-
-
-class TestReadStash(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="serve_st_")
-        os.makedirs(os.path.join(self.tmp, "data"))
-        self._orig = serve.CYBORG
-        serve.CYBORG = self.tmp
-
-    def tearDown(self):
-        serve.CYBORG = self._orig
-
-    def test_parses_and_skips_junk(self):
-        p = os.path.join(self.tmp, "data", "idea_stash.jsonl")
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(json.dumps({"title": "Первая", "brain": "llm"}) + "\n")
-            f.write("\n")               # пустая строка — пропустить
-            f.write("{битый json\n")    # мусор — пропустить, не падать
-            f.write(json.dumps({"title": "Вторая"}) + "\n")
-        r = serve._read_stash()
-        self.assertEqual(r["total"], 2)
-        self.assertEqual(r["latest"][0]["title"], "Вторая")  # свежие сверху
-
-    def test_missing_file_safe(self):
-        self.assertEqual(serve._read_stash(), {"total": 0, "latest": []})
 
 
 class TestReadRuns(unittest.TestCase):
@@ -145,6 +120,25 @@ class TestSetIdeaGate(unittest.TestCase):
         r = serve._set_idea(1, "; rm -rf")
         self.assertFalse(r["ok"])
         self.assertIn("take|later|trash", r["msg"])
+
+    def test_triage_deferred_while_run_active(self):
+        # идёт прогон (deliver пишет state.json) -> триаж НЕ мутирует файл параллельно
+        # (lost-update): отбивается ДО subprocess с флагом busy
+        orig_running = serve.RUN["running"]
+        orig_sub = serve.subprocess.run
+
+        def _boom(*a, **k):
+            raise AssertionError("subprocess не должен вызываться при активном прогоне")
+
+        serve.RUN["running"] = True
+        serve.subprocess.run = _boom
+        try:
+            r = serve._set_idea(1, "trash")
+            self.assertFalse(r["ok"])
+            self.assertTrue(r.get("busy"))
+        finally:
+            serve.subprocess.run = orig_sub
+            serve.RUN["running"] = orig_running
 
 
 class TestStopRun(unittest.TestCase):

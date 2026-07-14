@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from store import Store  # noqa: E402
+from store import Store, state_lock  # noqa: E402
 from organs import collect_source, ideate, finish_step  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -122,12 +122,13 @@ def _cli(argv):
         print(__doc__)
         return
     cmd = argv[0]
-    store = Store(STATE, cap=CFG["cap"])
     if cmd == "tick":
         seed = None
         if "--seed" in argv:
             seed = argv[argv.index("--seed") + 1]
-        info = tick(store, seed_path=seed)
+        with state_lock(STATE):        # замок вокруг load→save (другой процесс не затрёт state.json)
+            store = Store(STATE, cap=CFG["cap"])
+            info = tick(store, seed_path=seed)
         print("TICK", info)
         print("inbox ->", INBOX)
     elif cmd == "status":
@@ -135,9 +136,11 @@ def _cli(argv):
         if st not in ("take", "later", "trash"):
             print("статус должен быть take|later|trash")
             return
-        ok = store.set_status(idea_id, st)
-        store.save()
-        _write_inbox(store)
+        with state_lock(STATE):        # триаж пульта: замок вокруг load→set_status→save
+            store = Store(STATE, cap=CFG["cap"])
+            ok = store.set_status(idea_id, st)
+            store.save()
+            _write_inbox(store)
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")
     elif cmd == "show":
         print(open(INBOX, encoding="utf-8").read() if os.path.exists(INBOX) else "(инбокса ещё нет)")

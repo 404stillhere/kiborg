@@ -29,11 +29,13 @@ from wiring import build_organs  # noqa: E402  (та же цепочка, что
 from orchestrator import Cyborg  # noqa: E402
 import ask_llm  # noqa: E402
 import keychain  # noqa: E402  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
-import stash  # noqa: E402
+import direction  # noqa: E402  (руль темы: env["direction"] для генератора/судьи)
 import seen_items  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+# автосбор доставляет в ИНБОКС idea_engine (через deliver), НЕ в копилку — отчёт строим по инбоксу
+_IE_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "idea_engine", "data")
 STATE_FILE = os.path.join(DATA, "harvest_state.json")
 STATUS_FILE = os.path.join(DATA, "source_status.json")  # живой per-source статус для пульта
 
@@ -121,6 +123,9 @@ def _source_env():
         env["telegram_timeout"] = 90   # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
     if ask_llm.available():
         env["content_llm"] = ask_llm.ask
+    d = direction.current()
+    if d:
+        env["direction"] = d               # руль темы (пусто = без направления, как раньше)
     return env
 
 
@@ -179,9 +184,19 @@ def _status_from_out(out):
             "degraded": bool(out.get("degraded")), "sources": sources}
 
 
+def _atomic_write(path, text):
+    """Атомарная запись: во временный файл рядом + os.replace — обрыв записи НЕ обрежет файл
+    (старый цел до последнего шага). Живой статус/отпечаток источников пишем им."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def _persist_status(status):
-    """Атомарно пишет живой статус источников (переиспользуем атомарную запись копилки)."""
-    stash.Stash._atomic_write(STATUS_FILE, json.dumps(status, ensure_ascii=False))
+    """Атомарно пишет живой статус источников для пульта."""
+    _atomic_write(STATUS_FILE, json.dumps(status, ensure_ascii=False))
 
 
 def _source_signature():
@@ -190,7 +205,8 @@ def _source_signature():
     ИЛИ изменились, но всё новое мы уже разбирали раньше (fresh_n==0 — точнее, чем просто хеш).
     Отпечаток покрывает ОБЪЕДИНЕНИЕ источников (SOURCES) — иначе смена в reddit/lobsters/
     gh_trending при неизменном HN давала бы ложный gate-пропуск.
-    Возвращает (sig|None, degraded, fresh_n|None, status|None). None-хвосты -> не смогли снять.
+    Возвращает (sig|None, degraded, fresh_n|None, status|None, out|None). None-хвосты -> не смогли
+    снять. out — сам выхлоп гейт-фетча (items+degraded+...); прогон переиспользует его вместо 2-го фетча.
     status — живой per-source расклад (тот же fetch, что и отпечаток — БЕЗ доп. сети).
     NB: count_fresh — non-mutating, ничего не отмечает виденным (отметка — только в реальном
     прогоне, внутри wiring._run_collect, чтобы не терять сырьё на прогонах, что сами же пропустили)."""
@@ -201,12 +217,16 @@ def _source_signature():
         # ложно «упал» (no channels), а он в прогоне работает. Цена — один pyrogram-спавн на
         # гейт-проверку (раз в ~30 мин); зато gate ловит и telegram-churn, а статус честен.
         out = collect_source.run({}, _harvest_env())
-    except Exception:
-        return None, False, None, None
+    except Exception as e:
+        # не молчим: без отпечатка _should_run пустит прогон ВСЛЕПУЮ — покажем причину
+        print(f"гейт-проба источника упала ({type(e).__name__}: {e}) — прогон пойдёт без отпечатка")
+        return None, False, None, None, None
     items = out.get("items") or []
     titles = [(it.get("title", "") if isinstance(it, dict) else str(it)) for it in items]
+    # 5-й элемент — сам `out` гейт-фетча: прогон переиспользует его вместо ВТОРОГО фетча телеги
+    # (гейт и cy.run раньше тянули ленту независимо, 2 pyrogram-логина ~90с/тик; см. _run_collect)
     return (_titles_sig(titles), bool(out.get("degraded")),
-            seen_items.count_fresh(items), _status_from_out(out))
+            seen_items.count_fresh(items), _status_from_out(out), out)
 
 
 def _last_sig():
@@ -231,7 +251,7 @@ def _should_run(sig, force, fresh_n=None):
 
 
 def _save_sig(sig):
-    stash.Stash._atomic_write(STATE_FILE, json.dumps({"sig": sig}, ensure_ascii=False))
+    _atomic_write(STATE_FILE, json.dumps({"sig": sig}, ensure_ascii=False))
 
 
 def council_note(out):
@@ -249,6 +269,18 @@ def council_note(out):
     return f"{woke} · голоса: {who}"
 
 
+def _degrade_note(out):
+    """Строка про ДЕГРАДАЦИЮ прогона для консоли/лога (root #1: показать сбой, а не прятать за
+    «доставлено N»). Пусто, если прогон здоров. Источник ушёл в фолбэк (4 захардкоженных
+    заголовка) → «источник в фолбэке»; доставка отсеяла болванки при живом ключе → «stub-отсеяно=N»."""
+    flags = []
+    if out.get("degraded"):
+        flags.append("источник в фолбэке")
+    if out.get("dropped_stub"):
+        flags.append(f"stub-отсеяно={out['dropped_stub']}")
+    return " · ".join(flags)
+
+
 def _log(goal, out):
     os.makedirs(DATA, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -259,6 +291,9 @@ def _log(goal, out):
     note = council_note(out)
     if note:
         line += f" | совет: {note}"   # тот же хвост, что у ручного прогона — пульт его уже парсит
+    dn = _degrade_note(out)
+    if dn:
+        line += f" | ⚠ {dn}"          # деградация видна в истории пульта, не только в консоли
     line += "\n"
     with open(os.path.join(DATA, "runs.md"), "a", encoding="utf-8") as f:
         f.write(scrub_secrets.scrub_text(line))
@@ -275,16 +310,16 @@ def main(argv):
         + f" · источники={'+'.join(SOURCES)} (бюджет {SOURCE_N})" + (" · force" if force else "")
 
     cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
-    total, skipped = 0, 0
+    total, skipped, total_dropped = 0, 0, 0
     for i in range(n):
         # гейт «есть что нового?» — не гоняем Gemini впустую (а) на неизменной ленте ИЛИ
         # (б) на ленте, что перетасовалась, но всё «новое» мы уже разбирали раньше (fresh_n).
         # force (ручной клик) гейт перепрыгивает: юзер просит собрать СЕЙЧАС — и тогда отпечаток
         # даже не снимаем (иначе лишний fetch 31 заголовка ради результата, который всё равно игнорим).
         if force:
-            sig, fresh_n = None, None
+            sig, fresh_n, gate_out = None, None, None
         else:
-            sig, _degraded, fresh_n, status = _source_signature()
+            sig, _degraded, fresh_n, status, gate_out = _source_signature()
             if status:
                 _persist_status(status)   # живой статус источников для пульта (даже если прогон пропустим)
         if not _should_run(sig, force, fresh_n):
@@ -292,20 +327,33 @@ def main(argv):
             why = "нет новых items (уже разбирали)" if fresh_n == 0 else "источник не изменился"
             print(f"прогон {i + 1}/{n}: {why} — пропуск (без вызова LLM)")
             continue
-        out = cy.run(goal, env=env)
+        # переиспользуем items гейт-фетча (не тянем телегу второй раз за тик); force / сбой гейта →
+        # gate_out=None → _run_collect фетчит сам, как раньше (фолбэк цел)
+        run_env = {**env, "prefetched_out": gate_out} if isinstance(gate_out, dict) else env
+        out = cy.run(goal, env=run_env)
         r = out.get("result")
         added = r if isinstance(r, int) else 0
         total += added
+        total_dropped += int(out.get("dropped_stub") or 0)   # болванки, отсеянные доставкой за тик
         if sig is not None:
             _save_sig(sig)   # запоминаем ленту только после реального прогона
         _log(goal, out)
-        print(f"прогон {i + 1}/{n}: +{added} свежих идей в копилку")
+        dn = _degrade_note(out)
+        print(f"прогон {i + 1}/{n}: +{added} свежих идей в инбокс" + (f"  ⚠ {dn}" if dn else ""))
 
-    st = stash.Stash()
     print(f"\n{mode}")
-    print(f"ЗА ВЫЗОВ добавлено: {total} | пропущено (лента не менялась): {skipped} | "
-          f"ВСЕГО в копилке: {len(st.ideas)}")
-    print(f"копилка (человеку): {st.md}")
+    line = f"ЗА ВЫЗОВ добавлено в инбокс: {total} | пропущено (лента не менялась): {skipped}"
+    if total_dropped:   # шапка выше = конфиг-модель; тут ФАКТ: болванки = ключ есть, но сеть/парс подвели
+        line += f" | ⚠ болванок отсеяно (сеть/парс LLM подводили): {total_dropped}"
+    print(line)
+    inbox_md = os.path.join(_IE_DATA, "inbox.md")
+    try:
+        import store as _ie_store   # idea_engine/store.py (idea_engine уже в sys.path через wiring)
+        open_n = len(_ie_store.Store(os.path.join(_IE_DATA, "state.json"), cap=0).open_ideas())
+        print(f"ВСЕГО в инбоксе (открытых идей): {open_n}")
+    except Exception:
+        pass
+    print(f"инбокс (человеку): {inbox_md}")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,8 @@
 
 Запуск:  python run_tests.py            (все пакеты)
          python run_tests.py cyborg    (только указанные)
-Код возврата: 0 — все зелёные; 1 — где-то падение/ошибка (для CI/pre-commit).
+Код возврата: 0 — все зелёные И реально прогнаны; 1 — падение/ошибка ЛИБО pytest не
+выполнился / 0 собранных тестов (для CI/pre-commit; ловит «нет модуля pytest» и пустой прогон).
 """
 import os
 import re
@@ -53,10 +54,29 @@ def run_package(pkg):
         "skipped": False,
         "rc": proc.returncode,
     }
-    if res["failed"] or res["errors"] or proc.returncode not in (0, 5):
-        # 5 = pytest «нет собранных тестов»; печатаем сырой хвост для диагностики
+    if res["failed"] or res["errors"] or proc.returncode != 0 or res["passed"] == 0:
+        # печатаем сырой хвост при ЛЮБОЙ аномалии: падения/ошибки, ненулевой rc (вкл. rc=1
+        # «нет модуля pytest» и rc=5 «нет собранных тестов»), либо 0 прогнанных тестов
         res["tail"] = "\n".join(out.strip().splitlines()[-15:])
     return res
+
+
+def _package_bad(r):
+    """Пакет ПРОБЛЕМНЫЙ, если: тесты падали/ошибались, ИЛИ pytest отработал не штатно
+    (rc!=0 — сюда попадают «нет модуля pytest» rc=1 и «ничего не собрано» rc=5), ИЛИ
+    прогнал 0 тестов при живом пакете (passed==0 = pytest не выполнился/пусто).
+
+    Именно это ловит ложно-зелёное: без pytest в интерпретаторе rc=1, счётчиков «N passed/
+    failed» в выводе нет -> passed=failed=errors=0, и старый расчёт «bad=failed+errors» давал
+    0 -> «ВСЕ ЗЕЛЁНЫЕ» + exit 0 на 0 прогнанных тестах; CI/pre-commit по exit-коду это
+    пропускал. Пропущенный пакет (нет tests/) проблемным НЕ считается."""
+    if r["skipped"]:
+        return False
+    if r["failed"] or r["errors"]:
+        return True
+    if r.get("rc", 0) != 0:
+        return True
+    return r["passed"] == 0
 
 
 def main(argv):
@@ -64,6 +84,7 @@ def main(argv):
     results = [run_package(p) for p in pkgs]
 
     total_pass = total_fail = total_err = 0
+    any_bad = False
     print("\nkiborg — тесты по пакетам (каждый свой процесс):\n")
     for r in results:
         if r["skipped"]:
@@ -72,18 +93,25 @@ def main(argv):
         total_pass += r["passed"]
         total_fail += r["failed"]
         total_err += r["errors"]
-        mark = "OK " if not (r["failed"] or r["errors"]) else "FAIL"
-        line = f"  [{mark}] {r['pkg']:<12} passed={r['passed']} failed={r['failed']} errors={r['errors']}"
+        bad_pkg = _package_bad(r)
+        any_bad = any_bad or bad_pkg
+        if not bad_pkg:
+            mark = "OK   "
+        elif r["failed"] or r["errors"]:
+            mark = "FAIL "
+        else:
+            mark = "NORUN"  # pytest не выполнился / 0 тестов / rc!=0 — НЕ зелёное
+        line = (f"  [{mark}] {r['pkg']:<12} passed={r['passed']} failed={r['failed']} "
+                f"errors={r['errors']} rc={r.get('rc', '?')}")
         print(line)
         if "tail" in r:
             print("        --- хвост pytest ---")
             for tl in r["tail"].splitlines():
                 print(f"        {tl}")
 
-    bad = total_fail + total_err
-    print(f"\nИТОГО: passed={total_pass} failed={total_fail} errors={total_err} "
-          f"-> {'ВСЕ ЗЕЛЁНЫЕ' if not bad else 'ЕСТЬ ПАДЕНИЯ'}\n")
-    return 1 if bad else 0
+    verdict = "ВСЕ ЗЕЛЁНЫЕ" if not any_bad else "ЕСТЬ ПРОБЛЕМЫ (падения / pytest не выполнился)"
+    print(f"\nИТОГО: passed={total_pass} failed={total_fail} errors={total_err} -> {verdict}\n")
+    return 1 if any_bad else 0
 
 
 if __name__ == "__main__":

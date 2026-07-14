@@ -18,7 +18,6 @@ from organs import collect_source, ideate, finish_step, rank_ideas, readability_
 from core import Organ  # noqa: E402
 import deliver  # noqa: E402  (cyborg/deliver.py — sink в инбокс idea_engine)
 import finish_sink  # noqa: E402  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
-import stash_sink  # noqa: E402  (sink: копит идеи в копилку без потолка — для автономных прогонов)
 import seen_items  # noqa: E402  (фильтр «уже видели» по ID сырых items — только для харвеста)
 from organs_vendored import scrub_secrets  # noqa: E402  (вендорен из реестра, чистый)
 import mind  # noqa: E402  (движок взвешенного совещания — отбор идей советом, не одним судьёй)
@@ -33,6 +32,12 @@ def _run_collect(inputs, env):
     # (SOURCE_N) реально не долетало до сборщика в живом прогоне, только до gate-проверки
     # в _source_signature (та звала collect_source напрямую). Теперь настройки прокидываются.
     env = env if isinstance(env, dict) else {}
+    # переиспользуем фетч гейта, если он уже сходил в источник ЭТИМ тиком (harvest кладёт
+    # prefetched_out) — не тянем телегу второй раз за тик (~90с/лишний pyrogram-логин). Нет /
+    # невалидно (force / сбой гейта / ручной прогон run.py) → фетчим сами, как раньше.
+    pf = env.get("prefetched_out")
+    if isinstance(pf, dict) and pf.get("items") is not None:
+        return pf
     e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
     if env.get("sources"):
         e["sources"] = env["sources"]
@@ -67,14 +72,28 @@ def _run_ideate(inputs, env):
     # «приноси идеи» (панель, ручной клик) флаг не ставит — юзер жмёт кнопку, ожидая идей
     # СЕЙЧАС, а не «а тут всё уже старое, пропускаю». filter_fresh отмечает виденным ровно
     # то, что реально уходит на генерацию — не раньше.
+    fresh = None
     if env.get("filter_seen_items") and inp.get("items"):
         inp = dict(inp)
-        inp["items"] = seen_items.filter_fresh(inp["items"])
+        fresh = seen_items.filter_fresh(inp["items"], mark=False)  # фильтруем БЕЗ пометки
+        inp["items"] = fresh
     e = {"k": 12}  # режим «максимум качества»: генерим 12 кандидатов — судье есть из чего отобрать лучшее
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
-    return ideate.run(inp, e)
+    if env.get("direction"):
+        e["direction"] = env["direction"]   # руль темы долетает до генератора
+    out = ideate.run(inp, e)
+    # Метим сырьё виденным ТОЛЬКО ПОСЛЕ генерации и лишь если она удалась. При живом ключе
+    # (llm_mode) осечка парса / обрыв даёт brain='stub' — НЕ метим, чтобы посты не сгорели зря:
+    # сбой транзиентный, повторим на следующем тике (раньше метили ДО генерации — сжигали). Без
+    # ключа stub ожидаем — метим как обычно, чтобы не крутить одни и те же заголовки.
+    if fresh:
+        ideas = out.get("ideas") or []
+        produced_real = any(isinstance(i, dict) and i.get("brain") != "stub" for i in ideas)
+        if produced_real or not callable(llm):
+            seen_items.mark_seen(fresh)
+    return out
 
 
 class _IntuitionNoCap(advisors.AskLlmAdvisor):
@@ -127,8 +146,8 @@ def _rank_by_council(inputs, env, keep):
     downstream (scrub/deliver) не трогаем.
 
     Возвращает {'ideas_best':[...]} когда проголосовал хоть один советник (арбитр внутри
-    mind.think опрашивается первым, живой моделью — его результат и переиспользуем, чтобы НЕ
-    звать rank_ideas.run повторно). solo=True в метаданных = по факту судил один арбитр.
+    совета (mind.deliberate) опрашивается первым, живой моделью — его результат переиспользуем,
+    чтобы НЕ звать rank_ideas.run повторно). solo=True в метаданных = по факту судил один арбитр.
     None только если воздержались ВСЕ (degraded) -> вызыватель идёт на плоский rank_ideas."""
     ideas = list((inputs or {}).get("ideas") or [])
     if len(ideas) <= keep:
@@ -140,7 +159,7 @@ def _rank_by_council(inputs, env, keep):
         options.append({**base, "id": i})
         orig[i] = d
     # Оркестр теперь голосует на КАЖДОМ отборе (горячий путь) и судит весь пул идей подряд.
-    # Чтобы 6 идей × рецензент не вылезли за таймаут пульта (180с): гоним ВСЕХ рецензентов
+    # Чтобы 12 идей × рецензент не вылезли за таймаут пульта (180с): гоним ВСЕХ рецензентов
     # параллельно (max_workers = число моделей) и держим короткий бюджет на идею. Настройки
     # кладём в cfg здесь — keychain/advisors их принимают, но сами не трогаются.
     orch = env.get("orchestra")
@@ -152,17 +171,19 @@ def _rank_by_council(inputs, env, keep):
         "llm_chain": env.get("llm_chain"),          # оживляет интуицию (цепочка провайдеров с ключами)
         "orchestra": orch,                          # оркестр: голосует всегда (параллельно, короткий бюджет)
         "llm_timeout_ms": env.get("llm_timeout_ms", 45000),
+        "direction": env.get("direction"),          # руль темы: арбитр читает из ctx, интуиция/оркестр — из вопроса
     }
+    question = "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость."
+    if env.get("direction"):                        # направление в вопрос → его видят интуиция и оркестр
+        question += f" Приоритет — идеи в направлении «{env['direction']}»."
     # deliberate = плоский совет: арбитр + интуиция + оркестр голосуют ВСЕ и ВСЕГДА (кто без
     # ключа — сам воздержится). Не think: там оркестр спал, пока интуиция не засомневается —
     # ровно та «пропущу совет, раз уверен» логика, которую юзер не хотел.
-    verdict = mind.deliberate(
-        "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость.",
-        options, _council_no_cap(context), context)
+    verdict = mind.deliberate(question, options, _council_no_cap(context), context)
     live = verdict.get("live") or []
     if verdict.get("degraded") or not live:          # никто не проголосовал -> плоский откат на судью
         return None
-    # Арбитр внутри mind.think УЖЕ отработал живой моделью (его опрашивают первым). Поэтому и
+    # Арбитр внутри совета (mind.deliberate) УЖЕ отработал живой моделью (его опрашивают первым). Поэтому и
     # когда голос один (интуиция/оркестр промолчали), берём готовый результат ОТСЮДА, а не зовём
     # rank_ideas.run повторно — иначе второй платный вызов той же модели (нашёл скептик 2026-07-13).
     scores = verdict.get("scores") or {}
@@ -204,6 +225,8 @@ def _run_rank(inputs, env):
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
+    if env.get("direction"):
+        e["direction"] = env["direction"]   # судья-фолбэк тоже учитывает направление
     # СОВЕТ в живом цикле (гейт снят юзером 2026-07-13, ход Г): идеи судит взвешенный совет,
     # если есть 2-й живой голос (в env принесли цепочку интуиции / оркестр). Иначе — прежний
     # одиночный судья, офлайн байт-в-байт. Любой сбой совета -> тихий откат, конвейер не встаёт.
@@ -269,10 +292,6 @@ def _run_finish_sink(inputs, env):
     return finish_sink.run(inp, env)                   # Рука кладёт уже вычищенное
 
 
-def _run_stash(inputs, env):
-    return stash_sink.run(inputs, env)
-
-
 def _run_scrub(inputs, env):
     inp = inputs or {}
     ideas = list(inp.get("ideas_polished") or inp.get("ideas_best") or inp.get("ideas") or [])
@@ -310,7 +329,7 @@ def build_organs():
         ),
         Organ(
             name="rank_ideas",
-            purpose="Судья: из пула идей оставляет топ-3 по рубрике (оригинальность/польза/выполнимость).",
+            purpose="Судья/совет: из пула идей оставляет топ-5 по рубрике (оригинальность/польза/выполнимость).",
             run=_run_rank, role="transform", produces=["ideas_best"], consumes=["ideas"],
             tags=["идея", "идеи", "отобрать", "лучшие", "оценить", "судья", "ранжировать"],
             needs={"key": "LLM_KEY", "stub_ok": True},
@@ -338,7 +357,7 @@ def build_organs():
         ),
         Organ(
             name="deliver",
-            purpose="Доставляет идеи в инбокс через очередь (потолок 3 + обратная тяга, inbox.md).",
+            purpose="Доставляет идеи в инбокс (cap=0 — без потолка, inbox.md; при живом ключе фильтрует stub-болванки).",
             run=_run_deliver, role="sink", produces=["delivered"], consumes=["ideas_safe"],
             tags=["доставить", "идеи", "инбокс", "прислать", "приноси", "свежие"],
             needs={},
@@ -351,20 +370,3 @@ def build_organs():
             needs={},
         ),
     ]
-
-
-def build_harvest_organs():
-    """Органы АВТОНОМНОГО режима «копилка»: тот же конвейер идей (collect -> ideate ->
-    rank -> scrub), но финальный sink — НЕ инбокс (потолок 3), а копилка без потолка.
-    Для прогонов, когда Claude гоняет киборга сам: идеи копятся горой, разберёт юзер.
-    """
-    chain = [o for o in build_organs()
-             if o.name in ("collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets")]
-    chain.append(Organ(
-        name="stash_ideas",
-        purpose="Копит идеи в копилку без потолка (для автономных прогонов), с дедупом.",
-        run=_run_stash, role="sink", produces=["delivered"], consumes=["ideas_safe"],
-        tags=["копилка", "копить", "накопитель", "идеи", "автономно", "приноси", "свежие"],
-        needs={},
-    ))
-    return chain

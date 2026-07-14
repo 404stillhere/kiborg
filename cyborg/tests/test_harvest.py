@@ -24,6 +24,34 @@ class TestHarvestGate(unittest.TestCase):
         c = harvest._titles_sig(["Идея А", "Идея Б", "Идея Г"])  # состав изменился
         self.assertNotEqual(a, c)                                # изменение поймано
 
+    def test_source_env_carries_direction(self):
+        # активное направление подкладывается в env ОБЕИХ кнопок (через _source_env)
+        orig = harvest.direction.current
+        harvest.direction.current = lambda: "железки"
+        try:
+            self.assertEqual(harvest._source_env().get("direction"), "железки")
+        finally:
+            harvest.direction.current = orig
+
+    def test_source_env_no_direction_when_empty(self):
+        orig = harvest.direction.current
+        harvest.direction.current = lambda: ""
+        try:
+            self.assertNotIn("direction", harvest._source_env())   # пусто -> ключа нет
+        finally:
+            harvest.direction.current = orig
+
+    def test_atomic_write_no_temp_and_content(self):
+        # атомарная запись (переехала из stash в harvest): пишет содержимое, не оставляет .tmp,
+        # перезапись поверх работает. Ею harvest пишет статус источников и отпечаток.
+        tmp = tempfile.mkdtemp(prefix="harvest_aw_")
+        path = os.path.join(tmp, "sub", "f.json")   # несуществующая подпапка — создаётся
+        harvest._atomic_write(path, '{"a":1}')
+        self.assertEqual(open(path, encoding="utf-8").read(), '{"a":1}')
+        harvest._atomic_write(path, '{"a":2}')      # перезапись поверх
+        self.assertEqual(open(path, encoding="utf-8").read(), '{"a":2}')
+        self.assertFalse(os.path.exists(path + ".tmp"))
+
     def test_sig_persist_roundtrip(self):
         tmp = tempfile.mkdtemp(prefix="harvest_")
         orig = harvest.STATE_FILE
@@ -67,7 +95,7 @@ class TestHarvestGate(unittest.TestCase):
         orig = collect_source.run
         collect_source.run = fake_run
         try:
-            sig, degraded, fresh_n, status = harvest._source_signature()
+            sig, degraded, fresh_n, status, _out = harvest._source_signature()
         finally:
             collect_source.run = orig
         self.assertEqual(captured.get("n"), harvest.SOURCE_N)  # гейт и прогон смотрят одинаково глубоко
@@ -92,8 +120,8 @@ class TestHarvestGate(unittest.TestCase):
         orig = collect_source.run
         collect_source.run = fake_run
         try:
-            sig1, _, _, _ = harvest._source_signature()
-            sig2, _, _, _ = harvest._source_signature()
+            sig1, _, _, _, _ = harvest._source_signature()
+            sig2, _, _, _, _ = harvest._source_signature()
         finally:
             collect_source.run = orig
         self.assertNotEqual(sig1, sig2)
@@ -113,9 +141,9 @@ class TestHarvestGate(unittest.TestCase):
         collect_source.run = fake_run
         try:
             seen_items.filter_fresh([{"title": "A", "source": "hn", "id": 1}])  # "A" уже видели
-            _, _, fresh_n, _ = harvest._source_signature()
+            _, _, fresh_n, _, _ = harvest._source_signature()
             self.assertEqual(fresh_n, 1)  # только "B" свежий
-            _, _, fresh_n2, _ = harvest._source_signature()
+            _, _, fresh_n2, _, _ = harvest._source_signature()
             self.assertEqual(fresh_n2, 1)  # повторный вызов — та же цифра (count_fresh не мутирует)
         finally:
             collect_source.run = orig
@@ -182,6 +210,25 @@ class TestHarvestGate(unittest.TestCase):
             self.assertTrue(harvest._should_run("NEW", force=True, fresh_n=0))    # force всё равно гонит
         finally:
             harvest.STATE_FILE = orig
+
+
+class TestDegradeNote(unittest.TestCase):
+    """root #1: сигнал деградации виден в консоли/логе, а не спрятан за «доставлено N»."""
+
+    def test_healthy_run_empty(self):
+        self.assertEqual(harvest._degrade_note({}), "")
+        self.assertEqual(harvest._degrade_note({"degraded": False, "dropped_stub": 0}), "")
+
+    def test_degraded_source(self):
+        self.assertEqual(harvest._degrade_note({"degraded": True}), "источник в фолбэке")
+
+    def test_dropped_stub(self):
+        self.assertEqual(harvest._degrade_note({"dropped_stub": 3}), "stub-отсеяно=3")
+
+    def test_both_flags(self):
+        note = harvest._degrade_note({"degraded": True, "dropped_stub": 2})
+        self.assertIn("источник в фолбэке", note)
+        self.assertIn("stub-отсеяно=2", note)
 
 
 if __name__ == "__main__":

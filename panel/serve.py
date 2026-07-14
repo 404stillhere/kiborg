@@ -35,6 +35,7 @@ if CYBORG not in sys.path:
     sys.path.insert(0, CYBORG)
 
 import ask_llm  # noqa: E402  (только available() — ключ не читаем и не показываем)
+import direction  # noqa: E402  (руль темы: чтение/запись cyborg/data/direction.json)
 from wiring import build_organs  # noqa: E402  (метаданные органов; импорт чистый)
 
 _ORGANS = build_organs()
@@ -123,12 +124,6 @@ def _start_run(goal):
     return _start_proc(goal, ["run.py", goal])
 
 
-def _start_harvest():
-    """Разовый сбор в копилку по кнопке (то же, что CLI `python harvest.py 1 --force`).
-    --force: ручной клик перебивает гейт «лента не менялась» — юзер просит собрать сейчас."""
-    return _start_proc("сбор свежих идей в копилку", ["harvest.py", "1", "--force"])
-
-
 def _start_observe():
     """Наблюдательный обход органа-источника по кнопке — печатает от первого лица
     (зашёл в паблик → прочитал пост → подумал) в тот же живой вывод, что и прогоны.
@@ -185,6 +180,15 @@ def _set_idea(idea_id, status):
     """Разбор идеи — через канонический CLI idea_engine (он же перерисует inbox.md)."""
     if status not in ("take", "later", "trash"):
         return {"ok": False, "msg": "статус должен быть take|later|trash"}
+    # НЕ мутируем state.json, пока идёт прогон: deliver в подпроцессе пишет ТОТ ЖЕ файл, а триаж
+    # делает свой read-modify-write — с одного снимка = lost-update (порчу-JSON снял atomic-write
+    # в store.py, осталась перезапись). Пульт знает про свой прогон по RUN["running"] — на нём и
+    # сериализуем (закрывает частый случай пульт-триаж || пульт-прогон; внешний CLI-harvest — вне
+    # видимости пульта, для него нужен OS-замок в idea_engine, см. loose-ends).
+    with _LOCK:
+        if RUN["running"]:
+            return {"ok": False, "busy": True,
+                    "msg": "идёт прогон — разбор отложен на секунду, повтори когда закончится"}
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     p = subprocess.run(
         [sys.executable, "run.py", "status", str(int(idea_id)), status],
@@ -217,29 +221,6 @@ def _read_runs():
     except Exception:
         pass
     return runs
-
-
-def _read_stash():
-    """Копилка автономных прогонов (cyborg/data/idea_stash.jsonl) — count + свежие."""
-    path = os.path.join(CYBORG, "data", "idea_stash.jsonl")
-    ideas = []
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    ideas.append(json.loads(line))
-                except Exception:
-                    continue
-    except Exception:
-        pass
-    latest = list(reversed(ideas))[:8]  # свежие сверху, показываем до 8
-    slim = [{"title": d.get("title", ""), "why": (d.get("why") or "")[:280],
-             "effort": d.get("effort", ""), "brain": d.get("brain", ""),
-             "stashed_at": d.get("stashed_at", "")} for d in latest]
-    return {"total": len(ideas), "latest": slim}
 
 
 def _read_source_status():
@@ -350,6 +331,7 @@ def _api_state():
         "registry": _read_registry(),
         "lab": _read_lab(),
         "layout": _read_layout(),
+        "direction": direction.load(),
     }
 
 
@@ -417,9 +399,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ok = _start_run(goal)
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
-        elif self.path == "/api/harvest":
-            ok = _start_harvest()
-            self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/observe":
             ok = _start_observe()
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
@@ -428,6 +407,18 @@ class Handler(BaseHTTPRequestHandler):
             if res["on"]:
                 _AUTO["last"] = 0.0   # включили — дать сработать на ближайшем тике, не ждать интервал
             self._json({"ok": True, **res})
+        elif self.path == "/api/direction":
+            # руль темы: current (str, "" = снять) и/или presets (list). Чистку/потолки делает direction.save.
+            cur = body.get("current")
+            presets = body.get("presets")
+            if cur is not None and not isinstance(cur, str):
+                self._json({"ok": False, "msg": "current должен быть строкой"}, 400)
+                return
+            if presets is not None and not isinstance(presets, list):
+                self._json({"ok": False, "msg": "presets должен быть списком"}, 400)
+                return
+            saved = direction.save(current=cur, presets=presets)
+            self._json({"ok": True, **saved})
         elif self.path == "/api/stop":
             ok = _stop_run()
             self._json({"ok": ok, "msg": "" if ok else "нечего останавливать"})

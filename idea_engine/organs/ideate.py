@@ -35,6 +35,14 @@ PROMPT_TMPL = (
 
 _EFFORT = ["легко", "средне", "тяжело"]
 
+# Руль направления (env["direction"]): ставится ПЕРЕД основным запросом, чтобы модель
+# гнула идеи в заданную тему, используя заголовки лишь как толчок. Пусто = без руля.
+_STEER_TMPL = (
+    "НАПРАВЛЕНИЕ (главное): придумывай идеи В СТОРОНУ темы «{direction}».\n"
+    "Держись этого направления, даже если заголовки ниже про другое — бери их лишь\n"
+    "как толчок, а саму идею гни в «{direction}».\n\n"
+)
+
 
 def _stub(items, k):
     out = []
@@ -60,7 +68,12 @@ def _parse(raw, k):
         if isinstance(v, list):
             objs = [o for o in v if isinstance(o, dict)]
         elif isinstance(v, dict):
-            objs = [v]
+            # модель иногда оборачивает список: {"ideas":[...]} / {"result":[...]} — достаём
+            # вложенный список идей, а НЕ считаем обёртку одной ПУСТОЙ карточкой (иначе 12
+            # реальных идей внутри теряются, а непустой список из пустышки глушит фолбэк на stub)
+            inner = next((val for val in v.values()
+                          if isinstance(val, list) and any(isinstance(x, dict) for x in val)), None)
+            objs = [o for o in inner if isinstance(o, dict)] if inner is not None else [v]
     except Exception:
         pass
     if not objs:                            # 2) JSONL — по компактному объекту в строке
@@ -97,6 +110,9 @@ def run(inputs, env):
     llm = env.get("llm")
     if callable(llm):
         prompt = PROMPT_TMPL.format(k=k, items="\n".join("- " + i.get("title", "") for i in items))
+        direction = (env.get("direction") or "").strip()
+        if direction:                       # руль темы — впереди основного запроса
+            prompt = _STEER_TMPL.format(direction=direction) + prompt
         ideas = _parse(llm(prompt), k)
         if ideas:
             return {"ideas": ideas}

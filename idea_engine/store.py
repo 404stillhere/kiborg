@@ -9,13 +9,48 @@
 Это чистая логика: ни сети, ни ключей, ни внешних путей внутри решений —
 только состояние в переданном файле. Оболочка (run.py) кормит её органами.
 """
+import contextlib
 import json
 import os
 import re
+import time
 
 DEFAULT_CAP = 3
 _SEEN_CAP = 5000       # потолок памяти предложенного: помним последние N заголовков. Поднят 500→5000
                        # (режим «максимум качества»): больше памяти новизны = меньше повторов со временем
+
+
+@contextlib.contextmanager
+def state_lock(path, timeout=5.0, poll=0.03):
+    """Best-effort МЕЖПРОЦЕССНЫЙ замок вокруг read-modify-write state.json (файл пишут РАЗНЫЕ
+    процессы: пульт-триаж, CLI-harvest, прогон). Порчу файла уже снял atomic save(); тут — про
+    ПЕРЕЗАПИСЬ (lost-update). Замок = атомарное O_EXCL-создание lockfile: ОС гарантирует, что fd
+    получит ровно ОДИН процесс (отсюда взаимное исключение, оно НЕ требует live-мультипроцесса для
+    проверки — примитив юнит-тестируем, гарантия от ОС). Ждём освобождения до timeout; не дождались
+    (держат / стейл после краша) → ПРОХОДИМ без лока (дедлока НЕТ, редкий стейл сам разберётся).
+    Полной сериализации не обещаем — это безопасное СМЯГЧЕНИЕ окна гонки. Чужой лок при проходе НЕ
+    трогаем (снимаем только свой)."""
+    lockpath = path + ".lock"
+    fd, waited = None, 0.0
+    while waited < timeout:
+        try:
+            fd = os.open(lockpath, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            time.sleep(poll)
+            waited += poll
+    try:
+        yield fd is not None          # True = держим лок эксклюзивно; False = прошли по timeout
+    finally:
+        if fd is not None:            # снимаем ТОЛЬКО свой лок (чужой, что держат при проходе, не трогаем)
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.remove(lockpath)
+            except OSError:
+                pass
 
 
 # служебные + ультра-общие слова: сами по себе идею НЕ различают, из сравнения на дубль убираем
@@ -69,9 +104,23 @@ class Store:
             self.data["seen"] = [_sig(i.get("title", "")) for i in self.data["ideas"]]
 
     def save(self):
+        # Атомарно: пишем во временный файл рядом и подменяем через os.replace — обрыв в момент
+        # записи НЕ оставит усечённый state.json (иначе следующий json.load падает, инбокс мёртв).
+        # tmp с pid: state.json реально пишут РАЗНЫЕ процессы (живой deliver + триаж-спавн с пульта),
+        # уникальное имя снимает гонку за общий .tmp. (Lost-update это НЕ лечит — нужен замок в serve.)
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, ensure_ascii=False, indent=2)
+        tmp = f"{self.path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.path)
+        except Exception:
+            if os.path.exists(tmp):     # обрыв сериализации — убрать огрызок, оригинал цел
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            raise
 
     # --- дорожка A: новые идеи ---
     def open_ideas(self):
@@ -84,7 +133,17 @@ class Store:
         return self._unlimited() or len(self.open_ideas()) < self.data["cap"]
 
     def _is_dup(self, idea):
-        """Уже предлагали похожее? Сравнение по ЗНАЧИМЫМ словам заголовка (Jaccard>=0.6)."""
+        """Уже предлагали похожее? Сравнение по ЗНАЧИМЫМ словам заголовка.
+
+        Правило (precision > recall — потерять НОВУЮ идею дороже, чем пропустить дубль,
+        который юзер просто отправит в мусор):
+          • новая ⊆ виденной  → дубль (нового значимого слова не добавляет);
+          • новая ⊋ виденной  → НЕ дубль (несёт слово, которого у виденной не было:
+            «трекер сна» уже был → «трекер сна и настроения» пропускаем — это про настроение);
+          • пересечение без вложения → близость по Jaccard>=0.6 (обе стороны с уникальными
+            словами — в основном одно и то же).
+        Раньше был чистый Jaccard>=0.6: он схлопывал ПОДмножества («трекер сна» vs
+        «трекер сна и настроения» = 2/3=0.67) и молча ел более богатую идею (аудит 2026-07-14)."""
         toks = set(_content(idea.get("title", "")))
         if not toks:
             return False
@@ -92,8 +151,10 @@ class Store:
             st = set(s.split())
             if not st:
                 continue
-            if st == toks:
+            if toks <= st:            # новая не добавляет ничего сверх виденной → дубль (в т.ч. равные)
                 return True
+            if toks >= st:            # новая несёт лишнее значимое слово → это НЕ дубль (смотрим дальше)
+                continue
             union = len(toks | st)
             if union and len(toks & st) / union >= 0.6:
                 return True
