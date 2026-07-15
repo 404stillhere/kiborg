@@ -82,6 +82,25 @@ class TestFinishSink(unittest.TestCase):
         self.assertIn("AAHrealbottoken", blob)               # рука положила текст нетронутым
         self.assertNotIn("[REDACTED]", blob)                 # рука ничего не редактировала
 
+    def test_write_is_state_locked(self):
+        # СТРАЖ (pair_gap, нашла фабрика б-3 2026-07-15): дорожка B пишет state.json ПОД тем же
+        # межпроцессным замком, что дорожка A (deliver.py:45) — иначе окно lost-update. Пиним, что
+        # finish_sink берёт state_lock на НАШ state.json (раньше писал без замка = асимметрия).
+        import store as _store
+        calls = []
+        orig = _store.state_lock
+
+        def spy(path, *a, **k):
+            calls.append(path)
+            return orig(path, *a, **k)
+
+        _store.state_lock = spy
+        try:
+            finish_sink.run({"nudge": {"title": "Доделать: y", "why": "z"}}, {})
+        finally:
+            _store.state_lock = orig
+        self.assertIn(self.fake.STATE, calls)                # замок взят на нашем state.json
+
     def test_empty_nudge_noop_no_disk(self):
         for empty in (None, {}, "нет", []):
             res = finish_sink.run({"nudge": empty}, {})

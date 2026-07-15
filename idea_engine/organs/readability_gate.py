@@ -106,6 +106,12 @@ def run(inputs, env):
     # карточка проходила без правки. Переписывание остаётся на llm (там нужна живость). Нет
     # score_llm — судим тем же llm (прежнее поведение, тесты/чужой llm не трогаем).
     judge = env.get("score_llm") if callable(env.get("score_llm")) else llm
+    # опц. живой суб-прогресс (пульт/CLI): орган — медленный (reasoning-модель по карточке), даёт
+    # знать «оцениваю/переписываю i/N», чтобы прогон не выглядел зависшим внутри одного органа.
+    op = env.get("on_progress")
+    op = op if callable(op) else None
+    if op:
+        op("читаемость: оцениваю %d карточек" % len(ideas))
     scores = _score(judge, ideas)
     if scores is None:
         scores = _score(judge, ideas)          # один повтор: судья изредка шумит на первом заходе
@@ -121,6 +127,8 @@ def run(inputs, env):
             if sc < min_score:
                 title = card.get("title", "")
                 old_why = card.get("why", "")
+                if op:
+                    op("читаемость: переписываю карточку %d/%d" % (i + 1, len(ideas)))
                 new_why = _rewrite(llm, title, old_why)
                 if new_why and new_why != old_why:
                     # РЕ-ОЦЕНКА: старый и новый текст судим В ОДНОМ вызове (пара old|new), иначе

@@ -29,6 +29,7 @@ except Exception:
 from organs import collect_source  # noqa: E402
 import harvest  # noqa: E402
 import seen_items  # noqa: E402
+from organs_vendored import scrub_secrets  # noqa: E402  (заголовок файла может нести секрет — чистим до показа)
 
 # как называть источник человеку + чем «заходит» туда киборг
 WHERE = {
@@ -37,8 +38,9 @@ WHERE = {
     "lobsters":    ("Lobsters",              "открываю горячее"),
     "gh_trending": ("GitHub Trending",       "смотрю, что в тренде"),
     "telegram":    ("Telegram",              "захожу в паблик"),
+    "files":       ("Папки-источник",        "открываю файлы в папках"),
 }
-ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram"]
+ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "files"]
 
 _ITEM_PAUSE = 0.28   # пауза между постами — чтобы в пульте строки шли живым потоком, не пачкой
 _STEP_PAUSE = 0.35
@@ -60,13 +62,19 @@ def main():
     say("    Обхожу источники по одному и рассказываю, что вижу.", _STEP_PAUSE)
     say("")
 
-    # обходим только АКТИВНЫЕ источники (harvest.SOURCES через env), а не все зашитые —
-    # ORDER задаёт лишь приятный порядок вывода. Юзер выключил источник → наблюдатель молчит про него.
+    # обходим только АКТИВНЫЕ источники (_active_sources через env: включённые ленты + files),
+    # а не все зашитые — ORDER задаёт лишь приятный порядок вывода. Юзер выключил ленту тумблером
+    # в пульте → наблюдатель молчит про неё.
     active = [s for s in ORDER if s in (base_env.get("sources") or ORDER)]
     grand_read = grand_fresh = 0
+    files_paths = base_env.get("files_paths") or []
     for name in active:
         human, verb = WHERE[name]
-        tail = f" ({', '.join(tg_channels)})" if name == "telegram" and tg_channels else ""
+        tail = ""
+        if name == "telegram" and tg_channels:
+            tail = f" ({', '.join(tg_channels)})"
+        elif name == "files" and files_paths:
+            tail = f" ({', '.join(files_paths)})"
         say(f"┌─ {human}{tail}")
         say(f"│  🚪 {verb}…", _STEP_PAUSE)
 
@@ -90,7 +98,9 @@ def main():
         read = fresh = 0
         for it in out.get("items", []):
             read += 1
-            title = (it.get("title") or "").strip()[:72]
+            # заголовок файла может содержать секрет (фильтр _files неполон) — чистим ДО показа
+            # в консоли пульта (тот же класс, что защита в wiring._run_collect от утечки в промпт)
+            title = scrub_secrets.scrub_text((it.get("title") or "").strip())[:72]
             say(f"│  📖 прочитал: «{title}»", _ITEM_PAUSE)
             key = seen_items._item_key(it)
             if key is not None and key in seen:

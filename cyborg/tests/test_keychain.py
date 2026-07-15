@@ -121,3 +121,37 @@ def test_council_chat_rejects_unknown_reviewer():
             pass
     finally:
         os.remove(p)
+
+
+def test_orchestra_context_sets_one_wave_max_workers():
+    # max_workers = число рецензентов → organ.py гонит их ОДНОЙ волной (не дефолтными 4),
+    # иначе мёртвый эндпоинт во 2-й волне удваивал зависание совета (баг 2026-07-14).
+    p = _keys_file(GEMINI_API_KEY="g", MISTRAL_API_KEY="m", COHERE_API_KEY="c")
+    try:
+        oc = keychain.orchestra_context(p)
+        assert oc["max_workers"] == len(oc["models"]) == 3
+    finally:
+        os.remove(p)
+
+
+def test_with_deadline_returns_and_propagates():
+    # нормальный результат проходит насквозь
+    assert keychain._with_deadline(lambda: "ok", deadline=5) == "ok"
+    # исключение из fn долетает как раньше (контракт review: рецензент падает -> выпадает)
+    try:
+        keychain._with_deadline(lambda: (_ for _ in ()).throw(ValueError("boom")), deadline=5)
+        assert False, "должен был пробросить ValueError"
+    except ValueError:
+        pass
+
+
+def test_with_deadline_kills_slow_loris():
+    # медленный/висящий вызов НЕ морозит совет — жёсткий wall-clock бросает TimeoutError
+    import time
+    t = time.time()
+    try:
+        keychain._with_deadline(lambda: time.sleep(30), deadline=1)
+        assert False, "должен был бросить TimeoutError"
+    except TimeoutError:
+        pass
+    assert time.time() - t < 5   # уложился в ~1с (deadline), а не ждал 30с

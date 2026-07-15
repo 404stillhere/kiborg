@@ -154,6 +154,30 @@ class TestOrchestrator(unittest.TestCase):
         self.assertGreaterEqual(calls["n"], 2)  # LLM-мозг реально управлял циклом
         self.assertTrue(any(t.get("organ") == "collect_source" for t in out["trace"]))
 
+    def test_on_step_callback_streams_live_progress(self):
+        # живой прогресс: on_step зовётся start/done на каждый орган + finish в конце (для пульта,
+        # чтобы долгий прогон не выглядел зависшим). Без колбэка (default None) поведение то же.
+        events = []
+        out = Cyborg(base_organs(), max_steps=6).run(
+            "приноси свежие идеи", env={},
+            on_step=lambda step, phase, name, why: events.append((phase, name)))
+        phases = [e[0] for e in events]
+        self.assertEqual(phases.count("start"), 2)          # два органа стартовали
+        self.assertEqual(phases.count("done"), 2)           # и завершились
+        self.assertEqual(phases[-1], "finish")              # цикл закрылся финишем
+        # порядок: старт органа идёт ПЕРЕД его done (пользователь видит «сейчас работаю над X»)
+        self.assertEqual(events[0], ("start", "collect_source"))
+        self.assertEqual(events[1], ("done", "collect_source"))
+        # и прогон отработал как обычно — колбэк ничего не сломал
+        self.assertEqual(out["result"], ["a", "b"])
+
+    def test_on_step_callback_failure_does_not_break_run(self):
+        # сбой колбэка прогресса не роняет прогон (прогресс — удобство, не критичный путь)
+        def bad_cb(step, phase, name, why):
+            raise RuntimeError("callback boom")
+        out = Cyborg(base_organs(), max_steps=6).run("приноси идеи", env={}, on_step=bad_cb)
+        self.assertEqual(out["result"], ["a", "b"])         # прогон дошёл до результата
+
     def test_degraded_source_not_blocked(self):
         # источник ОТДАЛ данные через резерв (degraded_reason, НЕ error) — не блокировать, идеи текут
         def degraded_src(inputs, env):

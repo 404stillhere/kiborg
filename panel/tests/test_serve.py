@@ -231,5 +231,93 @@ class TestAutoConfig(unittest.TestCase):
         self.assertTrue(os.path.exists(self.f))
 
 
+class TestAutoTick(unittest.TestCase):
+    """_auto_tick — один тик авто-петли (вынесен из while-True ради тестируемости 2026-07-15):
+    автосбор запускается ТОЛЬКО если автономность вкл + пора по интервалу + прогон не идёт.
+    Резилиенс петли (сбой тика не валит поток-демон) держится на этой развязке + try/except в _auto_loop."""
+
+    def setUp(self):
+        self._orig = (dict(serve.RUN), dict(serve._AUTO), serve._load_auto, serve._start_proc)
+        self.started = []
+        serve._start_proc = lambda *a, **k: (self.started.append(a) or True)
+
+    def tearDown(self):
+        run, auto, load, start = self._orig
+        serve.RUN.clear(); serve.RUN.update(run)
+        serve._AUTO.clear(); serve._AUTO.update(auto)
+        serve._load_auto = load
+        serve._start_proc = start
+
+    def test_fires_when_on_due_and_idle(self):
+        serve._load_auto = lambda: {"on": True, "interval_min": 30}
+        serve._AUTO["last"] = 0.0                       # давно → пора
+        serve.RUN["running"] = False
+        self.assertTrue(serve._auto_tick())             # запустил
+        self.assertEqual(len(self.started), 1)
+
+    def test_skips_when_off(self):
+        serve._load_auto = lambda: {"on": False, "interval_min": 30}
+        serve._AUTO["last"] = 0.0
+        serve.RUN["running"] = False
+        self.assertFalse(serve._auto_tick())
+        self.assertEqual(self.started, [])
+
+    def test_skips_when_not_due(self):
+        serve._load_auto = lambda: {"on": True, "interval_min": 30}
+        serve._AUTO["last"] = serve.time.time()         # только что → ещё не пора
+        serve.RUN["running"] = False
+        self.assertFalse(serve._auto_tick())
+        self.assertEqual(self.started, [])
+
+    def test_skips_when_busy(self):
+        serve._load_auto = lambda: {"on": True, "interval_min": 30}
+        serve._AUTO["last"] = 0.0
+        serve.RUN["running"] = True                     # прогон идёт → второй не запускаем
+        self.assertFalse(serve._auto_tick())
+        self.assertEqual(self.started, [])
+
+
+class TestReadLab(unittest.TestCase):
+    """Витрина фабрики фич в /api/state. `.feature-lab/` СНЕСЁН юзером (2026-07-14) → _read_lab
+    теперь всегда бьёт в ветку «нет файла»: страж, что пульт это переживает (exists:False, не падает).
+    Плюс пиним логику замка (ready+unreviewed=locked) — вернётся б-3 с песочницей, поведение цело."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_lab_")
+        self.f = os.path.join(self.tmp, "router.json")
+        self._orig = serve.LAB_ROUTER
+        serve.LAB_ROUTER = self.f
+
+    def tearDown(self):
+        serve.LAB_ROUTER = self._orig
+
+    def test_missing_file_absent_not_crash(self):
+        # текущее РЕАЛЬНОЕ состояние: .feature-lab снесён → файла нет → витрина пуста, без краха
+        self.assertEqual(serve._read_lab(),
+                         {"exists": False, "locked": False, "features": [], "needs_manual": 0})
+
+    def test_corrupt_json_safe(self):
+        with open(self.f, "w", encoding="utf-8") as fh:
+            fh.write("{битый json")
+        self.assertFalse(serve._read_lab()["exists"])        # битый роутер не роняет /api/state
+
+    def test_ready_unreviewed_is_locked(self):
+        with open(self.f, "w", encoding="utf-8") as fh:
+            json.dump({"features": [{"slug": "f1", "title": "T", "status": "ready",
+                                     "reviewed": False, "enabled": False, "why": "w"}]}, fh)
+        lab = serve._read_lab()
+        self.assertTrue(lab["exists"])
+        self.assertTrue(lab["locked"])                       # готовая непроверенная фича = замок петли
+        self.assertEqual(lab["features"][0]["slug"], "f1")
+
+    def test_reviewed_not_locked(self):
+        with open(self.f, "w", encoding="utf-8") as fh:
+            json.dump({"features": [{"slug": "f1", "status": "ready", "reviewed": True}],
+                       "needs_manual": ["x", "y"]}, fh)
+        lab = serve._read_lab()
+        self.assertFalse(lab["locked"])                      # проверена → замка нет
+        self.assertEqual(lab["needs_manual"], 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

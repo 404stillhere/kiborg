@@ -6,7 +6,9 @@
 """
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -317,6 +319,234 @@ class TestBudgetSplit(unittest.TestCase):
         collect_source._SOURCES["reddit"] = spy
         collect_source.run({}, {"n": 5, "source": "reddit"})
         self.assertEqual(seen, [5])               # один источник -> весь бюджет
+
+
+class _TmpDirTest(unittest.TestCase):
+    """База для тестов с реальной временной папкой: setUp/tearDown/_write — общий каркас, чтобы
+    не дублировать его в каждом классе (TestFilesSource, TestProbePaths). Префикс — свой у каждого."""
+    _PREFIX = "kiborg_tmp_"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix=self._PREFIX)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, rel, content):
+        p = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(p) or self.tmp, exist_ok=True)
+        mode = "wb" if isinstance(content, bytes) else "w"
+        with open(p, mode, **({} if mode == "wb" else {"encoding": "utf-8"})) as f:
+            f.write(content)
+        return p
+
+
+class TestFilesSource(_TmpDirTest):
+    """Источник «files»: читает текстовые файлы из папок как сырьё, пропускает секреты/мусор/
+    бинарь/крупняк. Реальная ФС во временной папке (не сеть) — как настоящий обход."""
+    _PREFIX = "kiborg_files_"
+
+    def test_no_folders_configured_degrades_no_crash(self):
+        out = collect_source.run({}, {"n": 4, "source": "files"})
+        self.assertTrue(out["degraded"])
+        self.assertNotIn("error", out)                     # честный degrade, не блокировка органа
+        self.assertIn("no folders", out["degraded_reason"])
+
+    def test_reads_text_files_as_headlines(self):
+        self._write("store.py", '"""Хранилище идей — дедуп и кэп."""\nimport os\n')
+        self._write("README.md", "# Киборг\nгенератор идей\n")
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        self.assertFalse(out["degraded"])
+        titles = [it["title"] for it in out["items"]]
+        self.assertTrue(any("store.py" in t and "Хранилище идей" in t for t in titles))
+        self.assertTrue(any("README.md" in t and "Киборг" in t for t in titles))
+        self.assertTrue(all(it["source"] == "files" for it in out["items"]))
+
+    def test_skips_secret_files(self):
+        self._write("llm_keys.env", "OPENAI_KEY=sk-secret\n")
+        self._write("kiborg_tg.session", "session-bytes\n")
+        self._write("my_token.txt", "ghp_supersecret\n")
+        self._write("app.py", '"""реальный код."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(it["title"] for it in out["items"]).lower()
+        self.assertIn("app.py", titles)
+        self.assertNotIn(".env", titles)                   # секрет по расширению — не прочитан
+        self.assertNotIn(".session", titles)
+        self.assertNotIn("token", titles)                  # секрет по подстроке имени
+
+    def test_skips_junk_dirs_and_binaries(self):
+        self._write("src/main.py", '"""главный модуль."""\n')
+        self._write("node_modules/lib/index.js", "// dep\n")
+        self._write("__pycache__/main.cpython-312.pyc", b"\x00\x01bin")
+        self._write("logo.png", b"\x89PNG\r\n")
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(it["title"] for it in out["items"])
+        self.assertIn("main.py", titles)
+        self.assertNotIn("node_modules", titles)           # мусорная папка отсечена
+        self.assertNotIn(".pyc", titles)
+        self.assertNotIn(".png", titles)                   # бинарь по расширению
+
+    def test_oversized_file_skipped(self):
+        self._write("big.md", "# huge\n" + ("x" * (300 * 1024)))
+        self._write("small.md", "# small doc\nтекст\n")
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(it["title"] for it in out["items"])
+        self.assertIn("small.md", titles)
+        self.assertNotIn("big.md", titles)                 # больше _FILES_MAX_BYTES — мимо
+
+    def test_empty_folder_degrades_no_error(self):
+        self._write("photo.jpg", b"\xff\xd8bin")            # папка есть, текстовых файлов нет
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
+        self.assertTrue(out["degraded"])
+        self.assertNotIn("error", out)
+
+    def test_headline_strips_wrappers_and_skips_technical(self):
+        p = self._write("m.py", "#!/usr/bin/env python\nimport os\n# настоящий смысл файла\ncode\n")
+        self.assertEqual(collect_source._files_headline(p), "настоящий смысл файла")
+
+    def test_id_is_abspath_for_dedup(self):
+        self._write("a.py", '"""a."""\n')
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
+        self.assertTrue(all(os.path.isabs(it["id"]) for it in out["items"]))
+
+    def test_single_file_path_allowed(self):
+        p = self._write("solo.md", "# соло\nтекст\n")
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [p]})
+        self.assertFalse(out["degraded"])
+        self.assertEqual(len(out["items"]), 1)
+        self.assertIn("solo.md", out["items"][0]["title"])
+
+    def test_sampled_down_to_budget(self):
+        for i in range(8):
+            self._write(f"f{i}.py", f'"""файл {i}."""\n')
+        out = collect_source.run({}, {"n": 3, "source": "files", "files_paths": [self.tmp]})
+        self.assertFalse(out["degraded"])                  # источник жив (не фолбэк-заглушка)
+        self.assertEqual(len(out["items"]), 3)             # 8 файлов -> ровно бюджет n=3
+
+    def test_merges_with_keyless_sources(self):
+        self._write("x.py", '"""икс."""\n')
+        orig_get = collect_source._get
+
+        def fake_get(url_or_req, timeout):
+            return {"data": {"children": [{"data": {"title": "R idea", "id": "r1"}}]}}
+        collect_source._get = fake_get
+        try:
+            out = collect_source.run({}, {"n": 10, "sources": ["reddit", "files"],
+                                          "files_paths": [self.tmp]})
+        finally:
+            collect_source._get = orig_get
+        self.assertFalse(out["degraded"])
+        self.assertEqual({it["source"] for it in out["items"]}, {"reddit", "files"})
+
+    def test_secret_in_content_not_leaked_to_title(self):
+        # ГЛАВНОЕ: секрет в СОДЕРЖИМОМ файла с ОБЫЧНЫМ именем не должен попасть в заголовок —
+        # заголовок уходит в промпт LLM (ideate) ДО scrub_secrets. Имя-фильтр тут не спасает.
+        # Секрет-ФОРМЫ собираем из кусков в РАНТАЙМЕ (не литералом): иначе в закоммиченном файле
+        # лежала бы строка-как-секрет (sk-proj-…, tg-токен) → push-protection GitHub / скан выката
+        # спотыкались бы о фикстуру и могли ЗАБЛОКИРОВАТЬ push. По кускам ни одна форма не целая.
+        openai = "sk-" + "proj-" + "FAKE" + "0123456789abcdefghij"        # форма OpenAI-ключа
+        tgtok = "1234567890" + ":" + "AAH" + "FAKEtoken" + "ABCDEFGHIJKLMNOPQRSTUVWX"  # форма tg-токена
+        awssec = "wJalr" + "FAKE" + "EXAMPLE" + "KEY0123456789ABCDEF"      # значение AWS-секрета
+        dbpass = "fakepass"
+        self._write("cfg.py", f'API_KEY = "{openai}"\n"""нормальный докстринг."""\n')
+        self._write("bot.py", f'TOKEN = "{tgtok}"\n')
+        self._write("deploy.sh", f"#!/bin/sh\nexport AWS_SECRET_ACCESS_KEY={awssec}\n")
+        self._write("db.py", f'DATABASE_URL = "postgres://user:{dbpass}@host/db"\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        blob = " ".join(it["title"] for it in out["items"])
+        for secret in [openai, tgtok, awssec, dbpass]:
+            self.assertNotIn(secret, blob)                 # ни одна собранная форма не утекла в заголовок
+        # при этом секрет-строку сменяет следующая чистая строка (докстринг), файл не потерян
+        self.assertTrue(any("cfg.py" in it["title"] and "докстринг" in it["title"] for it in out["items"]))
+
+    def test_headline_keeps_coding_word_heading(self):
+        # «# Coding standards» — обычный заголовок, НЕ PEP-263 объявление кодировки: не срезаем
+        p = self._write("doc.md", "# Coding standards\nтекст\n")
+        self.assertEqual(collect_source._files_headline(p), "Coding standards")
+
+    def test_headline_skips_pep263_coding(self):
+        p = self._write("m2.py", "# -*- coding: utf-8 -*-\n# настоящий смысл\nx=1\n")
+        self.assertEqual(collect_source._files_headline(p), "настоящий смысл")
+
+    def test_headline_handles_utf8_bom(self):
+        p = os.path.join(self.tmp, "bom.md")
+        with open(p, "wb") as f:
+            f.write("﻿# Заголовок с BOM\nтекст\n".encode("utf-8"))
+        self.assertEqual(collect_source._files_headline(p), "Заголовок с BOM")
+
+    def test_walk_bounded_by_scan_cap(self):
+        # предохранитель: гигантская/ошибочно заданная папка (диск-корень) не заставляет обойти
+        # ВСЁ — потолок _FILES_MAX_SCAN обрывает обход, тик автосбора не виснет
+        for i in range(50):
+            self._write(f"f{i}.py", f'"""файл {i}."""\n')
+        orig = collect_source._FILES_MAX_SCAN
+        collect_source._FILES_MAX_SCAN = 10
+        try:
+            out = collect_source.run({}, {"n": 100, "source": "files", "files_paths": [self.tmp]})
+            self.assertLessEqual(len(out["items"]), 10)     # осмотрено <=10 из 50 -> обход оборван
+        finally:
+            collect_source._FILES_MAX_SCAN = orig
+
+
+class TestProbePaths(_TmpDirTest):
+    """probe_paths — дешёвая проба папок для пульта: путь существует? сколько ПРИГОДНЫХ
+    текстовых файлов? Тот же фильтр _files_is_candidate, что у реального сбора (одна правда)."""
+    _PREFIX = "kiborg_probe_"
+
+    def test_missing_path_marked_not_exists(self):
+        res = collect_source.probe_paths([os.path.join(self.tmp, "нет-такой-папки")])
+        (_path, info), = res.items()
+        self.assertFalse(info["exists"])
+        self.assertEqual(info["files"], 0)
+
+    def test_counts_only_text_candidates(self):
+        self._write("a.py", '"""a."""\n')
+        self._write("b.md", "# b\n")
+        self._write("logo.png", b"\x89PNG")               # бинарь — не в счёт
+        self._write("llm_keys.env", "K=sk-x")             # секрет по расширению — не в счёт
+        self._write("node_modules/x.js", "// dep\n")      # мусорная папка — не в счёт
+        info = collect_source.probe_paths([self.tmp])[self.tmp]
+        self.assertTrue(info["exists"])
+        self.assertEqual(info["files"], 2)                # ровно a.py + b.md
+        self.assertFalse(info["capped"])
+
+    def test_count_matches_real_collect(self):
+        # инвариант: сколько probe насчитал = сколько _files реально соберёт (общий фильтр)
+        for i in range(5):
+            self._write(f"f{i}.py", f'"""файл {i}."""\n')
+        self._write("secret_token.txt", "ghp_x")          # оба (probe и сбор) должны пропустить
+        probed = collect_source.probe_paths([self.tmp])[self.tmp]["files"]
+        out = collect_source.run({}, {"n": 100, "source": "files", "files_paths": [self.tmp]})
+        self.assertEqual(probed, len(out["items"]))
+
+    def test_single_file_counts_one(self):
+        p = self._write("solo.md", "# соло\n")
+        info = collect_source.probe_paths([p])[p]
+        self.assertTrue(info["exists"])
+        self.assertEqual(info["files"], 1)
+
+    def test_scan_cap_marks_capped(self):
+        for i in range(50):
+            self._write(f"f{i}.py", f'"""файл {i}."""\n')
+        orig = collect_source._FILES_MAX_SCAN
+        collect_source._FILES_MAX_SCAN = 10
+        try:
+            info = collect_source.probe_paths([self.tmp])[self.tmp]
+            self.assertTrue(info["capped"])               # обход обрезан потолком — честно помечен
+            self.assertLessEqual(info["files"], 10)
+        finally:
+            collect_source._FILES_MAX_SCAN = orig
+
+    def test_blank_and_nonstr_entries_ignored(self):
+        res = collect_source.probe_paths(["", "   ", None, 123])
+        self.assertEqual(res, {})                          # мусорные записи молча пропущены, не крашат
+
+    def test_mixed_existing_and_missing(self):
+        self._write("a.py", '"""a."""\n')
+        missing = os.path.join(self.tmp, "ghost")
+        res = collect_source.probe_paths([self.tmp, missing])
+        self.assertTrue(res[self.tmp]["exists"] and res[self.tmp]["files"] == 1)
+        self.assertFalse(res[missing]["exists"])
 
 
 if __name__ == "__main__":

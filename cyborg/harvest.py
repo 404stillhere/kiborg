@@ -30,6 +30,8 @@ from orchestrator import Cyborg  # noqa: E402
 import ask_llm  # noqa: E402
 import keychain  # noqa: E402  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
 import direction  # noqa: E402  (руль темы: env["direction"] для генератора/судьи)
+import folders  # noqa: E402  (папки-источник: env["files_paths"], список правится в пульте)
+import feeds  # noqa: E402  (ленты-источник: какие публичные ленты включены, тумблеры в пульте)
 import seen_items  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402
 
@@ -49,16 +51,27 @@ STATUS_FILE = os.path.join(DATA, "source_status.json")  # живой per-source 
 # постов с каждого → ~105 заголовков-семян вместо 21. Больше и разнообразнее сырья для ideate.
 SOURCE_N = 105
 
-# Источники, что мержим за один прогон (2026-07-12: было только HN, потом +reddit/lobsters/
-# gh_trending). Product Hunt отложен — нужен токен (гейт юзера).
-# "telegram" (2026-07-12) — единственный КЛЮЧЕВОЙ источник: читает каналы через личный ТГ-аккаунт
-# (орган collect_tg_news, вендорен из darbot). Креды/сессия резолвятся в _harvest_env ниже —
-# без них telegram сам себя выключает (ValueError "no channels", errors, не крашит прогон).
-# Урезано до 1 источника (2026-07-13) по просьбе юзера — «оставь 1 любой паблик для идей».
-# Держим только telegram (проверенный, на нём строим «закладку дочитывания»). Остальные 4
-# сохранены закомментированными — вернуть охват = раскомментировать нижнюю строку.
-SOURCES = ["telegram"]
-# SOURCES = ["hn", "reddit", "lobsters", "gh_trending", "telegram"]  # полный набор
+# Источники, что мержим за один прогон. Product Hunt отложен — нужен токен (гейт юзера).
+# "telegram" — КЛЮЧЕВОЙ источник: читает каналы через личный ТГ-аккаунт (орган collect_tg_news,
+# вендорен из darbot). Креды/сессия резолвятся в _harvest_env ниже — без них telegram сам себя
+# выключает (ValueError "no channels", errors, не крашит прогон).
+#
+# Какие ленты ВКЛЮЧЕНЫ — теперь решает юзер тумблерами в пульте (cyborg/feeds.py, data/feeds.json),
+# а не константа тут (2026-07-14). Дефолт (нет файла) = feeds.DEFAULT_FEEDS = ["telegram"] — то же
+# поведение, что было захардкожено. Историю урезания охвата 5→1 (2026-07-13) заменил живой тумблер.
+
+# Папки-источник (2026-07-14): киборг читает текстовые файлы из заданных папок как ещё одно
+# СЫРЬЁ и смотрит на них НЕЙТРАЛЬНО — как на чужой проект со стороны (не «свой код», без «чини
+# себя»: так идеи честнее). Список папок живёт в data/folders.json и правится В ПУЛЬТЕ мышкой
+# (см. cyborg/folders.py) — пусто = источник «files» выключен. Секреты (*.env/*.session/ключи)
+# и мусор (.git/venv/node_modules/__pycache__) орган пропускает сам (collect_source._files).
+
+
+def _active_sources():
+    """Источники прогона: включённые в пульте ленты (feeds) + 'files', ЕСЛИ заданы папки
+    (иначе files молчал бы холостой ошибкой 'no folders'). Единая точка правды для env /
+    статуса пульта / лога. Все ленты выключены и папок нет -> [] (пульт предупреждает)."""
+    return feeds.enabled() + (["files"] if folders.current() else [])
 
 # Каналы под тематику kiborg (тех/AI/pet-проекты) — НЕ список darbot (тот про новости/политику/
 # экономику, другая тема). @tproger — мой стартовый кандидат, подтверждён живым смоуком 2026-07-12.
@@ -84,7 +97,7 @@ TELEGRAM_CHANNELS = [
 # пульт метит их «β» (бета). Это метаданные доверия, не живой статус: живой 🟢/🔴 считает
 # _status_from_out по фактическому улову, а beta — статичный признак отсюда. Расширять по мере
 # того, как юзер подтверждает источник вручную.
-USER_VERIFIED_SOURCES = {"telegram"}
+USER_VERIFIED_SOURCES = {"telegram", "files"}  # files — свои папки юзера, не «бета»
 
 _DARBOT_ENV = "M:/projects/darbot/.env"
 _KIBORG_TG_SESSION = os.path.join(DATA, "kiborg_tg.session")
@@ -113,19 +126,28 @@ def _source_env():
     автосбор (main тут). Широкий слой (n=SOURCE_N) + телеграм-каналы + живой мозг. БЕЗ
     фильтра «уже видели» — его навешивает только автоцикл (см. _harvest_env). Так у ручного
     и автономного прогона один и тот же источник, а не две разные ленты."""
-    env = {"n": SOURCE_N, "sources": SOURCES}
-    api_id, api_hash = _load_darbot_tg_creds()
-    if api_id and api_hash and os.path.exists(_KIBORG_TG_SESSION):
-        env["telegram_channels"] = TELEGRAM_CHANNELS
-        env["telegram_api_id"] = api_id
-        env["telegram_api_hash"] = api_hash
-        env["telegram_session"] = _KIBORG_TG_SESSION
-        env["telegram_timeout"] = 90   # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
+    active = _active_sources()
+    env = {"n": SOURCE_N, "sources": active}
+    # Телеграм-креды/каналы — ТОЛЬКО когда telegram реально включён (тумблер в пульте). Иначе
+    # env тащил telegram_session даже при выключенной ленте → _collect_locked брал tg-замок (130с
+    # таймаут) на прогон, где телеги нет: files-only прогон вис на замке. Нет telegram в active →
+    # нет замка → прогон по одним папкам мгновенный (баг тумблеров 2026-07-14).
+    if "telegram" in active:
+        api_id, api_hash = _load_darbot_tg_creds()
+        if api_id and api_hash and os.path.exists(_KIBORG_TG_SESSION):
+            env["telegram_channels"] = TELEGRAM_CHANNELS
+            env["telegram_api_id"] = api_id
+            env["telegram_api_hash"] = api_hash
+            env["telegram_session"] = _KIBORG_TG_SESSION
+            env["telegram_timeout"] = 90   # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
     if ask_llm.available():
         env["content_llm"] = ask_llm.ask
     d = direction.current()
     if d:
         env["direction"] = d               # руль темы (пусто = без направления, как раньше)
+    paths = folders.current()
+    if paths:
+        env["files_paths"] = paths          # источник-папка активен только когда папки заданы
     return env
 
 
@@ -175,7 +197,7 @@ def _status_from_out(out):
     for e in (out.get("partial_errors") or []):
         errs[str(e).split(":", 1)[0].strip()] = str(e)
     sources = {}
-    for name in SOURCES:
+    for name in _active_sources():
         cnt = counts.get(name, 0)
         sources[name] = {"items": cnt, "ok": cnt > 0 and name not in errs,
                          "error": errs.get(name),
@@ -203,8 +225,8 @@ def _source_signature():
     """ДЁШЕВО (без LLM) снять отпечаток источника: тот же HTTP, что делает collect_source,
     но БЕЗ дорогих ideate/rank. Чтобы не гонять Gemini впустую, когда ВСЕ ленты не изменились
     ИЛИ изменились, но всё новое мы уже разбирали раньше (fresh_n==0 — точнее, чем просто хеш).
-    Отпечаток покрывает ОБЪЕДИНЕНИЕ источников (SOURCES) — иначе смена в reddit/lobsters/
-    gh_trending при неизменном HN давала бы ложный gate-пропуск.
+    Отпечаток покрывает ОБЪЕДИНЕНИЕ активных источников (_active_sources) — иначе смена в
+    reddit/lobsters/gh_trending при неизменном HN давала бы ложный gate-пропуск.
     Возвращает (sig|None, degraded, fresh_n|None, status|None, out|None). None-хвосты -> не смогли
     снять. out — сам выхлоп гейт-фетча (items+degraded+...); прогон переиспользует его вместо 2-го фетча.
     status — живой per-source расклад (тот же fetch, что и отпечаток — БЕЗ доп. сети).
@@ -308,7 +330,7 @@ def main(argv):
     goal = "приноси свежие идеи"   # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
     env = _harvest_env()
     mode = (f"идеи={ask_llm._MODEL}" if ask_llm.available() else "идеи=stub (ключа нет)") \
-        + f" · источники={'+'.join(SOURCES)} (бюджет {SOURCE_N})" + (" · force" if force else "")
+        + f" · источники={'+'.join(_active_sources())} (бюджет {SOURCE_N})" + (" · force" if force else "")
 
     cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     total, skipped, total_dropped = 0, 0, 0

@@ -89,9 +89,39 @@ _COUNCIL_SPEC = {
 _COUNCIL_DISABLED = {"cerebras"}
 
 
-def _openai_chat(url, key, model, system, prompt, timeout=60):
+_COUNCIL_DEADLINE = 50   # жёсткий wall-clock потолок на один вызов рецензента (см. _with_deadline)
+
+
+def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):
+    """Выполнить fn() под ЖЁСТКИМ wall-clock потолком. Сокет-таймаут urllib НЕ ловит slow-loris
+    (эндпоинт принял TCP и сыплет байты по капле — таймаут на recv не срабатывает, вызов висит).
+    Гоняем fn в демон-потоке и бросаем TimeoutError, если не уложился. Брошенный поток дотикает в
+    фоне (демон, умрёт с процессом; его добьёт сокет-таймаут), но СОВЕТ идёт дальше — контракт
+    review: рецензент, бросивший исключение, просто выпадает из голосования."""
+    import threading
+    box = {}
+
+    def worker():
+        try:
+            box["r"] = fn()
+        except BaseException as e:   # noqa: BLE001 — любую ошибку донесём вызывающему как раньше
+            box["e"] = e
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(deadline)
+    if t.is_alive():
+        raise TimeoutError(f"council reviewer exceeded {deadline}s wall-clock (эндпоинт молчит/сыплет по капле)")
+    if "e" in box:
+        raise box["e"]
+    return box.get("r", "")
+
+
+def _openai_chat(url, key, model, system, prompt, timeout=40):
     """Один OpenAI-совместимый вызов chat/completions. Текст ответа. Бросает при сбое
-    (контракт review_content: chat должен бросать, чтобы рецензент ушёл в фолбэк)."""
+    (контракт review_content: chat должен бросать, чтобы рецензент ушёл в фолбэк).
+    timeout=40с — сокет-таймаут (эндпоинт, что вообще молчит, падает тут). Slow-loris (сыплет по
+    капле) сокет не ловит — его добивает жёсткий _with_deadline в make_council_chat (2026-07-14)."""
     import json as _json
     import urllib.request
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
@@ -120,7 +150,9 @@ def make_council_chat(path=None):
             raise RuntimeError("council: no key/endpoint for reviewer " + str(model))
         key_name, url, default_model = spec
         real_model = str(model).split(":", 1)[1] if ":" in str(model) else default_model
-        return _openai_chat(url, keys[key_name], real_model, system, prompt)
+        # Жёсткий wall-clock потолок: slow-loris эндпоинт не заморозит совет (сокет-таймаут его
+        # не ловит). Бросок → рецензент выпадает из голосования, совет судит остальными.
+        return _with_deadline(lambda: _openai_chat(url, keys[key_name], real_model, system, prompt))
 
     return chat
 
@@ -140,7 +172,12 @@ def orchestra_context(path=None):
     models = council_models(path)
     if not chat or not models:
         return None
-    return {"models": models, "chat": chat}
+    # max_workers = число рецензентов → ВСЕ идут одной волной (advisors прокидывает ключ в
+    # orchestra env, organ.py берёт min(len, max_workers)). Иначе дефолт organ.py = 4: при 7
+    # рецензентах выходит 2 волны, и мёртвый эндпоинт во 2-й волне удваивал зависание (60с×2).
+    # Одна волна + wall-clock потолок _COUNCIL_DEADLINE (50с) в _with_deadline → совет ограничен
+    # ~50с даже если все молчат/сыплют по капле (сокет-таймаут _openai_chat 40с — вторая линия).
+    return {"models": models, "chat": chat, "max_workers": len(models)}
 
 
 if __name__ == "__main__":

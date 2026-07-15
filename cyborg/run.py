@@ -76,7 +76,19 @@ def main(argv):
         brain_mode += f" | отбор: совет вкл (доступно: {avail}; кто ответит — тот голосует)"
     else:
         brain_mode += " | отбор: один судья"
-    out = cy.run(goal, env=env)
+    # ЖИВОЙ прогресс: конвейер с реальными моделями идёт минуты (deepseek — рассуждающая, ~5с/вызов;
+    # совет × идея). Без этого пульт/консоль молчат весь прогон и кажутся зависшими (жалоба юзера
+    # 2026-07-15). Печатаем текущий орган с flush — пульт стримит stdout построчно.
+    _PHASE = {"start": "⏳ иду", "done": "✓ готов", "finish": "🏁 финиш"}
+    def _on_step(step, phase, name, why):
+        tag = _PHASE.get(phase, phase)
+        tail = f" — {why}" if why else ""
+        print(f"  {tag}: {name}{tail}" if name else f"  {tag}{tail}", flush=True)
+    # суб-прогресс ВНУТРИ медленного органа (readability/ideate шлют «переписываю i/N») — env-контракт,
+    # орган зовёт env["on_progress"] если он есть. Даёт живую строку, пока один орган молотит минуты.
+    env["on_progress"] = lambda msg: print(f"     · {msg}", flush=True)
+    print("иду по конвейеру (живые модели думают, это может занять пару минут)…", flush=True)
+    out = cy.run(goal, env=env, on_step=_on_step)
 
     if env.get("direction"):
         print(f"НАПРАВЛЕНИЕ: идеи в сторону «{env['direction']}»")
@@ -103,6 +115,12 @@ def main(argv):
     dn = harvest._degrade_note(out)
     if dn:
         print("⚠ ДЕГРАДАЦИЯ:", dn)
+    # Человеку понятно про 0 идей: пустой результат + отсеянные болванки = генератор был занят
+    # (rate-limit / пустой ответ), НЕ поломка. Иначе юзер видит «РЕЗУЛЬТАТ 0 · stub-отсеяно=5» и
+    # думает «сломалось» (жалоба 2026-07-15). Ключи целы — это транзиент, повтори прогон.
+    if out.get("dropped_stub") and not out.get("result"):
+        print("ℹ️  Модели сейчас заняты — свежих идей 0 (пустышки отсеяны, ключи целы). "
+              "Это временно: попробуй «Принеси идеи» ещё раз.", flush=True)
     _log_run(out)
     print("след прогона ->", os.path.join(DATA, "runs.md"))
 

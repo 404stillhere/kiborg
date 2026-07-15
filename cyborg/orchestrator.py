@@ -22,19 +22,33 @@ class Cyborg:
         self.max_steps = max_steps
         self.k = k
 
-    def run(self, goal, env=None):
+    def run(self, goal, env=None, on_step=None):
+        """on_step(step, phase, name, why) — опциональный колбэк ЖИВОГО прогресса (default None =
+        поведение не меняется). Зовётся при СТАРТЕ каждого органа (phase='start') и по его
+        завершении (phase='done'). Нужен, чтобы пульт/CLI показывали, что киборг делает ПРЯМО
+        СЕЙЧАС: конвейер с живыми моделями идёт минуты, без этого консоль молчит и кажется завис."""
         env = dict(env or {})
         mem = Memory()
         env["memory"] = mem.data
         deliverable = brain_mod.infer_deliverable(goal, self.organs)
         trace = []
+
+        def _emit(step, phase, name, why):
+            if on_step:
+                try:
+                    on_step(step, phase, name, why)
+                except Exception:
+                    pass   # прогресс — удобство; сбой колбэка не роняет прогон
+
         for step in range(self.max_steps):
             candidates = router_mod.route(goal, self.organs, self.k)
             decision = brain_mod.plan(goal, candidates, mem, env, organs_all=self.organs)
             if decision["action"] == "finish":
+                _emit(step, "finish", "", decision["why"])
                 trace.append({"step": step, "action": "finish", "why": decision["why"]})
                 break
             organ = decision["organ"]
+            _emit(step, "start", organ.name, decision["why"])   # «сейчас работаю над …»
             result = executor_mod.execute(organ, decision["inputs"], env, self.safe_mode)
             note = mem.observe(organ.name, result)
             # страховка от холостого спина: орган отработал, но НИ ОДНОГО своего produces-ключа
@@ -45,6 +59,7 @@ class Cyborg:
             trace.append({"step": step, "organ": organ.name, "why": decision["why"],
                           "got": note.get("keys"), "error": note.get("error"),
                           "skipped": note.get("skipped")})
+            _emit(step, "done", organ.name, note.get("error") or note.get("skipped") or "")
         return {
             "goal": goal,
             "deliverable": deliverable,

@@ -5,7 +5,6 @@
 """
 import json
 import os
-import subprocess
 import sys
 
 _IDEA = "M:/projects/kiborg/idea_engine"
@@ -62,18 +61,29 @@ def _run_collect(inputs, env):
         e["sources"] = env["sources"]
     if env.get("timeout"):
         e["timeout"] = env["timeout"]
-    # keyed-источники (telegram) читают креды/конфиг из env по своим ключам — их тоже надо
-    # ПРОКИНУТЬ, иначе источник в списке sources есть, а данных для него нет → тихо падает
-    # в partial_errors («no channels configured»). Тот же класс бага, что был с sources/SOURCE_N:
-    # env собирается заново и часть ключей теряется по дороге. Прокидываем все telegram_*.
+    # keyed/конфиг-источники читают свои данные из env по своим ключам — их тоже надо ПРОКИНУТЬ,
+    # иначе источник в списке sources есть, а данных для него нет → тихо падает в фолбэк/partial_errors.
+    # telegram: креды/каналы. files: files_paths (папки-источник) — БЕЗ него _files даёт «no folders
+    # configured», весь прогон уходит в 4 захардкоженных заголовка и degraded=True, а папка юзера НЕ
+    # читается (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
     for k in ("telegram_channels", "telegram_api_id", "telegram_api_hash", "telegram_session",
-              "telegram_python", "telegram_timeout"):
+              "telegram_python", "telegram_timeout", "files_paths"):
         if env.get(k) is not None:
             e[k] = env[k]
     # Глаза ТОЛЬКО смотрят — приносят всё, что увидели, без фильтра «уже видели». Помнить,
     # что уже обдумывали, — работа Мозга (см. _run_ideate): фильтр переехал туда 2026-07-13,
     # чтобы метафора не врала (смотреть ≠ помнить).
-    return _collect_locked(inputs, e)   # под замком tg-сессии, если телеграм в игре
+    out = _collect_locked(inputs, e)   # под замком tg-сессии, если телеграм в игре
+    # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести секрет в
+    # ЗАГОЛОВКЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ из gitignored
+    # gemini.md). Заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. scrub downstream
+    # (перед deliver) ПОЗДНО — промпт уже ушёл. Чистим заголовки ЗДЕСЬ, до генерации: scrub_secrets
+    # ловит форматы, что _FILES_SECRET_LINE пропустил (проверено: AQ.-ключ → [REDACTED]).
+    if isinstance(out, dict) and isinstance(out.get("items"), list):
+        for it in out["items"]:
+            if isinstance(it, dict) and isinstance(it.get("title"), str):
+                it["title"] = scrub_secrets.scrub_text(it["title"])
+    return out
 
 
 def _content_llm(env):
@@ -102,6 +112,8 @@ def _run_ideate(inputs, env):
         e["llm"] = llm
     if env.get("direction"):
         e["direction"] = env["direction"]   # руль темы долетает до генератора
+    if env.get("on_progress"):
+        e["on_progress"] = env["on_progress"]   # живой суб-прогресс долетает до органа (иначе молчит)
     out = ideate.run(inp, e)
     # Метим сырьё виденным ТОЛЬКО ПОСЛЕ генерации и лишь если она удалась. При живом ключе
     # (llm_mode) осечка парса / обрыв даёт brain='stub' — НЕ метим, чтобы посты не сгорели зря:
@@ -121,30 +133,11 @@ class _IntuitionNoCap(advisors.AskLlmAdvisor):
     рассуждение и возвращают пусто → интуиция молчит. Проверено: без max_tokens deepseek
     досказывает рассуждение (~1000 токенов) и отдаёт баллы.
 
-    Копия родительского _ask с одним отличием — в payload НЕТ ключа max_tokens (модель берёт
-    свой дефолт-бюджет). Это единственный обход чужого хардкода: их advisors.py не трогаем.
-    Когда параллельная сессия добавит max_tokens в context — этот подкласс удалить."""
+    Отличие от родителя ровно одно — нет потолка ответа. Наследуем _ask как есть, гасим лишь
+    `_MAX_TOKENS` (родитель кладёт max_tokens в payload, только когда он не None). Копию _ask
+    больше не держим — параметр уже в advisors.AskLlmAdvisor."""
 
-    def _ask(self, chain, prompt, budget_ms):
-        if not os.path.exists(self._js):
-            return None
-        n = max(1, len(chain))
-        per_provider_ms = max(3000, budget_ms // n)
-        payload = {"inputs": {"prompt": prompt, "temperature": 0.2},   # без max_tokens — потолок снят
-                   "env": {"chain": chain, "timeout_ms": per_provider_ms}}
-        try:
-            proc = subprocess.run([self._node, self._js], input=json.dumps(payload),
-                                  capture_output=True, text=True, encoding="utf-8",
-                                  timeout=max(5, budget_ms // 1000 + 5))
-        except Exception:
-            return None
-        if proc.returncode != 0 and not proc.stdout.strip():
-            return None
-        try:
-            res = json.loads(proc.stdout.strip().splitlines()[-1])
-        except Exception:
-            return None
-        return res.get("text") if res.get("ok") else None
+    _MAX_TOKENS = None
 
 
 def _council_no_cap(context=None):
@@ -195,6 +188,13 @@ def _rank_by_council(inputs, env, keep):
     question = "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость."
     if env.get("direction"):                        # направление в вопрос → его видят интуиция и оркестр
         question += f" Приоритет — идеи в направлении «{env['direction']}»."
+    # живой суб-прогресс: отбор советом — САМЫЙ медленный шаг (рецензенты × идеи, минуты), а
+    # внутренний цикл в mind.deliberate (заморожен) отсюда не видно — даём хотя бы одну строку
+    # «совет судит N идей», чтобы пульт не молчал на самом долгом органе.
+    op = env.get("on_progress")
+    if callable(op):
+        n_rev = len(orch["models"]) if isinstance(orch, dict) and orch.get("models") else 0
+        op("совет судит %d идей%s" % (len(options), (" (%d рецензентов)" % n_rev) if n_rev else ""))
     # deliberate = плоский совет: арбитр + интуиция + оркестр голосуют ВСЕ и ВСЕГДА (кто без
     # ключа — сам воздержится). Не think: там оркестр спал, пока интуиция не засомневается —
     # ровно та «пропущу совет, раз уверен» логика, которую юзер не хотел.
@@ -235,6 +235,8 @@ def _run_readability(inputs, env):
         import ask_llm  # локально: используется только тут, top-level dep не плодим
         if llm is ask_llm.ask:
             e["score_llm"] = lambda p: ask_llm.ask(p, temperature=0.2)
+    if env.get("on_progress"):
+        e["on_progress"] = env["on_progress"]   # живой суб-прогресс долетает до органа (иначе молчит)
     return readability_gate.run(inputs, e)
 
 

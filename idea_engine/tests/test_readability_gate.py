@@ -91,6 +91,26 @@ class TestReadabilityGate(unittest.TestCase):
         for env in ({}, {"llm": _llm('{"scores":[9,9]}')}, {"llm": _llm("мусор")}):
             self.assertIn("ideas_polished", readability_gate.run({"ideas_best": IDEAS}, env))
 
+    def test_on_progress_emits_live_substeps(self):
+        # опц. суб-прогресс: орган шлёт «оцениваю N» + «переписываю i/N» для медленной карточки.
+        # Одна карточка (3) ниже порога → переписывается; вторая (9) — нет.
+        msgs = []
+        out = readability_gate.run({"ideas_best": IDEAS},
+                                   {"llm": _llm('{"scores":[3,9]}'), "min_score": 7,
+                                    "on_progress": msgs.append})
+        self.assertEqual(len(out["ideas_polished"]), 2)          # прогресс ничего не сломал
+        self.assertIn("читаемость: оцениваю 2 карточек", msgs)
+        self.assertIn("читаемость: переписываю карточку 1/2", msgs)  # только мутную (индекс 0)
+        self.assertNotIn("читаемость: переписываю карточку 2/2", msgs)  # ясную не трогали
+
+    def test_on_progress_optional_and_non_callable_safe(self):
+        # нет колбэка / не-callable → орган работает как раньше (контракт не ломается)
+        for op in (None, "not-callable", 123):
+            env = {"llm": _llm('{"scores":[3,9]}'), "min_score": 7}
+            if op is not None:
+                env["on_progress"] = op
+            self.assertEqual(len(readability_gate.run({"ideas_best": IDEAS}, env)["ideas_polished"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -109,6 +109,9 @@ def run(inputs, env):
     k = int(env.get("k", 3))
     llm = env.get("llm")
     if callable(llm):
+        op = env.get("on_progress")          # опц. живой суб-прогресс (один вызов, но ~5с — даём знать)
+        if callable(op):
+            op("генерирую %d идей" % k)
         prompt = PROMPT_TMPL.format(k=k, items="\n".join("- " + i.get("title", "") for i in items))
         direction = (env.get("direction") or "").strip()
         if direction:                       # руль темы — впереди основного запроса

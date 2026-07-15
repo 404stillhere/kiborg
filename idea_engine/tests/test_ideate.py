@@ -82,6 +82,20 @@ class TestIdeateParse(unittest.TestCase):
         ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: seen.setdefault("p", p) or ARRAY})
         self.assertNotIn("НАПРАВЛЕНИЕ", seen["p"])
 
+    def test_on_progress_emits_before_generation(self):
+        # опц. суб-прогресс: орган шлёт «генерирую N идей» перед вызовом модели (пульт не молчит)
+        msgs = []
+        ideate.run({"items": ITEMS}, {"k": 3, "llm": lambda p: ARRAY, "on_progress": msgs.append})
+        self.assertIn("генерирую 3 идей", msgs)
+
+    def test_on_progress_optional_no_llm(self):
+        # без llm (stub) колбэк не зовётся и ничего не ломается; не-callable — тоже безопасно
+        msgs = []
+        ideate.run({"items": ITEMS}, {"k": 2, "on_progress": msgs.append})   # stub-путь
+        self.assertEqual(msgs, [])
+        self.assertEqual(len(ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: ARRAY,
+                                                           "on_progress": "nope"})["ideas"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

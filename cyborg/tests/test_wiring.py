@@ -69,6 +69,48 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         self.assertEqual(captured["telegram_api_hash"], "h")
         self.assertEqual(captured["telegram_session"], "s")
 
+    def test_files_paths_reach_collect_source(self):
+        # РЕГРЕССИЯ 2026-07-15: тот же класс, что telegram — 'files' в sources есть, но files_paths
+        # НЕ прокидывался через _run_collect → _files давал «no folders configured», весь прогон
+        # уходил в 4 захардкоженных заголовка (degraded=True), папка юзера НЕ читалась.
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            return {"items": [{"title": "x", "source": "files"}], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"n": 30, "sources": ["files"],
+                                 "files_paths": ["M:/projects/kiborg", "C:/notes"]})
+        self.assertEqual(captured["files_paths"], ["M:/projects/kiborg", "C:/notes"])
+        self.assertEqual(captured["sources"], ["files"])
+
+    def test_no_files_paths_when_absent(self):
+        # без files_paths в env — не плодим ключ (не None), поведение не-files прогонов не меняем
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            return {"items": [], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"n": 8, "sources": ["hn"]})
+        self.assertNotIn("files_paths", captured)
+
+    def test_collect_scrubs_secret_from_item_title(self):
+        # БЕЗОПАСНОСТЬ 2026-07-15: файл-источник может принести СЕКРЕТ в заголовке (фильтр _files
+        # неполон) — заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. _run_collect чистит
+        # заголовки scrub_secrets ДО генерации (downstream-scrub поздно — промпт уже ушёл).
+        def fake_run(inputs, env):
+            return {"items": [{"title": "config.py — AQ.FAKEfake1234567890abcdefgh", "source": "files"},
+                              {"title": "обычный заголовок без секрета", "source": "files"}],
+                    "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        out = wiring._run_collect({}, {"sources": ["files"], "files_paths": ["x"]})
+        self.assertNotIn("AQ.FAKEfake1234567890abcdefgh", out["items"][0]["title"])  # секрет НЕ утёк
+        self.assertEqual(out["items"][1]["title"], "обычный заголовок без секрета")  # чистое не тронуто
+
     def test_no_telegram_keys_when_absent(self):
         # без telegram-ключей в env их и не должно появляться в прокинутом словаре (не плодим None)
         captured = {}
@@ -229,6 +271,40 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         wiring._run_ideate({}, {"llm": "не функция"})
         self.assertNotIn("llm", captured)
 
+    def test_ideate_forwards_on_progress_to_organ(self):
+        # РЕГРЕССИЯ: обёртка строила свежий env и РОНЯЛА on_progress → живой суб-прогресс молчал.
+        # Колбэк должен долетать до реального органа.
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas": []}
+
+        orig = wiring.ideate.run
+        wiring.ideate.run = fake
+        try:
+            op = lambda m: None
+            wiring._run_ideate({}, {"on_progress": op})
+            self.assertIs(captured.get("on_progress"), op)   # долетел до органа
+        finally:
+            wiring.ideate.run = orig
+
+    def test_readability_forwards_on_progress_to_organ(self):
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas_polished": []}
+
+        orig = wiring.readability_gate.run
+        wiring.readability_gate.run = fake
+        try:
+            op = lambda m: None
+            wiring._run_readability({}, {"on_progress": op})
+            self.assertIs(captured.get("on_progress"), op)
+        finally:
+            wiring.readability_gate.run = orig
+
     def test_rank_forces_keep5_no_llm_by_default(self):
         captured = {}
 
@@ -325,6 +401,19 @@ class TestRunRankCouncil(unittest.TestCase):
         self.assertTrue(all(i["judged"] == "council" for i in out["ideas_best"]))
         self.assertEqual(self.rank_calls, [])   # НИ ОДНОГО повторного вызова судьи
 
+    def test_council_emits_live_progress(self):
+        # живой суб-прогресс на самом медленном шаге (совет × идеи, минуты): «совет судит N идей»
+        def fake_think(q, options, council, context):
+            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
+                    "scores": {i: 0.5 for i in range(len(options))}, "why": "x"}
+
+        wiring.mind.deliberate = fake_think
+        msgs = []
+        wiring._run_rank({"ideas": self.IDEAS},
+                         {"llm_chain": [{"id": "x"}], "on_progress": msgs.append,
+                          "orchestra": {"models": ["a", "b", "c"], "chat": lambda *a: ""}})
+        self.assertTrue(any("совет судит 7 идей" in m and "3 рецензентов" in m for m in msgs))
+
     def test_solo_arbiter_reuses_no_second_judge_call(self):
         # интуиция промолчала -> 1 голос (арбитр). Переиспользуем его результат, НЕ зовём судью снова.
         def fake_think(q, options, council, context):
@@ -418,15 +507,16 @@ class TestIntuitionNoCap(unittest.TestCase):
             captured["payload"] = json.loads(input)
             return _Proc()
 
-        orig_run, orig_exists = wiring.subprocess.run, wiring.os.path.exists
-        wiring.subprocess.run = fake_run
-        wiring.os.path.exists = lambda p: True
+        # после дедупа _ask НАСЛЕДУЕТСЯ от advisors.AskLlmAdvisor — патчим его модуль
+        orig_run, orig_exists = wiring.advisors.subprocess.run, wiring.advisors.os.path.exists
+        wiring.advisors.subprocess.run = fake_run
+        wiring.advisors.os.path.exists = lambda p: True
         try:
             txt = wiring._IntuitionNoCap()._ask([{"id": "deepseek"}], "prompt", 45000)
         finally:
-            wiring.subprocess.run = orig_run
-            wiring.os.path.exists = orig_exists
-        self.assertNotIn("max_tokens", captured["payload"]["inputs"])   # потолок снят
+            wiring.advisors.subprocess.run = orig_run
+            wiring.advisors.os.path.exists = orig_exists
+        self.assertNotIn("max_tokens", captured["payload"]["inputs"])   # потолок снят (унаследован, _MAX_TOKENS=None)
         self.assertIn("chain", captured["payload"]["env"])
         self.assertEqual(txt, '{"scores":{"0":50}}')
 

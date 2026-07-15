@@ -4,7 +4,7 @@
   - разобрать идею (take/later/trash) — через idea_engine/run.py status
   - запустить прогон — через cyborg/run.py "<цель>" (вывод стримится в браузер)
 
-Только stdlib, без venv. Слушает ТОЛЬКО 127.0.0.1. Ключ Gemini не читает —
+Только stdlib, без venv. Слушает ТОЛЬКО 127.0.0.1. Ключ LLM не читает —
 проверяет лишь его наличие через ask_llm.available().
 
 Запуск:  python M:/projects/kiborg/panel/serve.py   →  http://127.0.0.1:8737
@@ -36,7 +36,10 @@ if CYBORG not in sys.path:
 
 import ask_llm  # noqa: E402  (только available() — ключ не читаем и не показываем)
 import direction  # noqa: E402  (руль темы: чтение/запись cyborg/data/direction.json)
+import folders  # noqa: E402  (папки-источник: чтение/запись cyborg/data/folders.json)
+import feeds  # noqa: E402  (ленты-источник: какие ленты включены, тумблеры пульта, cyborg/data/feeds.json)
 from wiring import build_organs  # noqa: E402  (метаданные органов; импорт чистый)
+from organs import collect_source  # noqa: E402  (проба папок: probe_paths — путь валиден? сколько файлов? импорт wiring уже положил idea_engine на path)
 
 _ORGANS = build_organs()
 
@@ -156,24 +159,37 @@ def _save_auto(on, interval_min):
     return {"on": bool(on), "interval_min": iv}
 
 
+def _auto_tick():
+    """Один тик авто-петли: автономность вкл + пора по интервалу + прогон не идёт → запустить
+    автосбор. Возвращает True, если запустил (иначе False). Вынесено из _auto_loop ради
+    тестируемости (петля = sleep + этот вызов под try/except)."""
+    st = _load_auto()
+    if not st["on"]:
+        return False
+    if time.time() - _AUTO["last"] < st["interval_min"] * 60:
+        return False
+    with _LOCK:
+        busy = RUN["running"]
+    if busy:
+        return False
+    _AUTO["last"] = time.time()
+    _start_proc("автосбор идей (по расписанию)", ["harvest.py", "1"])
+    return True
+
+
 def _auto_loop():
     """Фон-рубильник: пока автономность включена, раз в interval_min запускает автосбор
     (harvest.py БЕЗ --force → гейт «есть что нового?» сам пропускает пустые прогоны). Один
-    прогон за раз — уважает тот же RUN-замок, что и кнопки. Выключен — просто спит."""
+    прогон за раз — уважает тот же RUN-замок, что и кнопки. Выключен — просто спит.
+    Тик под try/except: сбой ОДНОГО тика НЕ должен завершить поток-демон (иначе автономный
+    режим МОЛЧА встанет до рестарта пульта) — логируем и продолжаем со следующего тика."""
     _AUTO["last"] = time.time()   # не палить прогон в первую же минуту после старта пульта
     while True:
         time.sleep(30)
-        st = _load_auto()
-        if not st["on"]:
-            continue
-        if time.time() - _AUTO["last"] < st["interval_min"] * 60:
-            continue
-        with _LOCK:
-            busy = RUN["running"]
-        if busy:
-            continue
-        _AUTO["last"] = time.time()
-        _start_proc("автосбор идей (по расписанию)", ["harvest.py", "1"])
+        try:
+            _auto_tick()
+        except Exception as e:
+            print(f"[auto_loop] сбой тика (продолжаю): {type(e).__name__}: {e}", flush=True)
 
 
 def _set_idea(idea_id, status):
@@ -332,6 +348,8 @@ def _api_state():
         "lab": _read_lab(),
         "layout": _read_layout(),
         "direction": direction.load(),
+        "folders": folders.load(),
+        "feeds": feeds.load(),
     }
 
 
@@ -372,6 +390,13 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/run":
             with _LOCK:
                 self._json({k: RUN[k] for k in ("running", "goal", "lines", "rc")})
+        elif self.path == "/api/folders/probe":
+            # проба текущих папок при загрузке пульта (счётчики не на каждом poll /api/state —
+            # обход дорог; отдельный редкий вызов). Валиден ли путь + сколько в нём файлов.
+            try:
+                self._json({"probe": collect_source.probe_paths(folders.current())})
+            except Exception as e:
+                self._json({"error": str(e)[:300]}, 500)
         else:
             self._json({"error": "нет такого пути"}, 404)
 
@@ -403,7 +428,14 @@ class Handler(BaseHTTPRequestHandler):
             ok = _start_observe()
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/auto":
-            res = _save_auto(bool(body.get("on")), body.get("interval_min", 30))
+            try:
+                iv = int(body.get("interval_min", 30))
+            except (TypeError, ValueError):
+                # как /api/idea: кривой тип → 400, а не ValueError из _save_auto (int()) вне try →
+                # обрыв запроса/трейсбек. Был единственный POST-роут без валидации входа (асимметрия).
+                self._json({"ok": False, "msg": "interval_min должен быть числом"}, 400)
+                return
+            res = _save_auto(bool(body.get("on")), iv)
             if res["on"]:
                 _AUTO["last"] = 0.0   # включили — дать сработать на ближайшем тике, не ждать интервал
             self._json({"ok": True, **res})
@@ -418,6 +450,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "presets должен быть списком"}, 400)
                 return
             saved = direction.save(current=cur, presets=presets)
+            self._json({"ok": True, **saved})
+        elif self.path == "/api/folders":
+            # папки-источник: paths (list of str). Чистку/дедуп/нормализацию/потолки делает folders.save.
+            paths = body.get("paths")
+            if not isinstance(paths, list):
+                self._json({"ok": False, "msg": "paths должен быть списком"}, 400)
+                return
+            saved = folders.save(paths)
+            try:                              # проба сохранённых путей (валиден? сколько файлов?) —
+                probe = collect_source.probe_paths(saved.get("paths", []))   # юзер видит сразу
+            except Exception:
+                probe = {}                    # проба — удобство, её сбой не валит сохранение
+            self._json({"ok": True, **saved, "probe": probe})
+        elif self.path == "/api/feeds":
+            # ленты-источник: enabled (list of str) — какие ленты включены. Чистку/дедуп/
+            # только-известные/канон-порядок делает feeds.save.
+            en = body.get("enabled")
+            if not isinstance(en, list):
+                self._json({"ok": False, "msg": "enabled должен быть списком"}, 400)
+                return
+            saved = feeds.save(en)
             self._json({"ok": True, **saved})
         elif self.path == "/api/stop":
             ok = _stop_run()

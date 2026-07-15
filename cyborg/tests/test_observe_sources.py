@@ -97,6 +97,37 @@ class TestObserveSources(unittest.TestCase):
         self.assertIn("@a", out)                         # активные каналы показаны в шапке
         self.assertNotIn("Hacker News", out)             # hn не в active -> наблюдатель молчит
 
+    def test_secret_in_title_scrubbed_before_display(self):
+        # БЕЗОПАСНОСТЬ 2026-07-15: заголовок файла может нести секрет (фильтр _files неполон) —
+        # observe чистит его ДО показа в консоли пульта (иначе секрет светился бы на экране).
+        observe_sources.harvest._harvest_env = lambda: {"sources": ["files"], "files_paths": ["x"]}
+        observe_sources.seen_items.load = lambda: set()
+        observe_sources.collect_source.run = lambda i, e: {"degraded": False, "items": [
+            {"title": "config.py — AQ.FAKEfake1234567890abcdefgh", "id": "f1"}]}
+        out = self._capture()
+        self.assertNotIn("AQ.FAKEfake1234567890abcdefgh", out)   # секрет НЕ в выводе
+        self.assertIn("[REDACTED]", out)                          # заменён скрабером
+
+
+class TestObserveSourcesCoverage(unittest.TestCase):
+    """Инвариант-страж (баг ревью 2026-07-14): 'files' выпал из обхода, т.к. был в collect_source
+    ._SOURCES, но НЕ в ORDER/WHERE наблюдателя. Эти тесты краснеют, пока новый источник не добавлен
+    в оба места — источник больше НЕ выпадет из кнопки «Наблюдать» молча."""
+
+    def test_order_and_where_consistent(self):
+        self.assertEqual(set(observe_sources.ORDER), set(observe_sources.WHERE))
+        for name, val in observe_sources.WHERE.items():
+            self.assertEqual(len(val), 2, f"{name}: WHERE = (человек, глагол)")
+
+    def test_covers_all_real_sources(self):
+        # наблюдатель обязан знать ВСЕ источники collect_source (иначе активный молча выпадет)
+        self.assertEqual(set(observe_sources.ORDER),
+                         set(observe_sources.collect_source._SOURCES))
+
+    def test_files_source_present(self):
+        self.assertIn("files", observe_sources.ORDER)
+        self.assertIn("files", observe_sources.WHERE)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

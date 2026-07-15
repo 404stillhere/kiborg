@@ -35,13 +35,18 @@ def run(inputs, env):
     if not isinstance(nudge, dict) or not nudge:
         return {"delivered": 0, "inbox": None, "lane": "B"}
     ie = _load_ie_run()
-    from store import Store                    # idea_engine/store.py
-    store = Store(ie.STATE, cap=ie.CFG["cap"])
-    # ДОРОЖКА B: отдельный слот, живёт своей секцией, не смешивается с новыми идеями (дорожка A).
-    # nudge кладём КАК ЕСТЬ — секреты уже вычистила Печень (scrub_secrets) выше по конвейеру.
-    store.set_finish(nudge, store.data.get("cursor", 0))
-    store.save()
-    ie._write_inbox(store)
+    from store import Store, state_lock        # idea_engine/store.py
+    # межпроцессный замок вокруг read-modify-write state.json — КАК deliver.py (дорожка A):
+    # другой писатель (deliver / пульт-триаж / CLI-harvest) мог бы затереть наш апдейт (lost-update).
+    # Best-effort, без дедлока. Раньше дорожка B писала БЕЗ замка = асимметрия с дорожкой A
+    # (нашла фабрика б-3 2026-07-15, needs_manual: сквозная правка, не изолируется в OFF-фичу).
+    with state_lock(ie.STATE):
+        store = Store(ie.STATE, cap=ie.CFG["cap"])
+        # ДОРОЖКА B: отдельный слот, живёт своей секцией, не смешивается с новыми идеями (дорожка A).
+        # nudge кладём КАК ЕСТЬ — секреты уже вычистила Печень (scrub_secrets) выше по конвейеру.
+        store.set_finish(nudge, store.data.get("cursor", 0))
+        store.save()
+        ie._write_inbox(store)
     return {"delivered": 1, "inbox": ie.INBOX, "lane": "B"}
 
 

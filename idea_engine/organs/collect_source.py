@@ -6,7 +6,9 @@
 Источники — все публичные API/страницы, БЕЗ ключа: Hacker News, Reddit (r/SideProject),
 Lobsters, GitHub Trending (HTML-скрейп, официального API нет). Плюс один КЛЮЧЕВОЙ источник —
 Telegram-каналы ("telegram", см. _telegram) — читается через личный ТГ-аккаунт (pyrogram),
-а не публичный API, поэтому единственный требует env["telegram_channels"] + креды.
+а не публичный API, поэтому единственный требует env["telegram_channels"] + креды. И ЛОКАЛЬНЫЙ
+источник "files" (см. _files) — читает текстовые файлы из папок env["files_paths"] как сырьё
+(смотрит на них нейтрально, как на чужой проект; секреты и мусорные папки пропускает сам).
 env["source"] — один источник, env["sources"] — список (тогда бюджет env["n"] делится
 между ними и сырьё СМЕШИВАЕТСЯ в одном ответе — межисточниковые дубли режет downstream-
 дедуп в harvest). Неизвестный источник или сетевой сбой -> честный fallback на встроенный
@@ -155,12 +157,191 @@ def _telegram(n, timeout, env):
     return items[:n]
 
 
+# ── Источник «files»: читает ТЕКСТОВЫЕ файлы из заданных папок как ещё одно сырьё для идей ──
+# Смотрит на папку НЕЙТРАЛЬНО — как на чужой проект со стороны (не «свой код», без «чини себя»).
+# Один файл = один «заголовок» {относительный_путь — первая содержательная строка}, дальше та
+# же машина идей, что у лент. Настройки — env["files_paths"] (список папок и/или отдельных
+# файлов); без них честный ValueError -> degrade. БЕЗОПАСНОСТЬ: секреты (*.env/*.session/ключи и
+# имена с secret/token/…) и мусор (.git/venv/node_modules/__pycache__/…) НЕ читаем — иначе ключи
+# утекли бы в промпт LLM. Только текст (код+доки), крупные файлы обрезаны по размеру.
+_FILES_TEXT_EXT = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php",
+    ".c", ".h", ".hpp", ".cpp", ".cc", ".cs", ".swift", ".m", ".mm", ".scala", ".dart",
+    ".lua", ".r", ".jl", ".sh", ".sql", ".vue", ".svelte", ".html",
+    ".md", ".txt", ".rst", ".markdown", ".adoc",
+}
+_FILES_SKIP_DIRS = {
+    ".git", ".hg", ".svn", "venv", ".venv", "env", "node_modules", "__pycache__",
+    ".idea", ".vscode", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next",
+    ".cache", "dist", "build", "target", "vendor", "coverage", "htmlcov",
+}
+_FILES_SECRET_EXT = {".env", ".session", ".key", ".pem", ".pfx", ".p12", ".crt",
+                     ".cer", ".keystore", ".jks", ".ppk"}
+_FILES_SECRET_HINTS = ("secret", "password", "credential", "token", "apikey",
+                       "api_key", "id_rsa", ".htpasswd")
+_FILES_MAX_BYTES = 256 * 1024   # крупные файлы не тянем (заголовок всё равно берём из «шапки»)
+_FILES_HEAD_BYTES = 4096        # хватает на первую содержательную строку
+_FILES_MAX_SCAN = 20000         # предохранитель: осматриваем не больше стольких файлов за прогон —
+                                # ошибочно заданный диск-корень («M:/») не заставит обойти весь диск
+                                # и подвесить тик автосбора (реальному проекту 20k файлов с запасом)
+
+# Строка-СЕКРЕТ — НЕ берём её в заголовок. Заголовок уходит в промпт LLM (ideate) ДО
+# scrub_secrets, поэтому имя-фильтра (_files_is_secret) мало: секрет бывает в СОДЕРЖИМОМ файла
+# с обычным именем (config.py: API_KEY="…", bot.py: TOKEN="…"). Ловим формы значений (ключи/
+# токены/JWT/telegram-token/creds-в-URL) И присваивания с секрет-ключевым словом. stdlib-only:
+# collect_source не тянет cyborg/organs_vendored/scrub_secrets (свой компактный набор здесь).
+_FILES_SECRET_LINE = re.compile(
+    r"sk-[A-Za-z0-9_-]{12,}"
+    r"|(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{16,}"
+    r"|AIza[A-Za-z0-9_-]{20,}"
+    r"|AKIA[A-Z0-9]{12,}"
+    r"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"                 # JWT
+    r"|\b\d{6,12}:[A-Za-z0-9_-]{30,}\b"                          # telegram bot token
+    r"|[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/@]+:[^\s/@]+@"           # scheme://user:pass@host
+    r"|(?i:\w*(?:api[_-]?key|secret|token|passw(?:or)?d|credential|access[_-]?key)\w*)\s*[:=]\s*\S"
+)
+
+
+def _files_is_secret(name):
+    """Имя похоже на секрет (по расширению или подстроке) -> не читаем вовсе."""
+    low = name.lower()
+    if os.path.splitext(low)[1] in _FILES_SECRET_EXT:
+        return True
+    return any(h in low for h in _FILES_SECRET_HINTS)
+
+
+def _files_headline(path):
+    """Первая СОДЕРЖАТЕЛЬНАЯ строка файла как заголовок: снимаем обёртки (кавычки докстринга,
+    маркеры комментов, markdown-#), пропускаем техническое (shebang, coding, import) И строки-
+    СЕКРЕТЫ (значение ключа/токена/пароля не должно утечь в промпт LLM). Пусто — нет пригодной
+    строки (тогда заголовком остаётся просто имя файла)."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(_FILES_HEAD_BYTES)
+    except OSError:
+        return ""
+    # utf-8-sig снимает BOM (иначе '﻿' в начале ломает и заголовок, и проверку shebang)
+    for raw in head.decode("utf-8-sig", errors="replace").splitlines():
+        s = raw.strip().lstrip("﻿").strip()
+        if not s:
+            continue
+        low_raw = s.lower()
+        # технические первые строки — не заголовок. coding — ТОЛЬКО PEP-263 форма («coding:»/
+        # «coding=»/«-*-»), а не любое слово «coding» (иначе срезали бы «# Coding standards»).
+        if (low_raw.startswith(("#!", "<!doctype", "<?xml"))
+                or (low_raw.startswith("#")
+                    and ("-*-" in low_raw or "coding:" in low_raw or "coding=" in low_raw))):
+            continue
+        line = s.lstrip("#/*-;%=<>! \t").strip().strip('"').strip("'").strip("`").strip()
+        low = line.lower()
+        if not line or low.startswith(("import ", "from ", "package ", "use ",
+                                        "#include", "using ")):
+            continue
+        if _FILES_SECRET_LINE.search(line):
+            continue                      # строка-секрет (ключ/токен/пароль/creds-URL) — не в заголовок
+        return line[:180]
+    return ""
+
+
+def _files_is_candidate(path):
+    """Файл годится как текстовое сырьё: имя не секрет, текстовое расширение, в пределах размера.
+    ЕДИНЫЙ фильтр для _files (реальный сбор) и probe_paths (счётчик пульта) — одна правда, без
+    дубля: правишь фильтр здесь → и сбор, и проба меняются согласованно."""
+    name = os.path.basename(path)
+    if _files_is_secret(name):            # секреты не читаем вообще (не утекут в промпт LLM)
+        return False
+    if os.path.splitext(name)[1].lower() not in _FILES_TEXT_EXT:   # только текст (код+доки)
+        return False
+    try:
+        return os.path.getsize(path) <= _FILES_MAX_BYTES           # крупные — мимо
+    except OSError:
+        return False
+
+
+def _files_walk(root):
+    """Лениво обходит папку, обрубая мусорные/скрытые подпапки. Генератор (не список): при
+    упоре в потолок _FILES_MAX_SCAN вызыватель просто перестаёт тянуть — обход не идёт дальше."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in _FILES_SKIP_DIRS and not d.startswith(".")]
+        for fn in filenames:
+            yield (os.path.join(dirpath, fn), root)
+
+
+def _files(n, timeout, env):
+    roots = list(env.get("files_paths") or [])
+    if not roots:
+        raise ValueError("files: no folders configured (env['files_paths'])")
+    found = []                            # [(полный_путь, база_для_относительного)]
+    scanned = 0                           # предохранитель: не осматриваем больше _FILES_MAX_SCAN файлов
+    for root in roots:
+        if scanned >= _FILES_MAX_SCAN:
+            break
+        if os.path.isfile(root):
+            cand = [(root, os.path.dirname(root))]
+        elif os.path.isdir(root):
+            cand = _files_walk(root)      # ленивый обход (обрывается при упоре в потолок)
+        else:
+            continue                      # путь не существует — молча пропускаем (не крашим)
+        for p, base in cand:
+            scanned += 1
+            if scanned > _FILES_MAX_SCAN:  # потолок файлов — дальше не идём (тик не виснет на диске)
+                break
+            if _files_is_candidate(p):     # секрет/не-текст/крупный — мимо (общий фильтр с probe_paths)
+                found.append((p, base))
+    if not found:
+        raise ValueError("files: no readable text files in configured folders")
+    # папка шире бюджета n -> случайная выборка (ротация, как у telegram): за разные прогоны
+    # смотрим разные файлы, а не всегда первые n
+    if len(found) > n:
+        found = random.sample(found, n)
+    items = []
+    for p, base in found:
+        rel = os.path.relpath(p, base) if base else os.path.basename(p)
+        headline = _files_headline(p)
+        title = (f"{rel} — {headline}" if headline else rel)[:200]
+        items.append({"title": title, "url": "", "id": os.path.abspath(p)})  # abspath — стабильный id
+    return items
+
+
+def probe_paths(paths):
+    """Дёшево (без чтения СОДЕРЖИМОГО файлов) оценить папки-источник для пульта: по каждому пути —
+    существует ли он и сколько в нём ПРИГОДНЫХ текстовых файлов (тем же фильтром _files_is_candidate,
+    что и реальный сбор). Юзер сразу видит, что путь верный, ДО прогона: опечатка в пути → «не
+    найдено» или 0 файлов на виду, а не молчаливый ноль в автосборе. Обход капается _FILES_MAX_SCAN
+    СУММАРНО по всем путям (как реальный прогон) — ошибочный диск-корень не подвесит запрос пульта.
+    -> {путь: {"exists": bool, "files": int, "capped": bool}} (capped=обход обрезан потолком)."""
+    result = {}
+    scanned = 0
+    for root in (paths or []):
+        if not isinstance(root, str) or not root.strip():
+            continue
+        if os.path.isfile(root):
+            entries = [(root, None)]
+        elif os.path.isdir(root):
+            entries = _files_walk(root)
+        else:
+            result[root] = {"exists": False, "files": 0, "capped": False}   # путь не существует
+            continue
+        cnt, capped = 0, False
+        for p, _base in entries:
+            if scanned >= _FILES_MAX_SCAN:
+                capped = True                 # обход обрезан — счётчик неполон, честно помечаем
+                break
+            scanned += 1
+            if _files_is_candidate(p):
+                cnt += 1
+        result[root] = {"exists": True, "files": cnt, "capped": capped}
+    return result
+
+
 _SOURCES = {
     "hn": _hn,
     "reddit": _reddit,
     "lobsters": _lobsters,
     "gh_trending": _gh_trending,
     "telegram": _telegram,
+    "files": _files,
 }
 
 
