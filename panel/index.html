@@ -4,1256 +4,1300 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Киборг — пульт</title>
+<meta name="description" content="Пульт автономного агента Киборг — живой статус, идеи, источники">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --page:#0d0d0d; --card:#1a1a19; --card2:#222220;
-    --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
-    --line:rgba(255,255,255,.10); --grid:#2c2c2a;
-    --blue:#3987e5; --aqua:#199e70; --yellow:#c98500;
-    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
-    --r:10px;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--page);color:var(--ink2);
-       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
-  .wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
-  h1{color:var(--ink);font-size:22px;margin:0}
-  h2{color:var(--ink);font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
-  h2 .sub{color:var(--muted);font-weight:400;font-size:12px}
-  /* сворачиваемые секции: заголовок-переключатель + прячущееся тело */
-  h2.sec-toggle{cursor:pointer;user-select:none}
-  h2.sec-toggle .caret{color:var(--muted);font-size:10px;flex:none;width:10px;
-        transition:transform .18s}
-  h2.sec-toggle:hover .caret{color:var(--ink2)}
-  h2.sec-toggle.closed .caret{transform:rotate(-90deg)}
-  .sec-body.hidden{display:none}
-  a{color:var(--blue)}
-  .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-  .head .upd{color:var(--muted);font-size:12px;margin-left:auto}
+/* ── TOKENS ── */
+:root {
+  --bg:        #07070f;
+  --bg2:       #0c0c18;
+  --bg3:       #11111f;
+  --card:      rgba(15,15,30,0.85);
+  --card2:     rgba(20,20,38,0.9);
+  --border:    rgba(255,255,255,0.07);
+  --border2:   rgba(255,255,255,0.12);
+  --ink:       #f1f5f9;
+  --ink2:      #94a3b8;
+  --ink3:      #475569;
+  --blue:      #6366f1;
+  --blue2:     #818cf8;
+  --cyan:      #06b6d4;
+  --green:     #22c55e;
+  --amber:     #f59e0b;
+  --red:       #ef4444;
+  --good:      #22c55e;
+  --warn:      #f59e0b;
+  --crit:      #ef4444;
+  --r:         12px;
+  --r2:        8px;
+  --font:      'Inter', system-ui, -apple-system, sans-serif;
+  --mono:      'JetBrains Mono', 'Consolas', monospace;
+  --glow-b:    0 0 24px rgba(99,102,241,0.25);
+  --glow-g:    0 0 20px rgba(34,197,94,0.2);
+  --glow-r:    0 0 20px rgba(239,68,68,0.25);
+}
 
-  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
-  .chip{background:var(--card);border:1px solid var(--line);border-radius:999px;
-        padding:5px 12px;font-size:12.5px;display:flex;align-items:center;gap:7px;color:var(--ink2)}
-  .dot{width:8px;height:8px;border-radius:50%;flex:none}
-  .dot.good{background:var(--good)} .dot.warn{background:var(--warn)}
-  .dot.crit{background:var(--crit)} .dot.blue{background:var(--blue)}
-  .dot.mut{background:var(--muted)}
-  .chip b{color:var(--ink);font-weight:600}
+/* ── RESET ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--ink2);
+  -webkit-font-smoothing: antialiased;
+}
 
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media (max-width:900px){.grid2{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-        padding:16px;margin-bottom:14px}
+/* ── LAYOUT ── */
+#app {
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
 
-  /* конвейер */
-  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:10px 0 4px}
-  .node{background:var(--card2);border:1px solid var(--line);border-radius:8px;
-        padding:7px 10px;cursor:pointer;min-width:0;transition:border-color .15s}
-  .node:hover{border-color:var(--blue)}
-  .node.sel{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
-  .node.via{border-style:dashed;opacity:.9}
-  .node.via .nm{color:var(--blue)}
-  .node .nm{color:var(--ink);font-size:12.5px;font-weight:600;white-space:nowrap}
-  .node .rl{font-size:10.5px;color:var(--muted)}
-  .arrow{color:var(--muted);align-self:center;padding:0 6px;font-size:14px;flex:none}
-  .organ-detail{background:var(--card2);border:1px solid var(--line);border-radius:8px;
-        padding:10px 12px;margin-top:10px;font-size:13px;display:none}
-  .organ-detail.show{display:block}
-  .organ-detail .io{color:var(--muted);font-size:12px;margin-top:4px}
-  .kv{color:var(--ink);font-weight:600}
+/* ── HEADER ── */
+#header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: rgba(7,7,15,0.95);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+#header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--blue) 30%, var(--cyan) 70%, transparent);
+  opacity: 0.4;
+}
+.h-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.h-pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.h-pulse.running { background: var(--amber); box-shadow: 0 0 8px var(--amber); animation-duration: 0.6s; }
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.85); }
+}
+.h-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+.h-sep { width: 1px; height: 24px; background: var(--border2); flex-shrink: 0; }
+.h-stats { display: flex; gap: 20px; align-items: center; }
+.h-stat { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--ink3); }
+.h-stat b { color: var(--ink2); font-weight: 500; }
+.h-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.h-auto-badge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border2);
+  font-size: 11px; cursor: pointer;
+  transition: border-color .15s, background .15s;
+  color: var(--ink2);
+}
+.h-auto-badge:hover { border-color: var(--blue); }
+.h-auto-badge.on { border-color: var(--green); color: var(--green); background: rgba(34,197,94,0.08); }
+.h-auto-badge .adot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.h-now { font-family: var(--mono); font-size: 11px; color: var(--ink3); }
 
-  button{font:inherit;border-radius:8px;border:1px solid var(--line);cursor:pointer;
-         background:var(--card2);color:var(--ink);padding:7px 14px}
-  button:hover{border-color:var(--blue)}
-  button:disabled{opacity:.45;cursor:default}
-  button.run{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
-  button.run:disabled{background:var(--card2);border-color:var(--line);color:var(--muted)}
-  button.mini{padding:4px 10px;font-size:12.5px}
-  button.stop{padding:7px 10px;border-color:var(--crit);color:var(--crit);background:transparent}
-  button.stop:hover{background:rgba(208,59,59,.12)}
-  button.stop:disabled{opacity:.3;cursor:default;border-color:var(--line);color:var(--muted)}
-  button.stop.mini{padding:4px 8px}
-  button.take{border-color:var(--good);color:var(--good)}
-  button.take:hover{background:rgba(12,163,12,.12)}
-  button.later{color:var(--ink2)}
-  button.trash{border-color:var(--crit);color:var(--crit)}
-  button.trash:hover{background:rgba(208,59,59,.12)}
+/* ── MAIN BODY ── */
+#main {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  overflow: hidden;
+  height: 100%;
+}
 
-  /* руль направления идей */
-  .dirbox{margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card2)}
-  .dir-presets{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-  .dir-chip{display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;overflow:hidden}
-  .dir-chip>button{border:0;border-radius:0;background:transparent;padding:4px 6px 4px 11px;font-size:12.5px;color:var(--ink)}
-  .dir-chip>b{padding:4px 9px 4px 2px;color:var(--muted);cursor:pointer;font-weight:400}
-  .dir-chip>b:hover{color:var(--crit)}
-  .dir-chip.on{border-color:var(--blue);background:rgba(47,109,208,.14)}
-  .dir-chip.on>button{color:var(--blue);font-weight:600}
-  .dir-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  .dir-row input{flex:1;min-width:120px;font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
-  .fold-list{display:flex;flex-direction:column;gap:4px;margin:8px 0}
-  .fold-item{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px 6px 4px 10px;font-size:12.5px}
-  .fold-item>code{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-family:ui-monospace,Consolas,monospace}
-  .fold-item>b{color:var(--muted);cursor:pointer;font-weight:400;padding:0 4px}
-  .fold-item>b:hover{color:var(--crit)}
-  .fold-note{font-size:11px;white-space:nowrap;flex:none}
-  .fold-note.ok{color:var(--good)} .fold-note.warn{color:var(--warn)} .fold-note.bad{color:var(--crit)}
-  .feed-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-  .feed-chip{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-size:12.5px;
-    border:1px solid var(--line);border-radius:999px;padding:3px 11px;color:var(--muted);background:var(--card);transition:border-color .12s,background .12s}
-  .feed-chip:hover{border-color:var(--blue)}
-  .feed-chip.on{border-color:var(--good);color:var(--ink);background:rgba(60,170,90,.13)}
-  .feed-chip .fdot{font-size:10px;opacity:.9}
-  .feed-warn{font-size:12px;color:var(--warn);margin-top:2px}
+/* ── LEFT PANEL ── */
+#left {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%);
+  overflow: hidden;
+}
 
-  /* консоль прогона */
-  .console{background:#0a0a0a;border:1px solid var(--grid);border-radius:8px;
-           font:12px/1.55 ui-monospace,Consolas,monospace;color:var(--ink2);
-           padding:12px;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word}
-  .console:empty::before{content:"тут появится живой вывод, когда запустишь прогон";color:var(--muted)}
-  .runstate{font-size:12px;color:var(--muted);margin-top:6px}
-  .spin{display:inline-block;animation:sp 1s linear infinite}
-  @keyframes sp{to{transform:rotate(360deg)}}
+/* Knight area */
+#knight-area {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 16px 0;
+  position: relative;
+}
+#knight-area svg { width: 180px; height: auto; display: block; }
 
-  /* инбокс */
-  .idea{background:var(--card2);border:1px solid var(--line);border-radius:8px;
-        padding:12px;margin-bottom:10px}
-  .idea .t{color:var(--ink);font-weight:600;margin-bottom:4px}
-  .idea .w{font-size:13px;color:var(--ink2)}
-  .idea .meta{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}
-  .tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}
-  .src-row{font-size:12px;color:var(--muted);margin:2px 0 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .src{border:1px solid var(--line);border-radius:999px;padding:1px 9px;white-space:nowrap}
-  .src.off{opacity:.6;border-color:#5a3a3a}
-  .beta{font-size:10px;font-weight:700;color:#d8a24a;border:1px solid #7a5a2a;border-radius:4px;padding:0 3px;margin-left:3px;vertical-align:middle}
-  .src-note{font-size:11px;color:var(--muted);font-style:italic;border:none;padding:0}
-  .tag.llm{border-color:var(--blue);color:var(--blue)}
-  .idea .acts{display:flex;gap:8px;margin-top:10px}
-  .done-row{padding:6px 10px;border-bottom:1px solid var(--grid);font-size:13px;display:flex;gap:8px}
-  .done-row:last-child{border-bottom:0}
-  .st{font-size:11px;border-radius:999px;padding:1px 8px;flex:none;align-self:center}
-  .st.take{background:rgba(12,163,12,.15);color:var(--good)}
-  .st.later{background:rgba(250,178,25,.12);color:var(--warn)}
-  .st.trash{background:rgba(208,59,59,.14);color:var(--crit)}
-  .finish-card{border-left:3px solid var(--aqua)}
-  .capbar{display:flex;gap:4px;margin:2px 0 12px}
-  .capbar .slot{height:8px;flex:1;border-radius:4px;background:var(--grid)}
-  .capbar .slot.full{background:var(--yellow)}
+/* Sources row */
+#sources-area {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+}
+.sources-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink3); margin-bottom: 6px; }
+.sources-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.src-chip {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--border2);
+  font-size: 11px; color: var(--ink2);
+  transition: border-color .15s;
+}
+.src-chip.ok  { border-color: rgba(34,197,94,0.35); }
+.src-chip.bad { border-color: rgba(239,68,68,0.35); color: var(--ink3); }
+.src-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.src-dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.src-dot.bad { background: var(--red); }
 
-  /* журнал */
-  .runrow{padding:8px 0;border-bottom:1px solid var(--grid);font-size:13px}
-  .runrow:last-child{border-bottom:0}
-  .runrow .ts{color:var(--muted);font-size:11.5px}
-  .runrow .chain{color:var(--muted);font-size:12px}
-  .runrow .chain b{color:var(--ink2);font-weight:500}
-  .runrow .res{font-size:12px}
-  .res .okv{color:var(--good)} .res .zero{color:var(--muted)}
-  .runrow .council-note{font-size:11.5px;color:var(--muted);margin-top:2px}
-  .runrow .council-note.woke{color:var(--warn);font-weight:600}
+/* Divider */
+.l-divider { height: 1px; background: var(--border); margin: 4px 16px; flex-shrink: 0; }
 
-  /* реестр */
-  .strip{display:flex;gap:2px;height:14px;border-radius:7px;overflow:hidden;margin:8px 0 6px}
-  .strip div{min-width:3px}
-  .legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);flex-wrap:wrap}
-  .legend .dot{width:9px;height:9px;display:inline-block;margin-right:5px;border-radius:50%}
-  .pbars{margin-top:12px}
-  .pbar{display:grid;grid-template-columns:170px 1fr 30px;gap:8px;align-items:center;
-        font-size:12px;margin-bottom:4px}
-  .pbar .nm{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
-  .pbar .bar{height:9px;border-radius:4px;background:var(--blue);min-width:2px}
-  .pbar .n{color:var(--muted)}
-  input[type=search]{background:var(--card2);border:1px solid var(--line);color:var(--ink);
-        border-radius:8px;padding:7px 12px;width:100%;font:inherit;margin:10px 0}
-  input[type=search]:focus{outline:none;border-color:var(--blue)}
-  .reg-list{max-height:340px;overflow:auto}
-  .reg-row{padding:7px 4px;border-bottom:1px solid var(--grid);font-size:12.5px}
-  .reg-row:last-child{border-bottom:0}
-  .reg-row .nm{color:var(--ink);font-weight:600}
-  .reg-row .pj{color:var(--muted)}
-  .reg-row .pp{color:var(--ink2);margin-top:2px}
-  .reg-row .keys{color:var(--warn);font-size:11px}
-  details summary{cursor:pointer;color:var(--muted);font-size:13px;user-select:none}
-  details[open] summary{margin-bottom:8px}
+/* Direction */
+#direction-area {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+}
+.dir-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink3); margin-bottom: 5px; }
+.dir-current {
+  font-size: 11.5px; color: var(--ink2);
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: var(--r2); padding: 5px 8px;
+  display: flex; align-items: center; gap: 6px; min-height: 28px;
+}
+.dir-none { color: var(--ink3); font-style: italic; }
+.dir-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.dir-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px 2px 9px; border-radius: 999px;
+  border: 1px solid var(--border2); font-size: 11px;
+  cursor: pointer; color: var(--ink2);
+  transition: border-color .12s, background .12s;
+}
+.dir-pill:hover { border-color: var(--blue); }
+.dir-pill.on { border-color: var(--blue); background: rgba(99,102,241,0.12); color: var(--blue2); }
+.dir-pill .dp-x { color: var(--ink3); margin-left: 2px; }
+.dir-pill .dp-x:hover { color: var(--red); }
+.dir-input-row { display: flex; gap: 4px; margin-top: 5px; }
+.dir-input-row input {
+  flex: 1; min-width: 0; font: 11.5px var(--font);
+  padding: 4px 8px; border: 1px solid var(--border2);
+  border-radius: var(--r2); background: var(--bg3);
+  color: var(--ink); outline: none;
+  transition: border-color .12s;
+}
+.dir-input-row input:focus { border-color: var(--blue); }
 
-  /* каркас киборга */
-  .skel-grid{display:grid;grid-template-columns:minmax(320px,680px) 1fr;gap:20px;align-items:start}
-  @media (max-width:900px){.skel-grid{grid-template-columns:1fr}}
-  #skel{max-width:680px;width:100%}
-  #skel svg{width:100%;height:auto;display:block;touch-action:none;user-select:none}
-  #skel .draggable{cursor:grab}
-  #skel .draggable:active{cursor:grabbing}
-  #skel .slot-hint{fill:none;stroke:#3d3d36;stroke-width:1.5;stroke-dasharray:4 4}
-  #skel .bone{stroke:var(--grid);stroke-width:5;fill:none;stroke-linecap:round}
-  #skel .plate{fill:#161615;stroke:#34342f;stroke-width:1.5}
-  #skel .spinebone{stroke:#3d3d38;stroke-width:5;stroke-dasharray:7 6;fill:none}
-  #skel .nerve{stroke:#2e2e2b;stroke-width:1.2;stroke-dasharray:2 4;fill:none}
-  #skel .organ{cursor:pointer}
-  #skel .organ .nodebg{fill:#222220;stroke-width:2;transition:stroke-width .15s}
-  #skel .organ:hover .nodebg{stroke-width:3.5}
-  #skel .organ.sel .nodebg{stroke-width:4}
-  #skel .organ.work .nodebg{stroke:var(--warn) !important;stroke-width:4;animation:pulse 1s infinite}
-  #skel .builtin .ring{fill:transparent;stroke-width:2;stroke-dasharray:3 4;opacity:.65;transition:opacity .15s}
-  #skel .builtin:hover .ring{opacity:1;stroke-dasharray:none}
-  #skel .builtin.sel .ring{opacity:1;stroke-dasharray:none;stroke-width:3.5}
-  #skel .builtin.work .ring{stroke:var(--warn) !important;opacity:1;stroke-dasharray:none;animation:pulse 1s infinite}
-  @keyframes pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.3}}
-  #skel .lbl{font-size:10.5px;fill:var(--muted)}
-  #skel .leader{stroke:#3a3a36;stroke-width:1;fill:none}
-  #skel .eye{fill:#3a3a36}
-  #skel .organ.sel .eye,#skel .organ:hover .eye{fill:var(--aqua)}
+/* Action buttons */
+#actions {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.btn {
+  display: flex; align-items: center; justify-content: center;
+  gap: 7px; border-radius: var(--r2);
+  padding: 9px 14px; font: 600 13px var(--font);
+  border: none; cursor: pointer;
+  transition: transform .12s, box-shadow .12s, opacity .12s;
+  outline: none;
+}
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.38; cursor: default; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--blue), #4f46e5);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(99,102,241,0.35);
+}
+.btn-primary:hover:not(:disabled) { box-shadow: 0 4px 20px rgba(99,102,241,0.55); transform: translateY(-1px); }
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--ink2);
+}
+.btn-secondary:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+.btn-stop {
+  background: transparent;
+  border: 1px solid rgba(239,68,68,0.35);
+  color: var(--red);
+  font-size: 11.5px;
+  padding: 6px 12px;
+}
+.btn-stop:hover:not(:disabled) { background: rgba(239,68,68,0.08); }
+.btn-mini {
+  padding: 3px 8px; font-size: 11px; font-weight: 500;
+  background: var(--bg3); border: 1px solid var(--border2);
+  color: var(--ink2); border-radius: 6px;
+  cursor: pointer; transition: border-color .12s;
+}
+.btn-mini:hover { border-color: var(--blue); color: var(--ink); }
 
-  /* оживление рыцаря: дыхание · пульс сердца · живые нервы */
-  #skel .breath{transform-box:fill-box;transform-origin:50% 100%;
-        animation:breathe 4.2s ease-in-out infinite}
-  #skel svg.running .breath{animation-play-state:paused}
-  @keyframes breathe{0%,100%{transform:translateY(0) scaleY(1)}
-        50%{transform:translateY(-2.4px) scaleY(1.014)}}
-  @media (prefers-reduced-motion:reduce){#skel .breath,#skel .heartbeat,#skel .nerve{animation:none}}
+/* Run status */
+#run-status-area {
+  flex: 0 0 auto;
+  padding: 0 16px 6px;
+  min-height: 24px;
+}
+.run-status-line {
+  font-size: 11.5px; color: var(--ink3);
+  display: flex; align-items: center; gap: 6px;
+}
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.run-status-line.active { color: var(--amber); }
 
-  /* сердце-ромб: два толчка (систола-диастола), темп задаёт заполненность инбокса (--hb) */
-  #skel .heartbeat{fill:#e6484d;opacity:0;transform-box:fill-box;transform-origin:center;
-        pointer-events:none;animation:hb var(--hb,1.4s) ease-in-out infinite;
-        filter:drop-shadow(0 0 5px rgba(230,72,77,.7))}
-  @keyframes hb{
-        0%{transform:scale(.70);opacity:.14}
-        13%{transform:scale(1.14);opacity:.52}
-        26%{transform:scale(.88);opacity:.30}
-        40%{transform:scale(1.03);opacity:.44}
-        60%,100%{transform:scale(.70);opacity:.12}}
-  #skel .heartbeat.full{filter:drop-shadow(0 0 9px rgba(230,72,77,.9))}
+/* Console (folded) */
+#console-area {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 16px 12px;
+  display: flex;
+  flex-direction: column;
+}
+.console-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; color: var(--ink3);
+  cursor: pointer; margin-bottom: 4px;
+  user-select: none;
+}
+.console-toggle:hover { color: var(--ink2); }
+#console {
+  flex: 1 1 0; min-height: 0;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  font: 11px/1.55 var(--mono);
+  color: var(--ink2);
+  padding: 8px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  display: none;
+}
+#console.visible { display: block; }
+#console:empty::before { content: "вывод прогона появится здесь"; color: var(--ink3); }
 
-  /* нервы: тихий ток в простое, разгон и подсветка при прогоне */
-  #skel .nerve{animation:nflow 3s linear infinite}
-  @keyframes nflow{to{stroke-dashoffset:-18}}
-  #skel svg.running .nerve{stroke:var(--warn);stroke-opacity:.85;stroke-width:1.6;animation-duration:.7s}
-  .part-detail{background:var(--card2);border:1px solid var(--line);border-radius:8px;
-        padding:14px;font-size:13.5px;min-height:120px}
-  .part-detail .pt{color:var(--ink);font-weight:700;font-size:15px;margin-bottom:6px}
-  .part-detail .io{color:var(--muted);font-size:12px;margin:8px 0}
-  .part-detail .hint{color:var(--muted)}
-  .skel-caption{color:var(--muted);font-size:11.5px;margin-top:8px}
-  .bodypick{margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .bodypick .lbl2{color:var(--muted);font-size:12px;margin-right:2px}
-  .bstyle.on{border-color:var(--blue);background:rgba(57,135,229,.15);color:var(--ink)}
+/* Feeds toggle */
+#feeds-area {
+  flex: 0 0 auto;
+  padding: 4px 16px 8px;
+}
+.feeds-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink3); margin-bottom: 5px; }
+.feeds-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.feed-chip {
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 11px;
+  cursor: pointer; color: var(--ink3);
+  transition: all .12s;
+}
+.feed-chip.on { border-color: var(--blue); color: var(--blue2); background: rgba(99,102,241,0.08); }
+.feed-chip:hover { border-color: var(--blue2); }
 
-  /* силуэты будущих органов (куда растёт киборг) */
-  .future{margin-top:14px}
-  .future .lbl2{color:var(--ink2);font-size:12.5px}
-  .ghost{display:inline-flex;align-items:center;gap:6px;background:transparent;
-        border:1.5px dashed #3d3d36;border-radius:999px;padding:4px 11px;margin:0 6px 6px 0;
-        font-size:12px;color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s}
-  .ghost:hover{border-color:var(--aqua);color:var(--ink2)}
-  .ghost.on{border-style:solid;border-color:var(--aqua);color:var(--ink)}
-  .ghost .gi{opacity:.75}
+/* ── RIGHT PANEL ── */
+#right {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  overflow: hidden;
+  background: var(--bg);
+}
 
-  /* мозг — отделы */
-  .dept{display:flex;gap:10px;padding:9px 4px;border-bottom:1px solid var(--grid);align-items:baseline}
-  .dept:last-child{border-bottom:0}
-  .dept .di{flex:none;width:20px;text-align:center}
-  .dept .dn{color:var(--ink);font-weight:600;flex:none;min-width:128px}
-  .dept .dr{color:var(--ink2);flex:1;font-size:13px}
-  .dept .dr .org{color:var(--muted)}
-  .dept .ds{flex:none;font-size:11.5px;border-radius:999px;padding:1px 9px;white-space:nowrap;align-self:center}
-  .ds.live{background:rgba(12,163,12,.15);color:var(--good)}
-  .ds.stub{background:rgba(137,135,129,.18);color:var(--muted)}
-  .ds.sleep{background:rgba(250,178,25,.12);color:var(--warn)}
-  .brain-note{color:var(--muted);font-size:12.5px;margin-top:10px;border-top:1px solid var(--grid);padding-top:10px}
-  @media (max-width:640px){.dept{flex-wrap:wrap}.dept .dr{flex-basis:100%;order:3}}
+/* Ideas feed */
+#ideas-panel {
+  overflow-y: auto;
+  padding: 16px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+#ideas-panel::-webkit-scrollbar { width: 4px; }
+#ideas-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-  /* гейты */
-  .gate{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);
-        border-radius:8px;margin-bottom:8px;background:var(--card2);font-size:13px;align-items:baseline}
-  .gate .ic{flex:none}
-  .gate b{color:var(--ink)}
-  .foot{color:var(--muted);font-size:11.5px;margin-top:24px;text-align:center}
-  .err{color:var(--crit);font-size:12px}
+.panel-title {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: 12px;
+}
+.panel-title h2 {
+  font-size: 13px; font-weight: 600;
+  color: var(--ink); text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.panel-title .count {
+  font-size: 11px; color: var(--ink3);
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 8px;
+}
+.panel-title .panel-actions { margin-left: auto; display: flex; gap: 6px; }
+
+/* Idea card */
+.idea-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .15s, transform .12s;
+  backdrop-filter: blur(8px);
+}
+.idea-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--blue), var(--cyan));
+  border-radius: 3px 0 0 3px;
+}
+.idea-card.finish-card::before { background: linear-gradient(180deg, var(--cyan), var(--green)); }
+.idea-card:hover { border-color: var(--border2); transform: translateX(1px); }
+.idea-card.dismissing { opacity: 0; transform: translateX(20px); transition: all .25s ease; }
+.idea-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px; }
+.idea-title {
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  line-height: 1.35; flex: 1; min-width: 0;
+}
+.score-badge {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font: 600 12px var(--mono);
+  color: var(--amber);
+}
+.score-badge.high { border-color: rgba(34,197,94,0.4); color: var(--green); }
+.score-badge.med  { border-color: rgba(245,158,11,0.4); color: var(--amber); }
+.score-badge.low  { border-color: var(--border); color: var(--ink3); }
+.idea-why { font-size: 12px; color: var(--ink2); line-height: 1.45; margin-bottom: 8px; }
+.idea-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.idea-tag {
+  font-size: 10.5px; padding: 1px 7px;
+  border-radius: 999px; border: 1px solid var(--border);
+  color: var(--ink3); white-space: nowrap;
+}
+.idea-tag.llm { border-color: rgba(99,102,241,0.35); color: var(--blue2); }
+.idea-tag.src { border-color: rgba(6,182,212,0.3); color: var(--cyan); }
+.idea-acts {
+  display: flex; gap: 5px; margin-top: 8px;
+}
+.act-btn {
+  padding: 4px 10px; border-radius: 6px; font: 500 11px var(--font);
+  border: 1px solid var(--border2); cursor: pointer;
+  color: var(--ink2); background: transparent;
+  transition: all .12s;
+}
+.act-btn.take  { border-color: rgba(34,197,94,0.4); color: var(--green); }
+.act-btn.take:hover  { background: rgba(34,197,94,0.1); }
+.act-btn.later { }
+.act-btn.later:hover { border-color: var(--amber); color: var(--amber); }
+.act-btn.trash { border-color: rgba(239,68,68,0.3); color: var(--red); }
+.act-btn.trash:hover { background: rgba(239,68,68,0.08); }
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 20px; color: var(--ink3); text-align: center;
+  gap: 8px;
+}
+.empty-state .es-icon { font-size: 32px; opacity: 0.4; }
+.empty-state .es-text { font-size: 13px; }
+.empty-state .es-sub { font-size: 11.5px; }
+
+/* Finish slot */
+.finish-slot {
+  background: var(--card);
+  border: 1px solid rgba(6,182,212,0.25);
+  border-radius: var(--r);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  position: relative;
+  overflow: hidden;
+}
+.finish-slot::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--cyan), var(--green));
+}
+.finish-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--cyan); margin-bottom: 4px; }
+.finish-title { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+.finish-why { font-size: 11.5px; color: var(--ink2); }
+
+/* Done ideas (collapsed) */
+.done-toggle {
+  font-size: 11px; color: var(--ink3); cursor: pointer;
+  padding: 6px 0; display: flex; align-items: center; gap: 5px;
+  user-select: none;
+}
+.done-toggle:hover { color: var(--ink2); }
+.done-list { display: none; }
+.done-list.open { display: block; }
+.done-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 6px; border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+}
+.done-row:last-child { border-bottom: 0; }
+.done-st {
+  font-size: 10px; padding: 1px 7px; border-radius: 999px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.done-st.take  { background: rgba(34,197,94,0.1); color: var(--green); }
+.done-st.later { background: rgba(245,158,11,0.1); color: var(--amber); }
+.done-st.trash { background: rgba(239,68,68,0.1); color: var(--red); }
+
+/* ── BOTTOM: runs log ── */
+#runs-panel {
+  border-top: 1px solid var(--border);
+  background: var(--bg2);
+  padding: 0 20px;
+  flex-shrink: 0;
+  max-height: 140px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.runs-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0 6px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.runs-header .rh-right { margin-left: auto; font-size: 11px; color: var(--ink3); text-transform: none; letter-spacing: 0; }
+#runs-list {
+  flex: 1 1 0; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.run-row {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  gap: 8px; align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+}
+.run-row:last-child { border-bottom: 0; }
+.run-ts { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); white-space: nowrap; }
+.run-goal { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-result { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+.run-result.ok   { color: var(--green); }
+.run-result.zero { color: var(--ink3); }
+.run-result.err  { color: var(--red); }
+
+/* ── SETTINGS MODAL ── */
+#settings-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+}
+#settings-overlay.open { display: flex; }
+#settings-modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 24px;
+  width: 480px; max-width: 95vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.6), var(--glow-b);
+}
+.modal-title {
+  font-size: 15px; font-weight: 700; color: var(--ink);
+  margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+}
+.modal-close {
+  margin-left: auto; background: none; border: none;
+  color: var(--ink3); font-size: 18px; cursor: pointer; line-height: 1;
+}
+.modal-close:hover { color: var(--ink); }
+.modal-section { margin-bottom: 18px; }
+.modal-section-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink3); margin-bottom: 8px;
+}
+.modal-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.modal-row label { font-size: 12.5px; color: var(--ink2); flex: 1; }
+.modal-row input[type=number] {
+  width: 64px; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border2); background: var(--bg3);
+  color: var(--ink); font: 12px var(--mono); outline: none;
+}
+.modal-row input[type=number]:focus { border-color: var(--blue); }
+.folder-item {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px;
+  margin-bottom: 4px; font-size: 11.5px;
+}
+.folder-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); font-family: var(--mono); font-size: 11px; }
+.folder-note { font-size: 10.5px; white-space: nowrap; }
+.folder-note.ok   { color: var(--green); }
+.folder-note.warn { color: var(--amber); }
+.folder-note.bad  { color: var(--red); }
+.folder-rm { background: none; border: none; color: var(--ink3); cursor: pointer; font-size: 14px; line-height: 1; }
+.folder-rm:hover { color: var(--red); }
+.folder-add-row { display: flex; gap: 6px; margin-top: 6px; }
+.folder-add-row input {
+  flex: 1; padding: 5px 8px; border-radius: 6px;
+  border: 1px solid var(--border2); background: var(--bg3);
+  color: var(--ink); font: 11.5px var(--font); outline: none;
+}
+.folder-add-row input:focus { border-color: var(--blue); }
+
+/* SVG knight styles */
+#knight-svg .breath {
+  transform-box: fill-box; transform-origin: 50% 100%;
+  animation: breathe 4.2s ease-in-out infinite;
+}
+#knight-svg.running .breath { animation-play-state: paused; }
+@keyframes breathe {
+  0%,100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-1.5px) scaleY(1.01); }
+}
+#knight-svg .heartbeat {
+  fill: #e6484d; opacity: 0;
+  transform-box: fill-box; transform-origin: center;
+  pointer-events: none;
+  animation: hb var(--hb, 1.4s) ease-in-out infinite;
+  filter: drop-shadow(0 0 5px rgba(230,72,77,.8));
+}
+@keyframes hb {
+  0%   { transform: scale(.70); opacity: .14; }
+  13%  { transform: scale(1.14); opacity: .55; }
+  26%  { transform: scale(.88); opacity: .30; }
+  40%  { transform: scale(1.03); opacity: .44; }
+  60%,100% { transform: scale(.70); opacity: .12; }
+}
+#knight-svg .nerve {
+  stroke: rgba(99,102,241,0.3);
+  stroke-width: 1; stroke-dasharray: 2 4;
+  fill: none; animation: nflow 3s linear infinite;
+}
+@keyframes nflow { to { stroke-dashoffset: -18; } }
+#knight-svg.running .nerve { stroke: var(--amber); stroke-opacity: .8; animation-duration: .7s; }
+#knight-svg .organ-glow {
+  fill: none; opacity: 0;
+  transition: opacity .3s;
+}
+#knight-svg .organ-active .organ-glow { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #knight-svg .breath, #knight-svg .heartbeat, #knight-svg .nerve { animation: none; }
+}
+
+/* ── SCROLLBAR GLOBAL ── */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* ── UTILITY ── */
+.esc-ink { color: var(--ink); }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+.badge-green { background: rgba(34,197,94,0.1); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.badge-red   { background: rgba(239,68,68,0.1);  color: var(--red);   border: 1px solid rgba(239,68,68,0.25); }
+.badge-blue  { background: rgba(99,102,241,0.1); color: var(--blue2); border: 1px solid rgba(99,102,241,0.25); }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div id="app">
 
-  <div class="head">
-    <h1>🤖 Киборг — пульт</h1>
-    <span class="upd" id="upd">загружаю…</span>
-  </div>
+  <!-- ═══ HEADER ═══ -->
+  <header id="header">
+    <div class="h-brand">
+      <div class="h-pulse" id="h-pulse"></div>
+      <div class="h-name">Киборг</div>
+    </div>
+    <div class="h-sep"></div>
+    <div class="h-stats">
+      <div class="h-stat">инбокс: <b id="h-inbox-count">—</b></div>
+      <div class="h-stat">помнит: <b id="h-seen-count">—</b></div>
+      <div class="h-stat" id="h-key-stat"></div>
+    </div>
+    <div class="h-right">
+      <div class="h-auto-badge" id="h-auto-badge" onclick="toggleAuto()" title="Автономность">
+        <div class="adot"></div>
+        <span id="h-auto-label">авто: выкл</span>
+      </div>
+      <button class="btn-mini" onclick="openSettings()" title="Настройки">⚙ Настройки</button>
+      <div class="h-now" id="h-now"></div>
+    </div>
+  </header>
 
-  <div class="card">
-    <h2>Каркас <span class="sub">ткни в орган — расскажу, что делает, и дам задействовать</span></h2>
-    <div class="skel-grid">
-      <div id="skel"></div>
-      <div>
-        <div class="part-detail" id="part-detail"><span class="hint">Собери киборга: перетащи органы из лотка на тело. Клик по органу — что делает и кнопка задействовать.</span></div>
-        <div class="skel-caption">Пунктирные кружки — подсказки мест (магнитятся) · тащить можно куда угодно · назад в лоток — просто утащи вправо.<br>
-        🟡 жёлтая вспышка — орган отработал в прогоне · сердце, лоб и позвоночник — встроенные, их не подвинуть.</div>
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="mini" onclick="layoutHint()">✨ Подсказать расстановку</button>
-          <button class="mini" onclick="layoutClear()">↺ Всё в лоток</button>
-        </div>
-        <div class="bodypick" id="bodypick">
-          <span class="lbl2">облик рыцаря:</span>
-          <button class="mini bstyle" data-style="metal" onclick="setBody('metal')">⚔ Металл</button>
-          <button class="mini bstyle" data-style="flat" onclick="setBody('flat')">🛡 Плоский</button>
-          <button class="mini bstyle" data-style="poly" onclick="setBody('poly')">💠 Грани</button>
-        </div>
-        <div class="future" id="future-wrap">
-          <div class="lbl2" style="width:100%;margin-bottom:4px">🌱 куда растёт
-            <span style="color:var(--muted);font-weight:400">— силуэты будущих органов из каталога, кликни</span></div>
-          <div id="future-organs"></div>
+  <!-- ═══ MAIN ═══ -->
+  <div id="main">
+
+    <!-- ─── LEFT ─── -->
+    <div id="left">
+
+      <!-- Knight -->
+      <div id="knight-area">
+        <svg id="knight-svg" viewBox="83 28 344 430" xmlns="http://www.w3.org/2000/svg">
+          <g class="breath" id="knight-body"></g>
+          <!-- Heart -->
+          <path class="heartbeat" id="knight-heart"
+                d="M255,196 L273,214 L255,232 L237,214 Z" style="--hb:1.4s"></path>
+          <!-- Nerves -->
+          <path class="nerve" d="M255,230 Q220,290 190,320"></path>
+          <path class="nerve" d="M255,230 Q290,290 320,320" style="animation-delay:-.8s"></path>
+          <path class="nerve" d="M255,160 Q255,140 255,120" style="animation-delay:-.4s"></path>
+        </svg>
+        <!-- Body style picker -->
+        <div style="display:flex;gap:5px;margin-top:6px">
+          <button class="btn-mini bstyle" data-style="metal" onclick="setBody('metal')">⚔ Металл</button>
+          <button class="btn-mini bstyle" data-style="flat"  onclick="setBody('flat')">🛡 Плоский</button>
+          <button class="btn-mini bstyle" data-style="poly"  onclick="setBody('poly')">💠 Грани</button>
         </div>
       </div>
-    </div>
-  </div>
 
-  <div class="card">
-    <h2>🧠 Мозг — отделы <span class="sub">не одна деталь, а несколько отделов — у каждого честное состояние</span></h2>
-    <div id="brain-depts"></div>
-    <div class="brain-note" id="brain-note"></div>
-  </div>
+      <!-- Sources -->
+      <div id="sources-area">
+        <div class="sources-label">Источники</div>
+        <div class="sources-chips" id="sources-chips">
+          <span class="src-chip"><span class="src-dot"></span>загрузка…</span>
+        </div>
+      </div>
 
-  <div class="chips" id="chips"></div>
+      <div class="l-divider"></div>
 
-  <div class="grid2">
-    <div class="card">
-      <h2>Работа 1: приносить идеи <span class="sub">конвейер органов</span></h2>
-      <div style="font-size:13px">Сходить за свежими новостями → придумать 12 идей → судья отберёт 5 лучших → вычистить секреты → положить в инбокс.</div>
-      <div class="flow" id="flow-ideas"></div>
-      <div class="dirbox">
-        <div style="font-size:13px">🧭 Направление идей <span class="sub" id="dir-current"></span></div>
+      <!-- Feeds -->
+      <div id="feeds-area">
+        <div class="feeds-label">Ленты</div>
+        <div class="feeds-chips" id="feeds-chips"></div>
+      </div>
+
+      <div class="l-divider"></div>
+
+      <!-- Direction -->
+      <div id="direction-area">
+        <div class="dir-label">Направление идей</div>
+        <div class="dir-current" id="dir-current-box">
+          <span class="dir-none" id="dir-none-txt">без направления</span>
+          <span id="dir-cur-txt" style="display:none"></span>
+          <button class="btn-mini" id="dir-clear-btn" onclick="clearDirection()" style="display:none;margin-left:auto;font-size:10px">✕</button>
+        </div>
         <div class="dir-presets" id="dir-presets"></div>
-        <div class="dir-row">
-          <input id="dir-text" type="text" maxlength="120" placeholder="своя тема — впиши и «задать»…"
+        <div class="dir-input-row">
+          <input id="dir-text" type="text" maxlength="120" placeholder="своя тема…"
                  onkeydown="if(event.key==='Enter')applyDirText()">
-          <button class="mini" onclick="applyDirText()">задать</button>
-          <button class="mini" onclick="addPreset()" title="сохранить текст как кнопку-пресет">★ в пресеты</button>
-          <button class="mini" id="dir-clear" onclick="clearDirection()" title="генерить без направления, как из лент">снять</button>
+          <button class="btn-mini" onclick="applyDirText()">→</button>
+          <button class="btn-mini" onclick="addPreset()" title="в пресеты">★</button>
         </div>
       </div>
-      <div class="dirbox">
-        <div style="font-size:13px">🔀 Ленты-источник <span class="sub" id="feed-count"></span></div>
-        <div class="feed-row" id="feed-row"></div>
-        <div class="feed-warn" id="feed-warn"></div>
+
+      <div class="l-divider"></div>
+
+      <!-- Action buttons -->
+      <div id="actions">
+        <button class="btn btn-primary" id="btn-ideas" onclick="runGoal('приноси свежие идеи')">
+          ⚡ Принести идеи
+        </button>
+        <button class="btn btn-secondary" id="btn-finish" onclick="runGoal('доделать существующие проекты')">
+          🏁 Доделать проект
+        </button>
+        <button class="btn btn-stop" id="btn-stop" onclick="stopRun()" disabled>
+          ⏹ Стоп
+        </button>
       </div>
-      <div class="dirbox">
-        <div style="font-size:13px">📁 Папки-источник <span class="sub" id="fold-count"></span></div>
-        <div class="fold-list" id="fold-list"></div>
-        <div class="dir-row">
-          <input id="fold-text" type="text" maxlength="400" placeholder="путь к папке, напр. M:/projects/kiborg…"
-                 onkeydown="if(event.key==='Enter')addFolder()">
-          <button class="mini" onclick="addFolder()" title="читать файлы из этой папки как сырьё для идей">добавить</button>
+
+      <!-- Run status -->
+      <div id="run-status-area">
+        <div class="run-status-line" id="run-status-line"></div>
+      </div>
+
+      <!-- Console (collapsible) -->
+      <div id="console-area">
+        <div class="console-toggle" onclick="toggleConsole()" id="console-toggle">
+          <span id="console-caret">▸</span>
+          <span>Живой вывод</span>
+          <button class="btn-mini" onclick="event.stopPropagation();observeSources()" style="margin-left:auto">👁 Наблюдать</button>
         </div>
+        <div id="console"></div>
       </div>
-      <div style="margin-top:12px"><button class="run" id="btn-ideas" onclick="runGoal('приноси свежие идеи')">▶ Принеси идеи</button> <button class="stop" id="stop-ideas" onclick="stopRun()" disabled title="остановить текущий прогон">⏹ стоп</button></div>
-    </div>
-    <div class="card">
-      <h2>Работа 2: доделывать проекты <span class="sub">второй вид работы</span></h2>
-      <div style="font-size:13px">Достать «самый маленький шаг доделать» из карты твоих проектов (с ротацией) и положить в отдельный слот инбокса.</div>
-      <div class="flow" id="flow-finish"></div>
-      <div style="margin-top:12px"><button class="run" id="btn-finish" onclick="runGoal('доделать существующие проекты')">▶ Шаг «доделать»</button> <button class="stop" id="stop-finish" onclick="stopRun()" disabled title="остановить текущий прогон">⏹ стоп</button></div>
-    </div>
-  </div>
-  <div class="organ-detail" id="organ-detail"></div>
 
-  <div class="card">
-    <h2>Прогон вживую <span class="sub">что киборг делает прямо сейчас</span></h2>
-    <div style="margin-bottom:10px"><button class="mini" id="btn-observe" onclick="observe()">👁 Наблюдать за источниками</button> <button class="stop mini" id="stop-observe" onclick="stopRun()" disabled title="остановить текущий прогон">⏹ стоп</button>
-      <span class="sub" style="margin-left:6px">киборг обойдёт ленты и расскажет вживую: зашёл в паблик → прочитал пост → подумал (новое / уже видел). Только чтение — идеи не пишет.</span></div>
-    <div class="console" id="console"></div>
-    <div class="runstate" id="runstate"></div>
-  </div>
+    </div><!-- /left -->
 
-  <div class="card">
-    <h2 class="sec-toggle" id="auto-head" onclick="toggleSec('auto')"><span class="caret">▾</span>🔌 Автономность <span class="sub" id="auto-sub">выключено — киборг ждёт кнопку</span></h2>
-    <div class="sec-body" id="auto-body">
-      <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Один рубильник. Включишь — киборг сам, по таймеру, ходит за идеями тем же конвейером, что и кнопка «Принеси идеи», и кладёт в тот же инбокс. Не повторяется, пустые обходы пропускает. Выключишь — работает только по кнопке.</div>
-      <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button class="run mini" id="btn-auto" onclick="toggleAuto()">▶ Включить фон</button>
-        <label class="sub">каждые <input id="auto-interval" type="number" min="5" max="240" value="30" style="width:52px"> мин</label>
-        <span class="sub" id="auto-state"></span>
-      </div>
-      <div id="source-health" class="src-row"></div>
-    </div>
-  </div>
+    <!-- ─── RIGHT ─── -->
+    <div id="right">
 
-  <div class="grid2">
-    <div class="card">
-      <h2 class="sec-toggle" id="inbox-head" onclick="toggleSec('inbox')"><span class="caret">▾</span>Инбокс идей <span class="sub" id="inbox-sub"></span></h2>
-      <div class="sec-body" id="inbox-body">
-        <div class="capbar" id="capbar"></div>
-        <div id="ideas-open"></div>
+      <!-- Ideas feed -->
+      <div id="ideas-panel">
+        <div class="panel-title">
+          <h2>Свежие идеи</h2>
+          <span class="count" id="ideas-count">0</span>
+          <div class="panel-actions">
+            <button class="btn-mini" onclick="toggleDone()" id="done-toggle-btn">Разобранные</button>
+          </div>
+        </div>
+
+        <!-- Finish slot -->
         <div id="finish-slot"></div>
-        <details id="done-wrap"><summary id="done-sum"></summary><div id="ideas-done"></div></details>
-        <div class="err" id="inbox-err"></div>
+
+        <!-- Open ideas -->
+        <div id="ideas-open"></div>
+
+        <!-- Done ideas -->
+        <div class="done-toggle" onclick="toggleDone()" id="done-toggle" style="display:none">
+          <span id="done-caret">▸</span> Разобранные (<span id="done-count">0</span>)
+        </div>
+        <div class="done-list" id="done-list"></div>
+
+        <!-- Empty state -->
+        <div class="empty-state" id="empty-state" style="display:none">
+          <div class="es-icon">💡</div>
+          <div class="es-text">Инбокс пуст</div>
+          <div class="es-sub">Нажми «Принести идеи» — агент сходит за новыми</div>
+        </div>
+      </div>
+
+      <!-- Runs log -->
+      <div id="runs-panel">
+        <div class="runs-header">
+          Журнал прогонов
+          <span class="rh-right" id="runs-count"></span>
+        </div>
+        <div id="runs-list"></div>
+      </div>
+
+    </div><!-- /right -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ═══ SETTINGS MODAL ═══ -->
+<div id="settings-overlay" onclick="if(event.target===this)closeSettings()">
+  <div id="settings-modal">
+    <div class="modal-title">
+      ⚙ Настройки
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Автономность</div>
+      <div class="modal-row">
+        <label>Автоцикл включён</label>
+        <span id="modal-auto-state" class="badge badge-green" style="display:none">Вкл</span>
+        <span id="modal-auto-state-off" class="badge">Выкл</span>
+        <button class="btn-mini" id="modal-auto-btn" onclick="toggleAuto()">Включить</button>
+      </div>
+      <div class="modal-row">
+        <label>Интервал (мин)</label>
+        <input type="number" id="modal-auto-interval" min="5" max="240" value="30">
+        <button class="btn-mini" onclick="saveAutoInterval()">Сохранить</button>
       </div>
     </div>
 
-    <div class="card">
-      <h2 class="sec-toggle" id="runs-head" onclick="toggleSec('runs')"><span class="caret">▾</span>Журнал прогонов <span class="sub">runs.md, свежие сверху</span></h2>
-      <div class="sec-body" id="runs-body">
-        <div id="runs" style="max-height:520px;overflow:auto"></div>
+    <div class="modal-section">
+      <div class="modal-section-title">Папки-источник</div>
+      <div id="modal-folders"></div>
+      <div class="folder-add-row">
+        <input id="modal-folder-input" type="text" maxlength="400"
+               placeholder="M:/projects/myproject"
+               onkeydown="if(event.key==='Enter')addFolder()">
+        <button class="btn-mini" onclick="addFolder()">+ Добавить</button>
       </div>
+      <div id="modal-folder-probe" style="font-size:11px;color:var(--ink3);margin-top:4px"></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Ленты-источник</div>
+      <div id="modal-feeds"></div>
     </div>
   </div>
-
-  <div class="card">
-    <h2>Каталог органов <span class="sub" id="reg-sub">запас на рост — карточки из других проектов</span></h2>
-    <div class="strip" id="reg-strip"></div>
-    <div class="legend" id="reg-legend"></div>
-    <div class="pbars" id="reg-projects"></div>
-    <details style="margin-top:12px"><summary>Смотреть все карточки</summary>
-      <input type="search" id="reg-search" placeholder="поиск: имя, проект, что делает…" oninput="renderRegList()">
-      <div class="reg-list" id="reg-list"></div>
-    </details>
-  </div>
-
-  <div class="card">
-    <h2>Ждёт твоего решения</h2>
-    <div id="gates"></div>
-  </div>
-
-  <div class="foot">Пульт только показывает и умеет две команды, что и так есть в CLI (разбор идей, запуск прогона).<br>
-  Ничего в коде киборга не меняет. 127.0.0.1:8737 · обновляется сам каждые 5 сек.</div>
 </div>
 
 <script src="/bodies.js"></script>
 <script>
-let S = null;          // последнее состояние /api/state
-let selOrgan = null;   // выбранный орган (детали)
+// ─── STATE ───
+let S = null;
+let running = false;
 let runPolling = false;
-let running = false;    // идёт ли прогон (гоняет нервы/дыхание на каркасе)
-let bodyStyle = localStorage.getItem("kbodyStyle") || "metal";  // облик рыцаря
+let workOrgan = null;
+let replayed = true;
+let bodyStyle = localStorage.getItem('kbodyStyle') || 'metal';
+let consoleOpen = false;
+let doneOpen = false;
+let FOLD_PROBE = {};
+let autoIvInput = 30; // current interval from state
 
-function setBody(s){
-  if(!(window.KNIGHT_BODIES && KNIGHT_BODIES[s])) return;
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ─── KNIGHT SVG ───
+function setBody(s) {
+  if (!(window.KNIGHT_BODIES && KNIGHT_BODIES[s])) return;
   bodyStyle = s;
-  localStorage.setItem("kbodyStyle", s);
-  document.querySelectorAll(".bstyle").forEach(b=>b.classList.toggle("on", b.dataset.style===s));
-  renderSkeleton();
+  localStorage.setItem('kbodyStyle', s);
+  document.querySelectorAll('.bstyle').forEach(b => b.classList.toggle('on', b.dataset.style === s));
+  renderKnight();
 }
 
-const esc = s => String(s ?? "").replace(/[&<>"']/g,
-  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function renderKnight() {
+  const bodyEl = document.getElementById('knight-body');
+  if (!bodyEl) return;
+  bodyEl.innerHTML = (window.KNIGHT_BODIES && KNIGHT_BODIES[bodyStyle]) || '';
+  document.querySelectorAll('.bstyle').forEach(b =>
+    b.classList.toggle('on', b.dataset.style === bodyStyle));
 
-const ROLE_RU = {source:"источник", transform:"преобразует", sink:"доставка"};
-const STATUS_RU = {extracted:"готов", draft:"набросок", candidate:"кандидат"};
-const STATUS_COLOR = {extracted:"var(--blue)", draft:"var(--aqua)", candidate:"var(--yellow)"};
-const IDEA_ST = {take:"взял", later:"позже", trash:"мусор"};
+  const svg = document.getElementById('knight-svg');
+  if (!S) return;
+  const open = S.inbox.ideas.filter(i => i.status === 'open').length;
+  const fill = Math.min(open / 10, 1);
+  const hbDur = (1.6 - fill * 0.9).toFixed(2);
+  const heart = document.getElementById('knight-heart');
+  if (heart) heart.style.setProperty('--hb', hbDur + 's');
+  svg.classList.toggle('running', running);
+}
 
-/* --- конвейеры: цепочка от источника по produces→consumes --- */
-function chainFrom(sourceName){
-  const byName = Object.fromEntries(S.organs.map(o=>[o.name,o]));
-  const chain = [];
-  let cur = byName[sourceName];
-  const seen = new Set();
-  while(cur && !seen.has(cur.name)){
-    chain.push(cur); seen.add(cur.name);
-    const next = S.organs.find(o => !seen.has(o.name) &&
-      o.consumes.some(k => cur.produces.includes(k)));
-    cur = next;
+// ─── HEADER ───
+function renderHeader() {
+  const open = S ? S.inbox.ideas.filter(i => i.status === 'open').length : 0;
+  document.getElementById('h-inbox-count').textContent = open;
+  document.getElementById('h-seen-count').textContent = S ? S.inbox.seen_count : 0;
+  document.getElementById('h-now').textContent = S ? S.now : '';
+
+  const keyEl = document.getElementById('h-key-stat');
+  if (S) keyEl.innerHTML = S.key.present
+    ? `<span class="badge badge-green">🔑 ${esc(S.key.model)}</span>`
+    : `<span class="badge badge-red">нет ключа</span>`;
+
+  const pulse = document.getElementById('h-pulse');
+  pulse.className = 'h-pulse' + (running ? ' running' : '');
+
+  const auto = S ? (S.auto || {}) : {};
+  const ab = document.getElementById('h-auto-badge');
+  const al = document.getElementById('h-auto-label');
+  ab.className = 'h-auto-badge' + (auto.on ? ' on' : '');
+  al.textContent = auto.on ? `авто: ${auto.interval_min}мин` : 'авто: выкл';
+}
+
+// ─── SOURCES ───
+const SRC_NM = {hn:'HN', reddit:'Reddit', lobsters:'Lobsters', gh_trending:'GitHub', telegram:'Telegram', files:'Папки'};
+function renderSources() {
+  const el = document.getElementById('sources-chips');
+  const s = S && S.sources;
+  if (!s || !s.sources) { el.innerHTML = '<span class="src-chip"><span class="src-dot"></span>нет данных</span>'; return; }
+  el.innerHTML = Object.keys(SRC_NM).filter(k => s.sources[k]).map(k => {
+    const v = s.sources[k];
+    const cls = v.ok ? 'ok' : 'bad';
+    const cnt = v.ok && v.items ? ` ${v.items}` : '';
+    const title = v.error ? ` title="${esc(v.error)}"` : '';
+    return `<span class="src-chip ${cls}"${title}><span class="src-dot ${cls}"></span>${esc(SRC_NM[k])}${cnt}</span>`;
+  }).join('');
+}
+
+// ─── FEEDS ───
+const FEED_NM = {hn:'HN', reddit:'Reddit', lobsters:'Lobsters', gh_trending:'GitHub', telegram:'Telegram'};
+const FEED_VERIFIED = {telegram: true};
+async function postFeeds(enabled) {
+  await fetch('/api/feeds', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled})});
+  refresh();
+}
+function toggleFeed(name) {
+  const f = ((S && S.feeds && S.feeds.enabled) || []).slice();
+  const next = f.includes(name) ? f.filter(x => x !== name) : f.concat([name]);
+  postFeeds(next);
+}
+function renderFeeds() {
+  const box = document.getElementById('feeds-chips');
+  if (!box || !S) return;
+  const F = S.feeds || {all:[], enabled:[]};
+  const on = new Set(F.enabled || []);
+  box.innerHTML = (F.all || []).map(k => {
+    const isOn = on.has(k);
+    const beta = !FEED_VERIFIED[k] ? '<sup style="color:var(--amber);font-size:9px">β</sup>' : '';
+    return `<span class="feed-chip${isOn?' on':''}" onclick="toggleFeed('${k}')">${esc(FEED_NM[k]||k)}${beta}</span>`;
+  }).join('');
+
+  // modal feeds
+  const mf = document.getElementById('modal-feeds');
+  if (mf) mf.innerHTML = (F.all || []).map(k => {
+    const isOn = on.has(k);
+    return `<div class="modal-row"><label>${esc(FEED_NM[k]||k)}${!FEED_VERIFIED[k]?' <span style="color:var(--amber)">β</span>':''}</label>
+      <button class="btn-mini" onclick="toggleFeed('${k}')">${isOn ? '✓ Вкл' : 'Выкл'}</button></div>`;
+  }).join('');
+}
+
+// ─── DIRECTION ───
+async function postDirection(payload) {
+  await fetch('/api/direction', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  refresh();
+}
+function renderDirection() {
+  const d = (S && S.direction) || {current:'', presets:[]};
+  const cur = (d.current || '').trim();
+  const noneEl = document.getElementById('dir-none-txt');
+  const curEl = document.getElementById('dir-cur-txt');
+  const clearBtn = document.getElementById('dir-clear-btn');
+  if (cur) {
+    noneEl.style.display = 'none';
+    curEl.style.display = '';
+    curEl.textContent = '→ «' + cur + '»';
+    clearBtn.style.display = '';
+  } else {
+    noneEl.style.display = '';
+    curEl.style.display = 'none';
+    clearBtn.style.display = 'none';
   }
-  return chain;
+  const presets = d.presets || [];
+  const presetsEl = document.getElementById('dir-presets');
+  presetsEl.innerHTML = presets.map((p, i) => {
+    const isOn = p.toLowerCase() === cur.toLowerCase();
+    return `<span class="dir-pill${isOn?' on':''}" onclick="setPreset(${i})">${esc(p)}<span class="dp-x" onclick="event.stopPropagation();removePreset(${i})">×</span></span>`;
+  }).join('');
+}
+function setPreset(i) { const p = ((S&&S.direction&&S.direction.presets)||[])[i]; if(p!==undefined) postDirection({current:p}); }
+function removePreset(i) {
+  const presets = ((S&&S.direction&&S.direction.presets)||[]).slice();
+  const removed = presets.splice(i,1)[0];
+  const cur = ((S&&S.direction&&S.direction.current)||'').toLowerCase();
+  const payload = {presets};
+  if (removed && removed.toLowerCase()===cur) payload.current='';
+  postDirection(payload);
+}
+function applyDirText() {
+  const t = document.getElementById('dir-text').value.trim();
+  if (!t) return;
+  document.getElementById('dir-text').value = '';
+  postDirection({current: t});
+}
+function addPreset() {
+  const t = document.getElementById('dir-text').value.trim();
+  if (!t) return;
+  document.getElementById('dir-text').value = '';
+  const presets = ((S&&S.direction&&S.direction.presets)||[]).slice();
+  if (!presets.some(p => p.toLowerCase()===t.toLowerCase())) presets.push(t);
+  postDirection({current:t, presets});
+}
+function clearDirection() { postDirection({current:''}); }
+
+// ─── INBOX ───
+function scoreClass(score) {
+  if (!score) return '';
+  const n = parseFloat(score);
+  if (n >= 8) return 'high';
+  if (n >= 6) return 'med';
+  return 'low';
 }
 
-function renderFlow(elId, chain){
-  const el = document.getElementById(elId);
-  el.innerHTML = chain.map((o,i)=>
-    (i? '<span class="arrow">→</span>':'') +
-    (o._via
-      ? `<div class="node via" title="${esc(o.viaNote)}" onclick="${o.viaFn}()">
-           <div class="nm">${esc(o.viaIcon)} ${esc(o.viaLabel)}</div><div class="rl">в нервах</div>
-         </div>`
-      : `<div class="node ${selOrgan===o.name?'sel':''}" onclick="showOrgan('${esc(o.name)}')">
-           <div class="nm">${esc(o.name)}</div><div class="rl">${ROLE_RU[o.role]||esc(o.role)}</div>
-         </div>`)).join("");
-}
-
-// клик по узлу «в нервах» (Печень на пути «доделать») — честное пояснение, а НЕ контракт
-// идейного пути (чтобы не выдавать ideas_best→ideas_safe за то, что тут происходит с нуджем).
-function showViaLiver(){
-  selOrgan = null;
-  const el = document.getElementById("organ-detail");
-  el.innerHTML = `<span class="kv">🧼 Печень — в нервах</span> — чистит нудж «доделать» перед Левой рукой.
-    <div class="io">Секреты (ключи/токены из карты проектов) вычищаются в обёртке руки
-    (wiring._run_finish_sink → scrub_secrets.scrub_text по полям title/why) ДО записи на диск.
-    Это НЕ отдельное звено графа: как орган Печень стоит на пути идей (берёт ideas_best · отдаёт
-    ideas_safe). Здесь показана правда потока, а не узел конвейера.</div>`;
-  el.className = "organ-detail show";
-  renderFlows();
-}
-
-// клик по узлу «в нервах» (Мозг на пути «доделать») — курсор персистится в wiring._run_finish
-// ДО того, как Ноги (finish_step) вообще запускаются. Ног-органа для этого не существует.
-function showViaBrain(){
-  selOrgan = null;
-  const el = document.getElementById("organ-detail");
-  el.innerHTML = `<span class="kv">🧠 Мозг — в нервах</span> — помнит, на каком проекте остановились.
-    <div class="io">Курсор (cyborg/data/finish_cursor.json) персистится между прогонами: обёртка
-    (wiring._run_finish) читает его ДО вызова Ног (finish_step), даёт как точку старта, а после —
-    сохраняет следующий. Это память и решение «куда идти», не сама ходьба — Ноги просто идут туда,
-    куда сказали. Отдельным звеном конвейера тут не значится: finish_step — источник сам по себе
-    (produces=nudge), решение принимается раньше, в обёртке.</div>`;
-  el.className = "organ-detail show";
-  renderFlows();
-}
-
-// пример вывода органа: реальный артефакт из живого состояния, где есть; иначе — помеченный пример
-function organExample(name){
-  const open = S.inbox.ideas.filter(i=>i.status==="open");
-  const sIdea = open.slice(-1)[0] || null;
-  const fin = S.inbox.finish;
-  const q = t => `<span style="color:var(--ink2)">«${esc(t)}»</span>`;
-  const EX = {
-    collect_source: `тянет заголовки из 5 лент (HN·Reddit·Lobsters·GitHub·Telegram), напр. ${q("Show HN: local-first sync engine in Rust")} → сырьё`,
-    ideate:      sIdea ? `напридумывал, напр.: ${q(sIdea.title)}` : `из заголовков лепит 12 идей-кандидатов`,
-    rank_ideas:  sIdea ? `оставил лучшее: ${q(sIdea.title)}${sIdea.effort?` · сложность ${esc(sIdea.effort)}`:""}` : `из 12 кандидатов — топ-5 по рубрике`,
-    scrub_secrets: `вычистит секрет: <code>sk-ABC123…</code> → <code>***</code>`,
-    deliver:     sIdea ? `положил в инбокс: ${q(sIdea.title)}` : `кладёт готовую идею в общую кучу инбокса`,
-    finish_sink: fin ? `слот «доделать»: ${q(fin.title)}` : `кладёт напоминание «доделать» в отдельный слот`,
-    finish_step: fin ? `следующий шаг: ${q(fin.title)}${fin.folder?` (${esc(fin.folder)})`:""}` : `берёт след. маленький шаг из карты проектов`,
-  };
-  const e = EX[name];
-  const live = (name==="collect_source"||name==="scrub_secrets") ? "" :
-    ((name.startsWith("finish") ? fin : sIdea) ? ' <span style="color:var(--good)">● живой</span>' : "");
-  return e ? `<div class="io" style="margin-top:6px">пример:${live} ${e}</div>` : "";
-}
-
-function showOrgan(name){
-  selOrgan = (selOrgan===name ? null : name);
-  const el = document.getElementById("organ-detail");
-  const o = S.organs.find(x=>x.name===selOrgan);
-  if(!o){ el.className="organ-detail"; renderFlows(); return; }
-  const needs = [];
-  if(o.needs.network) needs.push("ходит в сеть");
-  if(o.needs.key) needs.push(`хочет ключ ${o.needs.key}` + (o.needs.stub_ok ? " (без ключа работает попроще)" : ""));
-  if(o.needs.prod) needs.push("трогает прод (в safe-режиме не запустится)");
-  el.innerHTML = `<span class="kv">${esc(o.name)}</span> — ${esc(o.purpose)}
-    <div class="io">берёт: ${o.consumes.length?esc(o.consumes.join(", ")):"ничего (сам источник)"} ·
-    отдаёт: ${esc(o.produces.join(", "))}${needs.length? " · "+esc(needs.join(" · ")):""}</div>` + organExample(o.name);
-  el.className = "organ-detail show";
-  renderFlows();
-}
-
-// путь «доделать»: Мозг → Ноги → Печень → Левая рука. Ни Мозг (курсор), ни Печень (scrub)
-// не существуют как ШАГИ графа produces/consumes для этого пути (оркестратор — И по входам;
-// scrub_secrets вообще на пути идей; курсора-органа нет вовсе). Обе — реальная работа, что
-// происходит в нервах (wiring._run_finish / _run_finish_sink) ДО/ПОСЛЕ Ног. Поэтому рисуем их
-// ОТДЕЛЬНЫМИ узлами «в нервах» (_via), а не обычными органами-шагами: клик честно объясняет,
-// что это память/чистка в обёртке, а не звено конвейера.
-function finishChain(){
-  const chain = chainFrom("finish_step");                  // [finish_step, finish_sink]
-  if(chain.length >= 2)
-    chain.splice(chain.length - 1, 0, {
-      name: "scrub_secrets", role: "transform", _via: true, viaIcon: "🧼", viaLabel: "Печень",
-      viaFn: "showViaLiver",
-      viaNote: "Чистит нудж (секреты в тексте) в нервах — wiring._run_finish_sink — перед рукой. "
-             + "Отдельным звеном конвейера тут не значится: в графе органов Печень стоит на пути "
-             + "идей (берёт ideas_best, отдаёт ideas_safe). Здесь показана правда потока, не узел графа."
-    });
-  if(chain.length)
-    chain.unshift({
-      name: "_cursor_brain", role: "transform", _via: true, viaIcon: "🧠", viaLabel: "Мозг",
-      viaFn: "showViaBrain",
-      viaNote: "Помнит, на каком проекте остановились (курсор в data/finish_cursor.json), и говорит "
-             + "Ногам, откуда начать — в нервах, wiring._run_finish, ДО вызова finish_step. Отдельным "
-             + "звеном конвейера тут не значится: finish_step сам по себе — источник (produces=nudge)."
-    });
-  return chain;
-}
-
-function renderFlows(){
-  renderFlow("flow-ideas", chainFrom("collect_source"));
-  renderFlow("flow-finish", finishChain());
-}
-
-/* --- каркас киборга --- */
-let selPart = null;    // выбранная часть тела
-let workOrgan = null;  // орган, отработавший последним в живом прогоне
-
-const PARTS = {
-  ideate:        {part:"Мозг · генератор", icon:"💡", x:200, y:64,  color:"var(--blue)",
-                  goal:"приноси свежие идеи",
-                  blurb:"Придумывает 12 идей-кандидатов из увиденного — и помнит, что уже обдумывал: не тратит генерацию на старьё (когда явно попросили). С ключом — живая модель (deepseek/closerouter), без ключа — простая болванка."},
-  rank_ideas:    {part:"Мозг · судья", icon:"⚖️", x:260, y:64, color:"var(--blue)",
-                  goal:"приноси свежие идеи",
-                  blurb:"Оценивает кандидатов (оригинальность · польза · выполнимость) и оставляет топ-5. Генератор не судит сам себя."},
-  collect_source:{part:"Глаза", icon:"👁", x:230, y:100, color:"var(--aqua)",
-                  goal:"приноси свежие идеи",
-                  blurb:"Смотрит в мир сразу из 5 лент — Hacker News, Reddit, Lobsters, GitHub Trending и твои Telegram-каналы. За прогон они смешиваются; какой-то не ответил — берёт из остальных, совсем без сети — резерв (degraded)."},
-  scrub_secrets: {part:"Фильтр (печень)", icon:"🧼", x:230, y:268, color:"var(--blue)",
-                  goal:"приноси свежие идеи",
-                  blurb:"Вычищает ключи и пароли из текста на ОБОИХ путях — и у новых идей, и у напоминаний «доделать» — прежде чем что-то ляжет в инбокс или журнал. Никакой другой орган секреты не чистит, только она."},
-  deliver:       {part:"Правая рука", icon:"✋", x:334, y:300, color:"#9085e9",
-                  goal:"приноси свежие идеи",
-                  blurb:"Кладёт готовые идеи в твой инбокс — в общую кучу без потолка; дедуп не даёт повторов."},
-  finish_sink:   {part:"Левая рука", icon:"🤝", x:126, y:300, color:"#9085e9",
-                  goal:"доделать существующие проекты",
-                  blurb:"Кладёт напоминание «доделать» в отдельный слот инбокса — не съедая место новых идей. Сама секреты НЕ чистит: их вычищает Печень ДО неё (в нервах). Рука только кладёт."},
-  finish_step:   {part:"Ноги", icon:"🦶", x:230, y:438, color:"var(--aqua)",
-                  goal:"доделать существующие проекты",
-                  blurb:"Шагает по твоим проектам по кругу и приносит самый маленький следующий шаг из карты панели проектов."},
-};
-
-// силуэты будущих органов — реальные карточки каталога, ещё НЕ в деле (куда киборг растёт)
-const FUTURE = {
-  websearch:{sense:"Второй глаз · веб-поиск", icon:"🔎", name:"search_web", project:"darbot", status:"набросок",
-             blurb:"Веб-поиск (DuckDuckGo) плюс текст страницы, без ключей. Ещё один вход сырья — чем шире смотрит киборг, тем разнообразнее идеи."},
-  realbrain:{sense:"Мозг-планировщик на LLM", icon:"🧠", name:"ask_llm", project:"DarBench", status:"готов",
-             blurb:"Тот же планировщик — но выбирает шаги живой цепочкой моделей (бесплатные первыми) вместо детерминированной логики. Нынешний планировщик надёжен и не болванка; это его апгрейд, когда у шагов появятся развилки для выбора. Так задумано."},
-  imagine:  {sense:"Воображение · промпты картинок", icon:"🎨", name:"generate_image_prompts", project:"UPG", status:"готов",
-             blurb:"Из идеи — готовые промпты для генератора картинок. Идея станет не только текстом, но и образом."},
-  // Совет больше НЕ в будущем: впаян в отбор идей (ход Г, 13.07) — живёт в карточке «🧠 Мозг — отделы».
-};
-
-function renderFuture(){
-  const el = document.getElementById("future-organs");
-  if(!el) return;
-  el.innerHTML = Object.entries(FUTURE).map(([id,f])=>
-    `<span class="ghost ${selPart==='fut:'+id?'on':''}" onclick="showFuture('${id}')">
-       <span class="gi">${f.icon}</span>${esc(f.sense)}</span>`).join("");
-}
-function showFuture(id){
-  selPart = (selPart==='fut:'+id ? null : 'fut:'+id);
-  renderPartDetail(); renderFuture(); renderSkeleton();
-}
-
-function pseudoParts(){
-  const open = S ? S.inbox.ideas.filter(i=>i.status==="open").length : 0;
-  return {
-    heart:  {part:"Сердце · инбокс идей", icon:"❤", x:230, y:196, color:"#e66767",
-             blurb:`Куча идей без потолка: сейчас ${open} в разборе. Дедуп помнит уже предложенное (${S?S.inbox.seen_count:0} заголовков) и не повторяется — разбираешь в своём темпе.`},
-    planner:{part:"Лоб · мозг-планировщик", icon:"⚙", x:230, y:78, color:"var(--yellow)",
-             blurb: S && S.key.present
-               ? `Решает, какой орган звать следующим. Сейчас — надёжная детерминированная логика (так задумано), а сами идеи придумывает живой ${S.key.model}.`
-               : "Решает, какой орган звать следующим. Ключа нет — и планировщик, и идеи работают на болванке."},
-    spine:  {part:"Позвоночник · оркестратор", icon:"", x:230, y:250, color:"var(--muted)",
-             blurb:"Сам цикл жизни: роутер (нервы) отбирает подходящие органы, мозг выбирает следующий, исполнитель безопасно запускает, память копит результаты и блокирует упавших. До 8 шагов за прогон."},
-  };
-}
-
-// встроенные узлы (сердце=ромб, планировщик=лоб) — рыцарь уже их рисует,
-// поэтому узел прозрачный: кольцо + подсветка выбора, само тело просвечивает.
-function nodeSvg(id, p, extra){
-  const cls = `organ builtin${selPart===id?' sel':''}${workOrgan===id?' work':''}`;
-  return `<g class="${cls}" onclick="showPart('${id}')">${extra||""}
-    <circle class="ring" cx="${p.x}" cy="${p.y}" r="17" stroke="${p.color}"></circle>
-    <title>${esc(p.part)}</title></g>`;
-}
-
-/* --- конструктор: лоток + перетаскивание --- */
-let LAYOUT = {};      // орган -> {x,y} на теле; нет записи = лежит в лотке
-let drag = null;      // текущее перетаскивание
-
-const ORGAN_ORDER = Object.keys(PARTS);
-const SLOTS = ORGAN_ORDER.map(n=>({x:PARTS[n].x, y:PARTS[n].y}));  // подсказки мест (моя анатомия)
-const TRAY_X = 465;   // правее этой границы = лоток
-
-function trayPos(i){ return {x:562, y:96+i*60}; }
-
-function organSvg(name, i){
-  const p = PARTS[name];
-  const pos = LAYOUT[name] || trayPos(i);
-  const cls = `organ draggable${selPart===name?' sel':''}${workOrgan===name?' work':''}`;
-  return `<g class="${cls}" data-id="${name}" transform="translate(${pos.x},${pos.y})">
-    <circle class="nodebg" cx="0" cy="0" r="16" stroke="${p.color}"></circle>
-    <text x="0" y="5" text-anchor="middle" font-size="14">${p.icon}</text>
-    <text class="lbl" x="0" y="30" text-anchor="middle">${esc(p.part)}</text>
-    <title>${esc(p.part)}</title></g>`;
-}
-
-function renderSkeleton(){
-  if(!S || drag) return;   // во время перетаскивания не перерисовываем
-  const P = pseudoParts();
-  const open = S.inbox.ideas.filter(i=>i.status==="open").length;
-  const lbl = (x,y,anchor,text)=>`<text class="lbl" x="${x}" y="${y}" text-anchor="${anchor}">${esc(text)}</text>`;
-  const leader = (x1,y1,x2,y2)=>`<line class="leader" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-  const key = v=>Math.round(v.x)+","+Math.round(v.y);
-  const taken = new Set(Object.values(LAYOUT).map(key));
-  const freeSlots = SLOTS.filter(s=>!taken.has(key(s)));
-  const nerves = Object.values(LAYOUT).map(v=>
-    `<path class="nerve" d="M230,230 Q${(230+v.x)/2},${(230+v.y)/2} ${v.x},${v.y}"/>`).join("");
-  const fill = Math.min(open/10, 1);                       // 0..1 — больше идей в разборе, чаще пульс (10+ = полно)
-  const hbDur = (1.6 - fill*0.9).toFixed(2);                // пусто ~1.6с … полно ~0.7с
-  document.getElementById("skel").innerHTML = `
-  <svg class="${running?'running':''}" viewBox="83 28 569 509" xmlns="http://www.w3.org/2000/svg">
-    <!-- тело рыцаря (выбранный стиль) — дышит в простое -->
-    <g class="breath">${(window.KNIGHT_BODIES && KNIGHT_BODIES[bodyStyle]) || ''}</g>
-    <!-- лоток -->
-    <rect class="plate" x="480" y="42" width="166" height="466" rx="12"/>
-    ${lbl(563,68,"middle","ЛОТОК · тащи на тело")}
-    <!-- свободные места (подсказки) -->
-    ${freeSlots.map(s=>`<circle class="slot-hint" cx="${s.x}" cy="${s.y}" r="16"/>`).join("")}
-    <!-- нервы к расставленным органам -->
-    ${nerves}
-    <!-- позвоночник (оркестратор) -->
-    <g class="organ${selPart==='spine'?' sel':''}" onclick="showPart('spine')">
-      <line class="spinebone" x1="230" y1="146" x2="230" y2="312"/>
-      <line x1="230" y1="146" x2="230" y2="312" stroke="transparent" stroke-width="18"/>
-      <title>Позвоночник — оркестратор</title></g>
-    <!-- встроенные части -->
-    ${nodeSvg('planner', P.planner)}
-    <!-- бьётся сердце-ромб (темп от заполненности инбокса) -->
-    <path class="heartbeat${fill>=1?' full':''}" d="M230,178 L248,196 L230,214 L212,196 Z" style="--hb:${hbDur}s"></path>
-    ${nodeSvg('heart', P.heart)}
-    ${leader(248,196,302,188)}${lbl(306,191,"start","сердце · инбокс "+open)}
-    ${leader(212,78,160,84)}${lbl(156,87,"end","планировщик")}
-    <!-- органы (перетаскиваемые) -->
-    ${ORGAN_ORDER.map((n,i)=>organSvg(n,i)).join("")}
-  </svg>`;
-}
-
-function svgPt(svg,e){
-  const pt = new DOMPoint(e.clientX, e.clientY);
-  return pt.matrixTransform(svg.getScreenCTM().inverse());
-}
-
-async function saveLayout(){
-  await fetch("/api/layout",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({layout:LAYOUT})}).catch(()=>{});
-}
-
-function layoutHint(){   // моя анатомия как отправная точка — дальше двигай сам
-  LAYOUT = {};
-  ORGAN_ORDER.forEach(n=>LAYOUT[n]={x:PARTS[n].x, y:PARTS[n].y});
-  renderSkeleton(); saveLayout();
-}
-function layoutClear(){ LAYOUT = {}; renderSkeleton(); saveLayout(); }
-
-document.getElementById("skel").addEventListener("pointerdown", e=>{
-  const g = e.target.closest(".draggable"); if(!g) return;
-  const svg = g.ownerSVGElement;
-  const id = g.dataset.id;
-  const cur = LAYOUT[id] || trayPos(ORGAN_ORDER.indexOf(id));
-  const p = svgPt(svg, e);
-  drag = {id, g, svg, offX:cur.x-p.x, offY:cur.y-p.y, sx:cur.x, sy:cur.y, cx:cur.x, cy:cur.y, moved:false};
-  try{ g.setPointerCapture(e.pointerId); }catch(_){}
-  e.preventDefault();
-});
-document.addEventListener("pointermove", e=>{
-  if(!drag) return;
-  const p = svgPt(drag.svg, e);
-  const nx = p.x+drag.offX, ny = p.y+drag.offY;
-  if(!drag.moved && Math.hypot(nx-drag.sx, ny-drag.sy) < 5) return;
-  drag.moved = true; drag.cx = nx; drag.cy = ny;
-  drag.g.setAttribute("transform", `translate(${nx},${ny})`);
-});
-document.addEventListener("pointerup", e=>{
-  const d = drag; if(!d) return; drag = null;
-  if(!d.moved){ showPart(d.id); return; }   // это был клик, не перенос
-  let x = d.cx, y = d.cy;
-  if(x > TRAY_X){ delete LAYOUT[d.id]; }    // вернул в лоток
-  else{
-    const key = v=>Math.round(v.x)+","+Math.round(v.y);
-    const taken = new Set(Object.entries(LAYOUT).filter(([k])=>k!==d.id).map(([,v])=>key(v)));
-    for(const s of SLOTS){                   // магнит к свободной подсказке рядом
-      if(!taken.has(key(s)) && Math.hypot(s.x-x, s.y-y) < 28){ x=s.x; y=s.y; break; }
-    }
-    LAYOUT[d.id] = {x:Math.round(Math.min(Math.max(x,26),440)), y:Math.round(Math.min(Math.max(y,26),512))};
-  }
-  renderSkeleton();
-  saveLayout();
-});
-
-function showPart(id){
-  selPart = (selPart===id ? null : id);
-  renderPartDetail();
-  renderFuture();
-  renderSkeleton();
-}
-
-function renderPartDetail(){
-  const el = document.getElementById("part-detail");
-  if(!selPart){ el.innerHTML = '<span class="hint">Выбери часть тела на каркасе.</span>'; return; }
-  if(selPart.startsWith('fut:')){
-    const f = FUTURE[selPart.slice(4)];
-    el.innerHTML = `<div class="pt">🌱 ${f.icon} ${esc(f.sense)}</div>
-      <div>${esc(f.blurb)}</div>
-      <div class="io">карточка каталога: <b style="color:var(--ink)">${esc(f.name)}</b> ·
-        проект ${esc(f.project)} · ${esc(f.status)} · <b style="color:var(--warn)">ещё НЕ в деле</b></div>
-      <div class="hint" style="margin-top:8px">Силуэт будущего органа — куда киборг может вырасти. Пока не подключён.</div>`;
-    return;
-  }
-  const id = selPart;
-  const meta = PARTS[id] || pseudoParts()[id];
-  const o = S.organs.find(x=>x.name===id);
-  let io = "";
-  if(o){
-    const needs = [];
-    if(o.needs.network) needs.push("ходит в сеть");
-    if(o.needs.key) needs.push("хочет ключ" + (o.needs.stub_ok? " (без него — попроще)":""));
-    io = `<div class="io">орган: <b style="color:var(--ink)">${esc(o.name)}</b> ·
-      берёт: ${o.consumes.length?esc(o.consumes.join(", ")):"ничего (источник)"} ·
-      отдаёт: ${esc(o.produces.join(", "))}${needs.length? " · "+esc(needs.join(" · ")):""}</div>` + organExample(o.name);
-  }
-  const btn = meta.goal
-    ? `<button class="run mini" onclick="runGoal('${meta.goal}')">▶ Задействовать (цель: «${esc(meta.goal)}»)</button>`
-    : (id==='heart' ? `<button class="mini" onclick="document.getElementById('inbox-sub').scrollIntoView({behavior:'smooth'})">показать инбокс ↓</button>` : "");
-  el.innerHTML = `<div class="pt">${meta.icon? meta.icon+" ":""}${esc(meta.part)}</div>
-    <div>${esc(meta.blurb)}</div>${io}<div style="margin-top:10px">${btn}</div>`;
-}
-
-/* --- мозг: отделы (честная карта думающих частей; состояние — архитектурное, не «жив ли прямо сейчас») --- */
-function renderBrain(){
-  const el = document.getElementById("brain-depts");
-  if(!el) return;
-  const gen = S && S.key.present;                       // генератор живой только с ключом идей
-  const depts = [
-    {ic:"🧭", nm:"Планировщик", org:"brain.py",
-     role:"решает, какой шаг делать следующим — сейчас берёт порядком списка, не суждением",
-     st:"на заглушке", cls:"stub"},
-    {ic:"💡", nm:"Генератор", org:"ideate",
-     role:"лепит 12 идей-кандидатов из увиденного",
-     st: gen ? "живой" : "болванка (нет ключа)", cls: gen ? "live" : "stub"},
-    {ic:"⚖️", nm:"Судья · арбитр", org:"rank_ideas",
-     role:"отбирает топ-5; в совете — главный голос, вес 0.41",
-     st:"живой", cls:"live"},
-    {ic:"🎯", nm:"Интуиция", org:"ask_llm",
-     role:"быстрый голос в совете, вес 0.39; отвечает, если ключ цепочки на месте, иначе воздерживается",
-     st:"впаяна в отбор", cls:"live"},
-    {ic:"🏛", nm:"Совет", org:"orchestra",
-     role:"7 рецензентов, вес 0.20; голосует на каждом отборе — совет не пропускается, даже когда интуиция уверена",
-     st:"включён · всегда", cls:"live"},
-  ];
-  el.innerHTML = depts.map(d=>
-    `<div class="dept"><span class="di">${d.ic}</span>
-       <span class="dn">${esc(d.nm)}</span>
-       <span class="dr">${esc(d.role)} <span class="org">· ${esc(d.org)}</span></span>
-       <span class="ds ${d.cls}">${esc(d.st)}</span></div>`).join("");
-  document.getElementById("brain-note").innerHTML =
-    "Судья + интуиция + совет вместе — это <b style='color:var(--ink2)'>совещание</b>, что судит отбор идей "
-    + "(впаяли 13.07). Планировщик — отдельный отдел, пока на заглушке: сам шаги ещё не выбирает.";
-}
-
-/* --- шапка-чипы --- */
-function renderChips(){
-  const openN = S.inbox.ideas.filter(i=>i.status==="open").length;
-  const chips = [];
-  chips.push(S.key.present
-    ? `<span class="chip"><span class="dot good"></span>мозг идей: <b>${esc(S.key.model)}</b> (ключ на месте)</span>`
-    : `<span class="chip"><span class="dot crit"></span><b>ключа нет</b> — идеи будут шаблонные</span>`);
-  chips.push(`<span class="chip"><span class="dot blue"></span>органов в деле: <b>${S.organs.length}</b> · в каталоге: <b>${S.registry.total}</b></span>`);
-  chips.push(`<span class="chip"><span class="dot ${openN?'good':'mut'}"></span>инбокс: <b>${openN}</b> идей в разборе</span>`);
-  chips.push(S.lab.exists
-    ? (S.lab.locked
-        ? `<span class="chip"><span class="dot warn"></span>фабрика фич: <b>под замком</b> (пакет не разобран)</span>`
-        : `<span class="chip"><span class="dot good"></span>фабрика фич: свободна</span>`)
-    : `<span class="chip"><span class="dot good"></span>фабрика фич: песочница пуста</span>`);
-  chips.push(`<span class="chip"><span class="dot mut"></span>тик движка: <b>${S.inbox.tick}</b> · помнит заголовков: <b>${S.inbox.seen_count}</b></span>`);
-  document.getElementById("chips").innerHTML = chips.join("");
-}
-
-/* --- инбокс --- */
-// костяк карточки идеи инбокса: заголовок, суть, сложность, метка мозга + доп. теги.
-// Хвост инбокса — откуда/#id/кнопки разбора.
-function ideaBody(i, brainLabel, extraTags){
-  return `<div class="t">${esc(i.title)}</div>
-    <div class="w">${esc(i.why)}</div>
-    <div class="meta">
-      <span class="tag">сложность: ${esc(i.effort||"?")}</span>
-      <span class="tag ${i.brain==='llm'?'llm':''}">${brainLabel}</span>
-      ${extraTags||""}
-    </div>`;
-}
-
-function ideaCard(i){
-  const extra = `<span class="tag">откуда: ${esc(i.source||"?")}</span><span class="tag">#${i.id}</span>`;
-  return `<div class="idea">
-    ${ideaBody(i, i.brain==='llm'?'придумано нейронкой':'придумано болванкой', extra)}
-    <div class="acts">
-      <button class="mini take" onclick="ideaAct(${i.id},'take')">✓ Взять</button>
-      <button class="mini later" onclick="ideaAct(${i.id},'later')">⏳ Позже</button>
-      <button class="mini trash" onclick="ideaAct(${i.id},'trash')">✕ Мусор</button>
+function ideaCardHTML(idea) {
+  const sc = idea.score != null ? parseFloat(idea.score).toFixed(1) : null;
+  const scBadge = sc
+    ? `<div class="score-badge ${scoreClass(sc)}" title="оценка совета">${sc}</div>`
+    : '';
+  const isLLM = idea.brain === 'llm';
+  const srcTag = idea.source ? `<span class="idea-tag src">${esc(idea.source)}</span>` : '';
+  const llmTag = `<span class="idea-tag${isLLM?' llm':''}">${isLLM?'нейронка':'болванка'}</span>`;
+  const effTag = idea.effort ? `<span class="idea-tag">сложность: ${esc(idea.effort)}</span>` : '';
+  return `<div class="idea-card" id="idea-${idea.id}">
+    <div class="idea-head">
+      <div class="idea-title">${esc(idea.title)}</div>
+      ${scBadge}
+    </div>
+    <div class="idea-why">${esc(idea.why)}</div>
+    <div class="idea-meta">${srcTag}${llmTag}${effTag}<span class="idea-tag">#${idea.id}</span></div>
+    <div class="idea-acts">
+      <button class="act-btn take"  onclick="ideaAct(${idea.id},'take')">✓ Взял</button>
+      <button class="act-btn later" onclick="ideaAct(${idea.id},'later')">⏳ Позже</button>
+      <button class="act-btn trash" onclick="ideaAct(${idea.id},'trash')">✕ Мусор</button>
     </div>
   </div>`;
 }
 
-function renderInbox(){
+function renderInbox() {
   const ib = S.inbox;
-  document.getElementById("inbox-err").textContent = ib.error ? "state.json не читается: "+ib.error : "";
-  const open = ib.ideas.filter(i=>i.status==="open");
-  const done = ib.ideas.filter(i=>i.status!=="open").slice().reverse();
-  document.getElementById("inbox-sub").textContent =
-    open.length ? `${open.length} идей в разборе — куча без потолка` : "пусто — следующий сбор принесёт новые";
-  document.getElementById("capbar").innerHTML = "";   // потолка нет — ячейки-слоты убраны
-  document.getElementById("ideas-open").innerHTML =
-    open.length ? open.map(ideaCard).join("") : `<div style="color:var(--muted);font-size:13px;margin-bottom:10px">открытых идей нет</div>`;
+  const open = ib.ideas.filter(i => i.status === 'open');
+  const done = ib.ideas.filter(i => i.status !== 'open').slice().reverse();
 
+  document.getElementById('ideas-count').textContent = open.length;
+
+  // Empty state
+  const emptyEl = document.getElementById('empty-state');
+  emptyEl.style.display = (!open.length && !ib.finish) ? 'flex' : 'none';
+
+  // Finish slot
   const f = ib.finish;
-  document.getElementById("finish-slot").innerHTML = f ? `
-    <div class="idea finish-card">
-      <div class="t">🔧 ${esc(f.title)}</div>
-      <div class="w">${esc(f.why)}</div>
-      <div class="meta"><span class="tag">слот «доделать» (дорожка B)</span>
-      <span class="tag">проект: ${esc(f.folder||"?")}</span></div>
-    </div>` : "";
+  document.getElementById('finish-slot').innerHTML = f ? `
+    <div class="finish-slot">
+      <div class="finish-label">🔧 Слот «доделать»</div>
+      <div class="finish-title">${esc(f.title)}</div>
+      <div class="finish-why">${esc(f.why)}${f.folder?' · '+esc(f.folder):''}</div>
+    </div>` : '';
 
-  document.getElementById("done-sum").textContent = `разобранные (${done.length})`;
-  document.getElementById("done-wrap").style.display = done.length? "block":"none";
-  document.getElementById("ideas-done").innerHTML = done.map(i=>
-    `<div class="done-row"><span class="st ${esc(i.status)}">${IDEA_ST[i.status]||esc(i.status)}</span>
-     <span>${esc(i.title)}</span></div>`).join("");
+  // Open ideas
+  document.getElementById('ideas-open').innerHTML = open.map(ideaCardHTML).join('');
+
+  // Done
+  const doneTog = document.getElementById('done-toggle');
+  document.getElementById('done-count').textContent = done.length;
+  doneTog.style.display = done.length ? 'flex' : 'none';
+  const doneList = document.getElementById('done-list');
+  if (doneOpen) {
+    doneList.innerHTML = done.map(i =>
+      `<div class="done-row"><span class="done-st ${i.status}">${{take:'взял',later:'позже',trash:'мусор'}[i.status]||i.status}</span><span>${esc(i.title)}</span></div>`
+    ).join('');
+  }
 }
 
-async function ideaAct(id, status){
-  const r = await fetch("/api/idea", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({id, status})}).then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
-  if(!r.ok) alert("не вышло: " + (r.msg||""));
+function toggleDone() {
+  doneOpen = !doneOpen;
+  document.getElementById('done-list').className = 'done-list' + (doneOpen ? ' open' : '');
+  const c = document.getElementById('done-caret');
+  if (c) c.textContent = doneOpen ? '▾' : '▸';
+  if (doneOpen && S) renderInbox();
+}
+
+async function ideaAct(id, status) {
+  const card = document.getElementById('idea-' + id);
+  if (card) card.classList.add('dismissing');
+  const r = await fetch('/api/idea', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({id, status})}).then(r => r.json()).catch(() => ({ok:false,msg:'сеть'}));
+  if (!r.ok) { if (card) card.classList.remove('dismissing'); alert('не вышло: '+(r.msg||'')); }
+  setTimeout(refresh, 250);
+}
+
+// ─── RUNS ───
+function renderRuns() {
+  const runs = (S && S.runs) || [];
+  const el = document.getElementById('runs-list');
+  document.getElementById('runs-count').textContent = runs.length ? `${runs.length} прогонов` : '';
+  if (!runs.length) { el.innerHTML = '<div class="run-row" style="color:var(--ink3);grid-column:1/-1">прогонов ещё не было</div>'; return; }
+  el.innerHTML = runs.slice().reverse().slice(0, 10).map(r => {
+    let cls = 'zero', val = '0';
+    if (/^\d+$/.test(r.value)) {
+      const n = parseInt(r.value);
+      cls = n > 0 ? 'ok' : 'zero';
+      val = n > 0 ? '+' + n : '0';
+    } else { val = esc(r.value); cls = ''; }
+    return `<div class="run-row">
+      <div class="run-ts">${esc(r.ts)}</div>
+      <div class="run-goal" title="${esc(r.goal)}">«${esc(r.goal)}»</div>
+      <div class="run-result ${cls}">${val}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── AUTO ───
+async function toggleAuto() {
+  const cur = (S && S.auto && S.auto.on) || false;
+  const ivEl = document.getElementById('modal-auto-interval');
+  const iv = ivEl ? (parseInt(ivEl.value, 10) || 30) : (S && S.auto ? S.auto.interval_min : 30);
+  const r = await fetch('/api/auto', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({on: !cur, interval_min: iv})}).then(r => r.json()).catch(() => ({ok:false}));
+  if (!r.ok && r.msg) alert(r.msg);
   refresh();
 }
 
-/* --- журнал --- */
-function renderRuns(){
-  const el = document.getElementById("runs");
-  if(!S.runs.length){ el.innerHTML = '<div style="color:var(--muted)">прогонов ещё не было</div>'; return; }
-  el.innerHTML = S.runs.slice().reverse().map(r=>{
-    const v = r.value === "0" ? '<span class="zero">доставлено: 0 (ничего не добавилось)</span>'
-      : /^\d+$/.test(r.value) ? `<span class="okv">доставлено: ${esc(r.value)}</span>`
-      : esc(r.value);
-    return `<div class="runrow">
-      <div class="ts">${esc(r.ts)}</div>
-      <div><b style="color:var(--ink)">«${esc(r.goal)}»</b></div>
-      <div class="chain">${r.chain.map(c=>`<b>${esc(c)}</b>`).join(" → ")}</div>
-      <div class="res">${esc(r.deliverable)}: ${v}</div>
-      ${r.council ? `<div class="council-note ${/ПРОСНУЛСЯ/.test(r.council)?'woke':''}">🏛 ${esc(r.council)}</div>` : ""}
-    </div>`;
-  }).join("");
+async function saveAutoInterval() {
+  const ivEl = document.getElementById('modal-auto-interval');
+  const iv = parseInt(ivEl.value, 10) || 30;
+  const cur = (S && S.auto && S.auto.on) || false;
+  await fetch('/api/auto', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({on: cur, interval_min: iv})});
+  refresh();
 }
 
-/* --- автономность (рубильник) --- */
-function renderAuto(){
-  const a = S.auto || {on:false, interval_min:30};
-  const btn = document.getElementById("btn-auto");
-  const sub = document.getElementById("auto-sub");
-  const state = document.getElementById("auto-state");
-  const iv = document.getElementById("auto-interval");
-  if(btn) btn.textContent = a.on ? "⏸ Выключить фон" : "▶ Включить фон";
-  if(sub) sub.textContent = a.on ? `включено — сам каждые ${a.interval_min} мин` : "выключено — киборг ждёт кнопку";
-  if(state) state.textContent = a.on ? "🟢 фон работает" : "⚪ фон выключен";
-  if(iv && document.activeElement!==iv) iv.value = a.interval_min;   // не перебивать ввод юзера
+function renderAutoModal() {
+  const auto = (S && S.auto) || {on: false, interval_min: 30};
+  const onEl = document.getElementById('modal-auto-state');
+  const offEl = document.getElementById('modal-auto-state-off');
+  const btnEl = document.getElementById('modal-auto-btn');
+  const ivEl = document.getElementById('modal-auto-interval');
+  if (onEl) onEl.style.display = auto.on ? '' : 'none';
+  if (offEl) offEl.style.display = auto.on ? 'none' : '';
+  if (btnEl) btnEl.textContent = auto.on ? 'Выключить' : 'Включить';
+  if (ivEl && document.activeElement !== ivEl) ivEl.value = auto.interval_min;
 }
 
-/* --- живой статус источников (пишет harvest на авто-прогонах) --- */
-function renderSources(){
-  const el = document.getElementById("source-health");
-  if(!el) return;
-  const s = S.sources;
-  if(!s || !s.sources){ el.innerHTML = ""; return; }
-  const NM = {hn:"HN", reddit:"Reddit", lobsters:"Lobsters", gh_trending:"GitHub", telegram:"Telegram", files:"Папки"};
-  let anyBeta = false;
-  const chips = Object.keys(NM).filter(k=>s.sources[k]).map(k=>{
-    const v = s.sources[k];
-    const dot = v.ok ? "🟢" : "🔴";
-    const cnt = v.ok ? " "+v.items : "";
-    const ttl = v.error ? ` title="${esc(v.error)}"` : "";
-    const beta = v.beta ? (anyBeta=true, ` <span class="beta" title="бета · лично вами не проверено">β</span>`) : "";
-    return `<span class="src${v.ok?'':' off'}"${ttl}>${dot} ${esc(NM[k])}${cnt}${beta}</span>`;
-  }).join("");
-  const when = (s.checked_at||"").slice(11,16);
-  el.innerHTML = `<span>источники${when?` (проверка ${esc(when)})`:""}:</span>${chips}` +
-    (s.degraded ? '<span class="src off">все упали — резерв</span>' : "") +
-    (anyBeta ? '<span class="src-note">β — бета, лично вами не проверено</span>' : "");
+// ─── FOLDERS ───
+async function postFolders(paths) {
+  const r = await fetch('/api/folders', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({paths})});
+  try { const j = await r.json(); if (j && j.probe) FOLD_PROBE = j.probe; } catch(e){}
+  refresh();
+}
+async function loadFoldersProbe() {
+  try {
+    const j = await fetch('/api/folders/probe').then(r => r.json());
+    if (j && j.probe) { FOLD_PROBE = j.probe; renderFoldersModal(); }
+  } catch(e){}
+}
+function foldNote(p) {
+  const pr = FOLD_PROBE[p];
+  if (!pr) return '';
+  if (!pr.exists) return '<span class="folder-note bad">не найден</span>';
+  if (pr.files === 0) return '<span class="folder-note warn">0 файлов</span>';
+  return `<span class="folder-note ok">${pr.files}${pr.capped?'+':''} файл.</span>`;
+}
+function renderFoldersModal() {
+  const paths = ((S && S.folders && S.folders.paths) || []);
+  const el = document.getElementById('modal-folders');
+  if (!el) return;
+  el.innerHTML = paths.length
+    ? paths.map((p, i) => `<div class="folder-item">
+        <span class="folder-path" title="${esc(p)}">${esc(p)}</span>
+        ${foldNote(p)}
+        <button class="folder-rm" onclick="removeFolder(${i})" title="убрать">×</button>
+      </div>`).join('')
+    : '<div style="font-size:11.5px;color:var(--ink3);margin-bottom:6px">нет папок — добавь путь ниже</div>';
+}
+function addFolder() {
+  const t = (document.getElementById('modal-folder-input').value || '').trim();
+  if (!t) return;
+  document.getElementById('modal-folder-input').value = '';
+  const paths = ((S && S.folders && S.folders.paths) || []).slice();
+  paths.push(t);
+  postFolders(paths);
+}
+function removeFolder(i) {
+  const paths = ((S && S.folders && S.folders.paths) || []).slice();
+  paths.splice(i, 1);
+  postFolders(paths);
 }
 
-/* --- реестр --- */
-function renderRegistry(){
-  const rg = S.registry;
-  document.getElementById("reg-sub").textContent =
-    `${rg.total} карточек из ${Object.keys(rg.by_project).length} проектов; киборг исполняет ${S.organs.length}`;
-  const order = ["extracted","draft","candidate"];
-  const strip = document.getElementById("reg-strip");
-  strip.innerHTML = order.filter(s=>rg.by_status[s]).map(s=>
-    `<div style="flex:${rg.by_status[s]};background:${STATUS_COLOR[s]}"></div>`).join("");
-  document.getElementById("reg-legend").innerHTML = order.filter(s=>rg.by_status[s]).map(s=>
-    `<span><span class="dot" style="background:${STATUS_COLOR[s]}"></span>${STATUS_RU[s]} — ${rg.by_status[s]}</span>`).join("");
-  const prj = Object.entries(rg.by_project).sort((a,b)=>b[1]-a[1]);
-  const mx = Math.max(...prj.map(p=>p[1]), 1);
-  document.getElementById("reg-projects").innerHTML = prj.map(([p,n])=>
-    `<div class="pbar"><div class="nm" title="${esc(p)}">${esc(p)}</div>
-     <div><div class="bar" style="width:${Math.max(100*n/mx,2)}%"></div></div>
-     <div class="n">${n}</div></div>`).join("");
-  renderRegList();
+// ─── SETTINGS MODAL ───
+function openSettings() {
+  document.getElementById('settings-overlay').classList.add('open');
+  renderAutoModal();
+  renderFoldersModal();
+  renderFeeds();
+}
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
 }
 
-function renderRegList(){
-  const q = (document.getElementById("reg-search").value||"").toLowerCase();
-  const rows = S.registry.cards.filter(c =>
-    !q || [c.name,c.project,c.purpose].join(" ").toLowerCase().includes(q));
-  document.getElementById("reg-list").innerHTML = rows.slice(0,200).map(c=>
-    `<div class="reg-row">
-       <span class="nm">${esc(c.name)}</span>
-       <span class="tag" style="border-color:${STATUS_COLOR[c.status]||'var(--line)'};color:${STATUS_COLOR[c.status]||'var(--muted)'}">${STATUS_RU[c.status]||esc(c.status)}</span>
-       <span class="pj"> · ${esc(c.project)}${c.language? " · "+esc(c.language):""}</span>
-       <div class="pp">${esc(c.purpose)}</div>
-       ${c.needs_keys.length? `<div class="keys">нужны ключи: ${esc(c.needs_keys.join(", "))}</div>`:""}
-     </div>`).join("") || '<div style="color:var(--muted);padding:8px">ничего не нашлось</div>';
+// ─── CONSOLE ───
+function toggleConsole() {
+  consoleOpen = !consoleOpen;
+  document.getElementById('console').className = consoleOpen ? 'visible' : '';
+  document.getElementById('console-caret').textContent = consoleOpen ? '▾' : '▸';
 }
 
-/* --- гейты --- */
-function renderGates(){
-  const g = [];
-  const openN = S.inbox.ideas.filter(i=>i.status==="open").length;
-  if(!S.key.present)
-    g.push(`<div class="gate"><span class="ic">🔴</span><div><b>Ключа LLM нет.</b> Киборг не сломается, но идеи станут шаблонными — и никакого предупреждения не будет. Задай <code>CLOSEROUTER_API_KEY</code> в <code>cyborg/llm_keys.env</code>.</div></div>`);
-  if(S.lab.exists && S.lab.locked){
-    const fl = S.lab.features.map(f=>`«${esc(f.title)}»`).join(" и ");
-    g.push(`<div class="gate"><span class="ic">🟡</span><div><b>Фабрика фич под замком.</b> В песочнице .feature-lab лежит неразобранный пакет: ${fl}${S.lab.needs_manual? ` + ${S.lab.needs_manual} предложение(й) руками`:""}. Пока не разберёшь (пометить reviewed или удалить router.json) — ночная фабрика новый пакет не строит.</div></div>`);
-  }
-  g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Доставка только в файл.</b> Идеи падают в inbox.md, в Телеграм киборг писать пока не умеет — нужен токен твоего бота.</div></div>`);
-  g.push(S.auto && S.auto.on
-    ? `<div class="gate"><span class="ic">🟢</span><div><b>Автономный режим включён.</b> Киборг сам ходит за идеями каждые ${S.auto.interval_min} мин и кладёт в инбокс. Выключить — рубильник «Автономность».</div></div>`
-    : `<div class="gate"><span class="ic">⚪</span><div><b>Фон выключен.</b> Прогон только руками (кнопки или CLI). Включить автоцикл — рубильник «Автономность» выше.</div></div>`);
-  g.push(`<div class="gate"><span class="ic">⚪</span><div><b>Если интернет лежит</b> — киборг подставляет 4 запасных заголовка и идеи выходят «из резерва», а выглядят как свежие. Решить: глушить, помечать или оставить.</div></div>`);
-  document.getElementById("gates").innerHTML = g.join("");
+// ─── RUN CONTROL ───
+async function runGoal(goal) {
+  const r = await fetch('/api/run', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({goal})}).then(r => r.json()).catch(() => ({ok:false,msg:'сеть'}));
+  if (!r.ok && r.msg) alert(r.msg);
+  if (r.ok) { replayed = false; if (!consoleOpen) toggleConsole(); }
+  pollRun();
 }
-
-/* --- прогон --- */
-async function runGoal(goal){
-  const r = await fetch("/api/run", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({goal})}).then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
-  if(!r.ok && r.msg) alert(r.msg);
-  if(r.ok) replayed = false;   // после финиша проиграть трассу на каркасе
+async function stopRun() {
+  const r = await fetch('/api/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r => r.json()).catch(() => ({ok:false,msg:'сеть'}));
+  if (!r.ok && r.msg) alert(r.msg);
+}
+async function observeSources() {
+  const r = await fetch('/api/observe', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r => r.json()).catch(() => ({ok:false,msg:'сеть'}));
+  if (!r.ok && r.msg) alert(r.msg);
+  if (!consoleOpen) toggleConsole();
   pollRun();
 }
 
-async function toggleAuto(){
-  const cur = (S.auto && S.auto.on) || false;
-  const iv = parseInt(document.getElementById("auto-interval").value, 10) || 30;
-  const r = await fetch("/api/auto",{method:"POST",headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({on: !cur, interval_min: iv})}).then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
-  if(!r.ok && r.msg) alert(r.msg);
-  refresh();
-}
-
-async function observe(){
-  const r = await fetch("/api/observe",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
-    .then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
-  if(!r.ok && r.msg) alert(r.msg);
-  pollRun();   // наблюдение печатает в тот же живой вывод
-}
-
-async function stopRun(){
-  const r = await fetch("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
-    .then(r=>r.json()).catch(()=>({ok:false,msg:"сеть"}));
-  if(!r.ok && r.msg) alert(r.msg);
-}
-
-let replayed = true;   // повтор трассы уже проигран (не проигрывать старый прогон при открытии страницы)
-
-async function pollRun(){
-  if(runPolling) return; runPolling = true;
-  const cons = document.getElementById("console");
-  const st = document.getElementById("runstate");
-  const btns = [document.getElementById("btn-ideas"), document.getElementById("btn-finish"),
-                document.getElementById("btn-observe")].filter(Boolean);
-  const stopBtns = [document.getElementById("stop-ideas"), document.getElementById("stop-finish"),
-                     document.getElementById("stop-observe")].filter(Boolean);
-  try{
-    while(true){
-      const r = await fetch("/api/run").then(r=>r.json());
-      cons.textContent = (r.lines||[]).join("\n");
+async function pollRun() {
+  if (runPolling) return; runPolling = true;
+  const cons = document.getElementById('console');
+  const stLine = document.getElementById('run-status-line');
+  const btnIdeas = document.getElementById('btn-ideas');
+  const btnFinish = document.getElementById('btn-finish');
+  const btnStop = document.getElementById('btn-stop');
+  try {
+    while (true) {
+      const r = await fetch('/api/run').then(r => r.json());
+      cons.textContent = (r.lines || []).join('\n');
       cons.scrollTop = cons.scrollHeight;
-      if(!!r.running !== running){ running = !!r.running; renderSkeleton(); }  // нервы/дыхание
-      // живая подсветка на каркасе: пока прогон ИДЁТ — берём орган из ЖИВОГО прогресса
-      // (run.py шлёт «иду: <орган>» при старте каждого) → рыцарь светит РЕАЛЬНО текущий орган,
-      // а не ждёт финальной трассы. hits (финальная трасса «шаг N:») остаётся для повтора в конце.
-      const joined = (r.lines||[]).join("\n");
+
+      const wasRunning = running;
+      running = !!r.running;
+      if (wasRunning !== running) renderKnight();
+
+      const joined = (r.lines || []).join('\n');
       const hits = [...joined.matchAll(/шаг \d+: ([a-z_]+)/g)];
       const liveHits = [...joined.matchAll(/иду: ([a-z_]+)/g)];
       const cur = r.running && liveHits.length ? liveHits[liveHits.length-1][1] : null;
-      if(cur !== workOrgan){ workOrgan = cur; renderSkeleton(); }
-      if(r.running){
-        btns.forEach(b=>b.disabled=true);
-        stopBtns.forEach(b=>b.disabled=false);
-        st.innerHTML = `<span class="spin">⚙</span> работает: «${esc(r.goal)}»… <button class="stop mini" onclick="stopRun()">⏹ стоп</button>`;
-        await new Promise(res=>setTimeout(res,900));
+      if (cur !== workOrgan) { workOrgan = cur; }
+
+      if (r.running) {
+        btnIdeas.disabled = true;
+        btnFinish.disabled = true;
+        btnStop.disabled = false;
+        stLine.className = 'run-status-line active';
+        stLine.innerHTML = `<span class="spin">⚙</span> работает: «${esc(r.goal)}»`;
+        renderHeader();
+        await new Promise(res => setTimeout(res, 900));
       } else {
-        btns.forEach(b=>b.disabled=false);
-        stopBtns.forEach(b=>b.disabled=true);
-        // повтор на каркасе: киборг печатает трассу в конце разом, поэтому
-        // проигрываем цепочку по шагам — как органы реально отработали
-        if(hits.length && !replayed){
+        btnIdeas.disabled = false;
+        btnFinish.disabled = false;
+        btnStop.disabled = true;
+        if (hits.length && !replayed) {
           replayed = true;
-          for(const h of hits){
-            workOrgan = h[1]; renderSkeleton();
-            await new Promise(res=>setTimeout(res,650));
+          for (const h of hits) {
+            workOrgan = h[1];
+            await new Promise(res => setTimeout(res, 600));
           }
         }
-        if(workOrgan){ workOrgan = null; renderSkeleton(); }
-        if(r.goal) st.textContent = r.rc===0
-          ? `готово: «${r.goal}» (без ошибок)` : r.rc==null ? "" : `завершился с кодом ${r.rc}`;
+        workOrgan = null;
+        stLine.className = 'run-status-line';
+        if (r.goal) stLine.textContent = r.rc === 0
+          ? `✓ готово: «${r.goal}»` : r.rc == null ? '' : `завершился с кодом ${r.rc}`;
         break;
       }
     }
-  } catch(e){
-    st.textContent = "пульт потерял сервер: "+e;
-    btns.forEach(b=>b.disabled=false);   // не оставляем кнопки залипшими
+  } catch(e) {
+    stLine.textContent = 'сервер молчит: ' + e;
+    btnIdeas.disabled = false;
+    btnFinish.disabled = false;
   }
   runPolling = false;
   refresh();
 }
 
-/* --- сворачиваемые секции (автономность / инбокс / журнал), состояние в localStorage --- */
-function collapsedState(){ try{ return JSON.parse(localStorage.getItem("kiborg-collapsed")||"{}"); }catch(e){ return {}; } }
-function toggleSec(key){
-  const body = document.getElementById(key+"-body"), head = document.getElementById(key+"-head");
-  if(!body || !head) return;
-  const closed = body.classList.toggle("hidden");
-  head.classList.toggle("closed", closed);
-  const st = collapsedState(); st[key] = closed; localStorage.setItem("kiborg-collapsed", JSON.stringify(st));
-}
-function applyCollapsed(){
-  const st = collapsedState();
-  for(const key of ["auto","inbox","runs"]){
-    const body = document.getElementById(key+"-body"), head = document.getElementById(key+"-head");
-    if(!body || !head) continue;
-    const closed = !!st[key];
-    body.classList.toggle("hidden", closed);
-    head.classList.toggle("closed", closed);
+// ─── MAIN REFRESH ───
+async function refresh() {
+  try {
+    S = await fetch('/api/state').then(r => r.json());
+    if (S.error) throw new Error(S.error);
+    renderHeader();
+    renderKnight();
+    renderSources();
+    renderFeeds();
+    renderDirection();
+    renderInbox();
+    renderRuns();
+    renderAutoModal();
+    renderFoldersModal();
+  } catch(e) {
+    document.getElementById('h-now').innerHTML = `<span style="color:var(--red)">сервер молчит</span>`;
   }
 }
 
-/* --- главный цикл --- */
-// --- руль направления идей ---
-async function postDirection(payload){
-  await fetch("/api/direction",{method:"POST",headers:{"Content-Type":"application/json"},
-                                body:JSON.stringify(payload)});
-  refresh();
-}
-function renderDirection(){
-  const d = (S && S.direction) || {current:"", presets:[]};
-  const cur = (d.current||"").trim();
-  document.getElementById("dir-current").textContent =
-    cur ? "→ «"+cur+"»" : "— без направления (идеи как в лентах)";
-  document.getElementById("dir-clear").style.display = cur ? "" : "none";
-  const presets = d.presets || [];
-  document.getElementById("dir-presets").innerHTML = presets.length
-    ? presets.map((p,i)=>{
-        const on = p.toLowerCase()===cur.toLowerCase();
-        return `<span class="dir-chip${on?' on':''}"><button onclick="setPreset(${i})">${esc(p)}</button>`
-             + `<b onclick="removePreset(${i})" title="убрать пресет">×</b></span>`;
-      }).join("")
-    : `<span class="sub">пресетов нет — впиши свою тему ниже</span>`;
-}
-function setPreset(i){ const p=((S.direction&&S.direction.presets)||[])[i]; if(p!==undefined) postDirection({current:p}); }
-function removePreset(i){
-  const presets=((S.direction&&S.direction.presets)||[]).slice();
-  const removed=presets.splice(i,1)[0];
-  const cur=((S.direction&&S.direction.current)||"").toLowerCase();
-  const payload={presets};
-  if(removed && removed.toLowerCase()===cur) payload.current="";   // убрали текущий — снимаем и руль
-  postDirection(payload);
-}
-function applyDirText(){
-  const t=document.getElementById("dir-text").value.trim();
-  if(!t) return;
-  document.getElementById("dir-text").value="";
-  postDirection({current:t});                       // задать темой прогона (в пресеты не пишем)
-}
-function addPreset(){
-  const t=document.getElementById("dir-text").value.trim();
-  if(!t) return;
-  document.getElementById("dir-text").value="";
-  const presets=((S.direction&&S.direction.presets)||[]).slice();
-  if(!presets.some(p=>p.toLowerCase()===t.toLowerCase())) presets.push(t);
-  postDirection({current:t, presets});              // сохранить кнопкой и сразу выбрать
-}
-function clearDirection(){ postDirection({current:""}); }
-
-/* --- ленты-источник (тумблеры вкл/выкл; папки — отдельный блок ниже) --- */
-const FEED_NM = {hn:"HN", reddit:"Reddit", lobsters:"Lobsters", gh_trending:"GitHub", telegram:"Telegram"};
-const FEED_VERIFIED = {telegram:true};   // лично проверена юзером; остальные ленты помечаем β
-async function postFeeds(enabled){
-  await fetch("/api/feeds",{method:"POST",headers:{"Content-Type":"application/json"},
-                            body:JSON.stringify({enabled})});
-  refresh();
-}
-function toggleFeed(name){
-  const f = ((S.feeds && S.feeds.enabled) || []).slice();
-  const next = f.includes(name) ? f.filter(x=>x!==name) : f.concat([name]);
-  postFeeds(next);
-}
-function renderFeeds(){
-  const box = document.getElementById("feed-row");
-  if(!box) return;
-  const F = (S && S.feeds) || {all:[], enabled:[]};
-  const on = new Set(F.enabled || []);
-  const live = (S && S.sources && S.sources.sources) || {};
-  box.innerHTML = (F.all||[]).map(k=>{
-    const isOn = on.has(k);
-    const v = isOn ? live[k] : null;                          // живой статус — только у включённой ленты
-    const dot = v ? ` <span class="fdot">${v.ok?"🟢"+(" "+v.items):"🔴"}</span>` : "";
-    const beta = !FEED_VERIFIED[k] ? ` <span class="beta" title="бета · лично вами не проверено">β</span>` : "";
-    const ttl = isOn ? "включено — нажми, чтобы выключить" : "выключено — нажми, чтобы включить";
-    return `<span class="feed-chip${isOn?' on':''}" onclick="toggleFeed('${k}')" title="${ttl}">${esc(FEED_NM[k]||k)}${beta}${dot}</span>`;
-  }).join("");
-  const nOn = (F.enabled||[]).length, nAll = (F.all||[]).length;
-  document.getElementById("feed-count").textContent =
-    nOn ? `→ включено лент: ${nOn} из ${nAll}` : "— все ленты выключены";
-  const hasFolders = ((S && S.folders && S.folders.paths) || []).length > 0;
-  document.getElementById("feed-warn").textContent =
-    (nOn===0 && !hasFolders) ? "⚠️ ничего не выбрано — киборгу неоткуда брать идеи (включи ленту или впиши папку)" : "";
-}
-
-let FOLD_PROBE = {};       // путь → {exists, files, capped}: валиден ли путь и сколько в нём файлов
-async function postFolders(paths){
-  const r = await fetch("/api/folders",{method:"POST",headers:{"Content-Type":"application/json"},
-                              body:JSON.stringify({paths})});
-  try{ const j = await r.json(); if(j && j.probe) FOLD_PROBE = j.probe; }catch(e){}  // проба сохранённых путей
-  refresh();
-}
-async function loadFoldersProbe(){    // счётчики папок при загрузке пульта (отдельный редкий вызов —
-  try{                                // обход папок дорог, не гоняем его на каждом poll /api/state)
-    const r = await fetch("/api/folders/probe");
-    const j = await r.json();
-    if(j && j.probe){ FOLD_PROBE = j.probe; renderFolders(); }
-  }catch(e){}
-}
-function foldNote(p){                  // подпись валидности пути (пусто, пока пробы для него нет)
-  const pr = FOLD_PROBE[p];
-  if(!pr) return "";
-  if(!pr.exists) return `<span class="fold-note bad" title="путь не существует — киборг его пропустит">путь не найден</span>`;
-  if(pr.files===0) return `<span class="fold-note warn" title="в папке нет пригодных текстовых файлов">0 файлов</span>`;
-  return `<span class="fold-note ok" title="столько текстовых файлов киборг возьмёт как сырьё">${pr.files}${pr.capped?"+":""} файл.</span>`;
-}
-function renderFolders(){
-  const paths = ((S && S.folders && S.folders.paths) || []);
-  document.getElementById("fold-count").textContent =
-    paths.length ? "→ читает папок: "+paths.length : "— выключено (идеи только из лент)";
-  document.getElementById("fold-list").innerHTML = paths.length
-    ? paths.map((p,i)=>`<div class="fold-item"><code title="${esc(p)}">${esc(p)}</code>`
-         + foldNote(p)
-         + `<b onclick="removeFolder(${i})" title="убрать папку">×</b></div>`).join("")
-    : `<span class="sub">папок нет — добавь путь ниже, и киборг возьмёт идеи из файлов</span>`;
-}
-function addFolder(){
-  const t=document.getElementById("fold-text").value.trim();
-  if(!t) return;
-  document.getElementById("fold-text").value="";
-  const paths=((S.folders&&S.folders.paths)||[]).slice();
-  paths.push(t);                                    // сервер сам почистит дубли/нормализует путь
-  postFolders(paths);
-}
-function removeFolder(i){
-  const paths=((S.folders&&S.folders.paths)||[]).slice();
-  paths.splice(i,1);
-  postFolders(paths);
-}
-
-async function refresh(){
-  try{
-    S = await fetch("/api/state").then(r=>r.json());
-    if(S.error) throw new Error(S.error);
-    document.getElementById("upd").textContent = "обновлено " + S.now;
-    if(!drag) LAYOUT = S.layout || {};
-    renderSkeleton(); renderPartDetail(); renderFuture(); renderBrain(); renderChips(); renderFlows(); renderDirection(); renderFeeds(); renderFolders(); renderInbox(); renderAuto(); renderSources(); renderRuns(); renderRegistry(); renderGates();
-  } catch(e){
-    document.getElementById("upd").innerHTML = `<span class="err">сервер молчит: ${esc(e.message||e)}</span>`;
-  }
-}
-
-document.querySelectorAll(".bstyle").forEach(b=>b.classList.toggle("on", b.dataset.style===bodyStyle));
-applyCollapsed();        // восстановить свёрнутость секций до первого рендера
+// ─── BOOT ───
+document.querySelectorAll('.bstyle').forEach(b => b.classList.toggle('on', b.dataset.style === bodyStyle));
 refresh();
-loadFoldersProbe();      // счётчики папок при загрузке (валиден ли путь + сколько файлов)
-pollRun();               // вдруг прогон уже шёл, когда открыли страницу
+loadFoldersProbe();
+pollRun();
 setInterval(refresh, 5000);
 </script>
 </body>
