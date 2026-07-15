@@ -38,6 +38,7 @@ import ask_llm  # noqa: E402  (только available() — ключ не чит
 import direction  # noqa: E402  (руль темы: чтение/запись cyborg/data/direction.json)
 import folders  # noqa: E402  (папки-источник: чтение/запись cyborg/data/folders.json)
 import feeds  # noqa: E402  (ленты-источник: какие ленты включены, тумблеры пульта, cyborg/data/feeds.json)
+import council_config  # noqa: E402  (рубильники совета: rank_ideas, ask_llm, orchestra)
 from wiring import build_organs  # noqa: E402  (метаданные органов; импорт чистый)
 from organs import collect_source  # noqa: E402  (проба папок: probe_paths — путь валиден? сколько файлов? импорт wiring уже положил idea_engine на path)
 
@@ -350,6 +351,7 @@ def _api_state():
         "direction": direction.load(),
         "folders": folders.load(),
         "feeds": feeds.load(),
+        "council": council_config.load(),
     }
 
 
@@ -471,6 +473,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "enabled должен быть списком"}, 400)
                 return
             saved = feeds.save(en)
+            self._json({"ok": True, **saved})
+        elif self.path == "/api/council":
+            # рубильники совета: enabled (list of str) — какие советники включены
+            en = body.get("enabled")
+            if not isinstance(en, list):
+                self._json({"ok": False, "msg": "enabled должен быть списком"}, 400)
+                return
+            saved = council_config.save(en)
             self._json({"ok": True, **saved})
         elif self.path == "/api/stop":
             ok = _stop_run()

@@ -69,6 +69,9 @@ class RankIdeasAdvisor:
         return self._run
 
     def opine(self, question, options, context):
+        import council_config
+        if not council_config.is_enabled(self.name):
+            return None
         ctx = context or {}
         # арбитр судит СОДЕРЖАТЕЛЬНЫЕ варианты (идеи/предложения), не служебные развилки.
         # Набор полей — тот же, что видят ask_llm/orchestra (_has_text), чтобы самый весомый
@@ -164,6 +167,9 @@ class AskLlmAdvisor:
         return res.get("text") if res.get("ok") else None
 
     def opine(self, question, options, context):
+        import council_config
+        if not council_config.is_enabled(self.name):
+            return None
         ctx = context or {}
         chain = ctx.get("llm_chain")                # список провайдеров с ключами — приносит вызыватель
         if not chain or not options:                # ключей/вариантов нет -> воздержание БЕЗ похода в сеть
@@ -266,6 +272,9 @@ class OrchestraAdvisor:
         return sum(vals) / len(vals) if vals else 0.0
 
     def opine(self, question, options, context):
+        import council_config
+        if not council_config.is_enabled(self.name):
+            return None
         ctx = context or {}
         cfg = ctx.get("orchestra")                  # {models:[...], chat|darbench_gateway:...}
         if not cfg or not cfg.get("models") or not os.path.exists(self._py):

@@ -825,6 +825,11 @@ body {
       <div class="modal-section-title">Ленты-источник</div>
       <div id="modal-feeds"></div>
     </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Участники Совета (отбор идей)</div>
+      <div id="modal-council"></div>
+    </div>
   </div>
 </div>
 
@@ -937,6 +942,29 @@ function renderFeeds() {
     const isOn = on.has(k);
     return `<div class="modal-row"><label>${esc(FEED_NM[k]||k)}${!FEED_VERIFIED[k]?' <span style="color:var(--amber)">β</span>':''}</label>
       <button class="btn-mini" onclick="toggleFeed('${k}')">${isOn ? '✓ Вкл' : 'Выкл'}</button></div>`;
+  }).join('');
+}
+
+// ─── COUNCIL ───
+const ADV_NM = {rank_ideas: 'Арбитр (rank_ideas)', ask_llm: 'Интуиция (ask_llm)', orchestra: 'Оркестр (orchestra)'};
+async function postCouncil(enabled) {
+  await fetch('/api/council', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled})});
+  refresh();
+}
+function toggleAdvisor(name) {
+  const c = ((S && S.council && S.council.enabled) || []).slice();
+  const next = c.includes(name) ? c.filter(x => x !== name) : c.concat([name]);
+  postCouncil(next);
+}
+function renderCouncilModal() {
+  const mc = document.getElementById('modal-council');
+  if (!mc || !S || !S.council) return;
+  const C = S.council;
+  const on = new Set(C.enabled || []);
+  mc.innerHTML = (C.all || []).map(k => {
+    const isOn = on.has(k);
+    return `<div class="modal-row"><label>${esc(ADV_NM[k]||k)}</label>
+      <button class="btn-mini" onclick="toggleAdvisor('${k}')">${isOn ? '✓ Вкл' : 'Выкл'}</button></div>`;
   }).join('');
 }
 
@@ -1183,6 +1211,7 @@ function openSettings() {
   renderAutoModal();
   renderFoldersModal();
   renderFeeds();
+  renderCouncilModal();
 }
 function closeSettings() {
   document.getElementById('settings-overlay').classList.remove('open');
@@ -1288,6 +1317,7 @@ async function refresh() {
     renderRuns();
     renderAutoModal();
     renderFoldersModal();
+    renderCouncilModal();
   } catch(e) {
     document.getElementById('h-now').innerHTML = `<span style="color:var(--red)">сервер молчит</span>`;
   }
