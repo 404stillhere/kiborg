@@ -99,8 +99,11 @@ def run(inputs, env):
     ideas = list(inp.get("ideas_best") or inp.get("ideas") or [])
     min_score = float(env.get("min_score", 7))
     llm = env.get("llm")
-    if not callable(llm) or not ideas:
-        return {"ideas_polished": ideas}       # без модели/идей — конвейер продолжается как есть
+    all_stubs = len(ideas) > 0 and all(
+        isinstance(i, dict) and i.get("brain") == "stub" for i in ideas
+    )
+    if not callable(llm) or not ideas or all_stubs:
+        return {"ideas_polished": ideas}       # без модели/идей/при болванках — конвейер продолжается как есть
     # ОЦЕНКУ балла судим ВЫДЕЛЕННЫМ низкотемпературным вызовом (score_llm), если дали: temp
     # генератора (0.9) заставляла рассуждающую модель изредка не отдавать чистый JSON scores →
     # карточка проходила без правки. Переписывание остаётся на llm (там нужна живость). Нет
