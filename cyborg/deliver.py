@@ -39,6 +39,15 @@ def run(inputs, env):
     inp = inputs or {}
     ideas = list(inp.get("ideas_safe") or inp.get("ideas") or [])
     added, dropped_stub, queue_open = 0, 0, 0
+    # Фильтр болванок: бросаем stub-идеи только если в партии есть ХОТЯ БЫ ОДНА настоящая
+    # LLM-идея (brain=llm). Если ВСЕ болванки — LLM упал в моменте (402/сеть/пустой ответ)
+    # несмотря на живой ключ; выбросить всё = ноль в инбоксе, хотя болванки лучше пустоты.
+    # Так при нулевом балансе киборг молча деградирует на детерминированный арбитр (rank_ideas
+    # без модели) и доставляет болванки, а не молчит. Стоит восстановиться балансу — снова
+    # фильтрует (has_llm_ideas снова True). Без ключа (stub_mode штатный) — доставляем как есть.
+    has_llm_ideas = llm_mode and any(
+        isinstance(i, dict) and i.get("brain") == "llm" for i in ideas
+    )
     # межпроцессный замок вокруг read-modify-write state.json: другой процесс (пульт-триаж /
     # CLI-harvest) мог бы затереть наш апдейт (lost-update; порчу файла уже снял atomic save).
     # Best-effort, без дедлока — снижает окно гонки, не гарантирует полную сериализацию.
@@ -48,7 +57,7 @@ def run(inputs, env):
         for idea in ideas:
             if not isinstance(idea, dict):
                 continue
-            if llm_mode and idea.get("brain") == "stub":
+            if has_llm_ideas and idea.get("brain") == "stub":
                 dropped_stub += 1       # болванка при живом ключе = шум, в инбокс не пускаем
                 continue
             idea.setdefault("kind", "new")
