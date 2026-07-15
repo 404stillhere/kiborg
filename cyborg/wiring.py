@@ -248,10 +248,18 @@ def _run_rank(inputs, env):
         e["llm"] = llm
     if env.get("direction"):
         e["direction"] = env["direction"]   # судья-фолбэк тоже учитывает направление
+    
+    # Если все идеи - это болванки (LLM не работает / баланс 0 / оффлайн), то опрашивать совет
+    # (оркестр/интуицию) бессмысленно и долго. Сразу переходим на быстрый оффлайн-отбор.
+    ideas = (inputs or {}).get("ideas") or []
+    all_stubs = len(ideas) > 0 and all(
+        isinstance(i, dict) and i.get("brain") == "stub" for i in ideas
+    )
+
     # СОВЕТ в живом цикле (гейт снят юзером 2026-07-13, ход Г): идеи судит взвешенный совет,
     # если есть 2-й живой голос (в env принесли цепочку интуиции / оркестр). Иначе — прежний
     # одиночный судья, офлайн байт-в-байт. Любой сбой совета -> тихий откат, конвейер не встаёт.
-    if env.get("council") is not False and (env.get("llm_chain") or env.get("orchestra")):
+    if not all_stubs and env.get("council") is not False and (env.get("llm_chain") or env.get("orchestra")):
         try:
             out = _rank_by_council(inputs, env, keep=int(e["keep"]))
             if out is not None:
