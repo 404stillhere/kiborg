@@ -39,15 +39,17 @@ def run(inputs, env):
     inp = inputs or {}
     ideas = list(inp.get("ideas_safe") or inp.get("ideas") or [])
     added, dropped_stub, dropped_dup, queue_open = 0, 0, 0, 0
-    # Фильтр болванок: бросаем stub-идеи только если в партии есть ХОТЯ БЫ ОДНА настоящая
-    # LLM-идея (brain=llm). Если ВСЕ болванки — LLM упал в моменте (402/сеть/пустой ответ)
-    # несмотря на живой ключ; выбросить всё = ноль в инбоксе, хотя болванки лучше пустоты.
-    # Так при нулевом балансе киборг молча деградирует на детерминированный арбитр (rank_ideas
-    # без модели) и доставляет болванки, а не молчит. Стоит восстановиться балансу — снова
-    # фильтрует (has_llm_ideas снова True). Без ключа (stub_mode штатный) — доставляем как есть.
-    has_llm_ideas = llm_mode and any(
-        isinstance(i, dict) and i.get("brain") == "llm" for i in ideas
-    )
+    # Болванка (brain='stub') в LLM-режиме = НЕ идея, а знак что мозг не ответил (нет баланса/
+    # сети/непарс: ideate свалился на «Идея по мотиву: <файл>»). Раньше при ПОЛНОМ отказе (вся
+    # партия — болванки) их всё равно клали в инбокс: «болванки лучше пустоты». Но в инбоксе
+    # фальшивая идея неотличима от настоящей — юзер читает шум как идею (нечестное зеркало,
+    # root fail-open). Теперь в LLM-режиме болванки в инбокс НЕ пускаем НИКОГДА; полный отказ
+    # помечаем brain_down → прогон честно рапортует «мозг недоступен — идей нет», а инбокс
+    # остаётся честно пустым. Без ключа (stub-режим штатный, смоук/офлайн) болванки ожидаемы —
+    # доставляем как есть (доказывают целость труб без модели).
+    llm_ideas = sum(1 for i in ideas if isinstance(i, dict) and i.get("brain") == "llm")
+    stub_ideas = sum(1 for i in ideas if isinstance(i, dict) and i.get("brain") == "stub")
+    brain_down = bool(llm_mode and llm_ideas == 0 and stub_ideas > 0)
     # межпроцессный замок вокруг read-modify-write state.json: другой процесс (пульт-триаж /
     # CLI-harvest) мог бы затереть наш апдейт (lost-update; порчу файла уже снял atomic save).
     # Best-effort, без дедлока — снижает окно гонки, не гарантирует полную сериализацию.
@@ -57,7 +59,7 @@ def run(inputs, env):
         for idea in ideas:
             if not isinstance(idea, dict):
                 continue
-            if has_llm_ideas and idea.get("brain") == "stub":
+            if llm_mode and idea.get("brain") == "stub":
                 dropped_stub += 1       # болванка при живом ключе = шум, в инбокс не пускаем
                 continue
             idea.setdefault("kind", "new")
@@ -72,7 +74,8 @@ def run(inputs, env):
         ie._write_inbox(store)
         queue_open = len(store.open_ideas())
     return {"delivered": added, "inbox": ie.INBOX, "queue_open": queue_open,
-            "dropped_stub": dropped_stub, "dropped_dup": dropped_dup}
+            "dropped_stub": dropped_stub, "dropped_dup": dropped_dup,
+            "brain_down": brain_down}
 
 
 if __name__ == "__main__":

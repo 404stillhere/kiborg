@@ -2,10 +2,10 @@
 
 Пробел, который закрывает: deliver.run пишет в ЖИВОЙ state.json/inbox.md, поэтому его не гонял
 ни один тест (test_pipeline_integration deliver-sink намеренно исключает). Контракт фильтра
-(коммит 9fcded7 «доставлять болванки при полном отказе LLM/баланса»):
+(честное зеркало 2026-07-17: фальшивую идею в инбокс не пускаем — юзер не отличит её от настоящей):
   • llm_mode И в партии есть ХОТЯ БЫ ОДНА brain='llm' → болванки = шум, отбрасываются;
-  • llm_mode НО ВСЕ идеи — болванки (нет ни одной llm) → полный отказ LLM, деградируем:
-    болванки лучше пустоты в инбоксе, доставляем как есть (раньше молчал);
+  • llm_mode НО ВСЕ идеи — болванки (нет ни одной llm) → мозг не ответил: болванки в инбокс НЕ
+    пускаем (раньше клали «лучше пустоты»), инбокс честно пуст, прогон помечается brain_down;
   • нет ключа (stub-режим штатный) → болванки ожидаемы, доставляем как есть.
 Прод-state изолирован через monkeypatch deliver._load_ie_run на фейковый модуль с tmp-путями
 (реальный инбокс НЕ трогаем).
@@ -44,16 +44,17 @@ class TestDeliverStubFilter(unittest.TestCase):
         from store import Store
         return [i["title"] for i in Store(self.state, cap=0).open_ideas()]
 
-    def test_all_stub_degrade_when_no_llm_idea(self):
-        # Ключ есть (llm_mode), НО в партии НЕТ ни одной brain='llm' — это полный отказ
-        # LLM/баланса (402/сеть/пустой ответ). Деградируем: болванки лучше пустоты в инбоксе,
-        # доставляем их как есть (коммит 9fcded7). dropped_stub=0 — фильтр не сработал.
+    def test_all_stub_dropped_when_brain_down(self):
+        # Ключ есть (llm_mode), НО вся партия — болванки (нет ни одной brain='llm'): мозг не
+        # ответил (402/сеть/пустой). Честное зеркало: фальшивые идеи в инбокс НЕ пускаем (раньше
+        # клали «лучше пустоты»). Инбокс остаётся пуст, прогон помечается brain_down.
         ideas = [{"title": "Идея по мотиву: A", "why": "x", "brain": "stub"},
                  {"title": "Идея по мотиву: B", "why": "y", "brain": "stub"}]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
-        self.assertEqual(out["delivered"], 2)
-        self.assertEqual(out["dropped_stub"], 0)
-        self.assertEqual(len(self._open_titles()), 2)
+        self.assertEqual(out["delivered"], 0)
+        self.assertEqual(out["dropped_stub"], 2)
+        self.assertTrue(out["brain_down"])
+        self.assertEqual(len(self._open_titles()), 0)
 
     def test_stub_kept_without_key(self):
         # ключа нет (stub-режим) -> болванки ожидаемы, доставляем как есть.
@@ -63,6 +64,7 @@ class TestDeliverStubFilter(unittest.TestCase):
         out = deliver.run({"ideas_safe": ideas}, {})
         self.assertEqual(out["delivered"], 2)
         self.assertEqual(out["dropped_stub"], 0)
+        self.assertFalse(out["brain_down"])   # нет ключа → это штатный stub-режим, не отказ мозга
         self.assertEqual(len(self._open_titles()), 2)
 
     def test_real_ideas_pass_in_llm_mode(self):
@@ -72,15 +74,17 @@ class TestDeliverStubFilter(unittest.TestCase):
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
         self.assertEqual(out["delivered"], 2)
         self.assertEqual(out["dropped_stub"], 0)
+        self.assertFalse(out["brain_down"])
         self.assertEqual(len(self._open_titles()), 2)
 
     def test_mixed_llm_mode_keeps_only_real(self):
-        # смесь: живая идея проходит, болванка отсеивается
+        # смесь: живая идея проходит, болванка отсеивается (мозг ответил → не brain_down)
         ideas = [{"title": "Ночной агент обхода бэклога", "why": "полезно", "brain": "llm"},
                  {"title": "Идея по мотиву: мусор", "why": "z", "brain": "stub"}]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
         self.assertEqual(out["delivered"], 1)
         self.assertEqual(out["dropped_stub"], 1)
+        self.assertFalse(out["brain_down"])
         self.assertEqual(self._open_titles(), ["Ночной агент обхода бэклога"])
 
     def test_dropped_dup_counts_rejected_duplicates(self):

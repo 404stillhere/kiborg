@@ -427,6 +427,23 @@ body {
 .empty-state .es-text { font-size: 13px; }
 .empty-state .es-sub { font-size: 11.5px; }
 
+/* Карточка «плод»: статус + свежесть + накопленное в одном (пустой инбокс = не дыра, а итог) */
+.plod { display:flex; flex-direction:column; align-items:center; gap:12px; padding:34px 20px; text-align:center; }
+.plod-status { font-size:16px; font-weight:600; display:flex; align-items:center; gap:8px; }
+.plod-status.alive { color: var(--green); }
+.plod-status.busy  { color: var(--amber); }
+.plod-batch { font-size:12.5px; color: var(--ink2); }
+.plod-batch b { color: var(--ink); font-weight:600; }
+.plod-totals { font-size:12px; color: var(--ink3); line-height:1.7; max-width:340px; }
+.plod-totals b { color: var(--ink2); font-weight:600; }
+.plod-btn { margin-top:4px; padding:7px 16px; font-size:12px; border-radius:8px;
+  border:1px solid var(--line,#1e2233); background: var(--bg3); color: var(--ink2); cursor:pointer; }
+.plod-btn:hover { color: var(--ink); border-color: var(--green); }
+/* пульс мёртв: сервер молчит — точка гаснет, не врёт зелёным */
+.h-pulse.dead { background: var(--red); box-shadow:none; animation:none; }
+.h-pstate { font-size:11px; color: var(--ink3); margin-left:6px; }
+.h-pstate.alive { color: var(--green); } .h-pstate.busy { color: var(--amber); } .h-pstate.dead { color: var(--red); }
+
 /* Finish slot */
 .finish-slot {
   background: var(--card);
@@ -709,11 +726,13 @@ body {
     <div class="h-brand">
       <div class="h-pulse" id="h-pulse"></div>
       <div class="h-name">Киборг</div>
+      <span class="h-pstate" id="h-pstate"></span>
     </div>
     <div class="h-sep"></div>
     <div class="h-stats">
       <div class="h-stat">инбокс: <b id="h-inbox-count">—</b></div>
       <div class="h-stat">помнит: <b id="h-seen-count">—</b></div>
+      <div class="h-stat" id="h-fresh" title="когда киборг последний раз что-то принёс"></div>
       <div class="h-stat" id="h-key-stat"></div>
       <div class="h-stat" id="h-lab-stat"></div>
     </div>
@@ -806,6 +825,7 @@ body {
       <!-- Run status -->
       <div id="run-status-area">
         <div class="run-status-line" id="run-status-line"></div>
+        <div id="stop-safe" style="display:none; font-size:10.5px; color:var(--ink3); margin-top:3px;">⏹ прервать безопасно — принесённое сохранится</div>
         <div class="live-tracker" id="live-tracker" style="display:none"></div>
       </div>
 
@@ -855,12 +875,8 @@ body {
         </div>
         <div class="done-list" id="done-list"></div>
 
-        <!-- Empty state -->
-        <div class="empty-state" id="empty-state" style="display:none">
-          <div class="es-icon">💡</div>
-          <div class="es-text">Инбокс пуст</div>
-          <div class="es-sub">Нажми «Принести идеи» — агент сходит за новыми</div>
-        </div>
+        <!-- Empty state → карточка «плод» (статус+свежесть+итоги), заполняется renderInbox -->
+        <div class="empty-state" id="empty-state" style="display:none"></div>
       </div>
 
       <!-- Organs/registry panel (свап с лентой идей) -->
@@ -934,6 +950,7 @@ let running = false;
 let runPolling = false;
 let workOrgan = null;
 let replayed = true;
+let runStartMs = null;   // старт текущего прогона (клиентские часы) — для таймера «идёт M:SS», сигнал «не завис»
 let bodyStyle = localStorage.getItem('kbodyStyle') || 'metal';
 let consoleOpen = false;
 let doneOpen = false;
@@ -985,6 +1002,18 @@ function renderHeader() {
 
   const pulse = document.getElementById('h-pulse');
   pulse.className = 'h-pulse' + (running ? ' running' : '');
+  const pst = document.getElementById('h-pstate');
+  if (pst) { pst.textContent = running ? 'работает' : 'жив';
+             pst.className = 'h-pstate ' + (running ? 'busy' : 'alive'); }
+
+  // свежесть: сколько прошло с последнего прогона (жив-и-свежий против висит-со-вчера)
+  const fresh = document.getElementById('h-fresh');
+  if (fresh) {
+    const runs = (S && S.runs) || [];
+    const last = runs.length ? runs[runs.length - 1] : null;
+    const ago = last ? agoText(last.ts) : '';
+    fresh.innerHTML = last ? `свежесть: <b>${ago || 'только что'}</b>` : 'свежесть: <b>—</b>';
+  }
 
   const auto = S ? (S.auto || {}) : {};
   const ab = document.getElementById('h-auto-badge');
@@ -1149,6 +1178,57 @@ function ideaCardHTML(idea) {
   </div>`;
 }
 
+// «N назад» — от часов клиента (пульт локальный, та же машина; S.now отдаётся без даты и не парсится)
+function _parseTs(s){ return s ? new Date(String(s).replace(' ','T')) : null; }
+function agoText(ts) {
+  const a = _parseTs(ts);
+  if (!a || isNaN(+a)) return '';
+  let d = Math.floor((Date.now() - a.getTime()) / 1000); if (d < 0) d = 0;
+  if (d < 60) return d + ' сек назад';
+  if (d < 3600) return Math.floor(d/60) + ' мин назад';
+  if (d < 86400) return Math.floor(d/3600) + ' ч назад';
+  return Math.floor(d/86400) + ' дн назад';
+}
+function _plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
+// Карточка «плод»: пустой инбокс = не дыра, а итог работы (статус + свежесть + накопленное)
+function plodCardHTML() {
+  const runs = (S && S.runs) || [];
+  const last = runs.length ? runs[runs.length - 1] : null;
+  const nOrg = (S.organs || []).length;
+  const reg = S.registry || {};
+  const extracted = (reg.by_status && reg.by_status.extracted) || 0;
+  const seen = (S.inbox && S.inbox.seen_count) || 0;
+  const brought = runs.filter(r => /^\d+$/.test(r.value)).reduce((s,r) => s + parseInt(r.value), 0);
+  const auto = S.auto || {};
+  const busy = !!running;
+  const statusTxt = busy ? '⚙ Киборг работает…' : '✅ Киборг жив, отдыхает';
+  let batch;
+  if (last) {
+    const ago = agoText(last.ts);
+    const isNum = /^\d+$/.test(last.value);
+    const got = isNum ? `принёс <b>${parseInt(last.value)}</b> ${_plural(parseInt(last.value),'идею','идеи','идей')}`
+                      : esc(last.value);
+    batch = `Прошлый сбор: ${got} · ${esc(String(last.ts).slice(11,16))}${ago ? ' · ' + ago : ''}`;
+  } else {
+    batch = 'Сборов ещё не было';
+  }
+  const nextLine = auto.on ? `Сам сходит за новыми каждые ~${auto.interval_min} мин`
+                           : 'Авто выкл — можно нажать кнопку';
+  const totals = `Всего наработал: <b>${runs.length}</b> прогонов · <b>${brought}</b> идей принёс · `
+               + `<b>${extracted}</b> органов добыто · <b>${nOrg}</b> впаяно · помнит <b>${seen}</b>`;
+  return `<div class="plod">
+    <div class="plod-status ${busy ? 'busy' : 'alive'}">${statusTxt}</div>
+    <div class="plod-batch">${batch}<br><span style="color:var(--ink3)">${nextLine}</span></div>
+    <div class="plod-totals">${totals}</div>
+    <button class="plod-btn" onclick="runGoal('приноси свежие идеи')">⚡ Принести сейчас</button>
+  </div>`;
+}
+
 function renderInbox() {
   const ib = S.inbox;
   const open = ib.ideas.filter(i => i.status === 'open');
@@ -1156,9 +1236,11 @@ function renderInbox() {
 
   document.getElementById('ideas-count').textContent = open.length;
 
-  // Empty state
+  // Empty state → карточка «плод» (статус+свежесть+итоги), а не голое «пусто»
   const emptyEl = document.getElementById('empty-state');
-  emptyEl.style.display = (!open.length && !ib.finish) ? 'flex' : 'none';
+  const showEmpty = (!open.length && !ib.finish);
+  emptyEl.style.display = showEmpty ? 'flex' : 'none';
+  if (showEmpty) emptyEl.innerHTML = plodCardHTML();
 
   // Finish slot
   const f = ib.finish;
@@ -1214,7 +1296,14 @@ function renderRuns() {
       cls = n > 0 ? 'ok' : 'zero';
       val = n > 0 ? '+' + n : '0';
     } else { val = esc(r.value); cls = ''; }
-    const warn = r.degraded ? `<div style="font-size:11px; color:var(--red); margin-top:2px;">⚠ ${esc(r.degraded)}</div>` : '';
+    let warn = '';
+    if (r.degraded) {
+      // норм. гигиена памяти (дедуп/stub-фильтр) = не авария → серый «·», без красного ⚠;
+      // настоящий сбой (источник в фолбэке / мозг недоступен) → янтарный ⚠
+      const benign = /дубликат|stub/.test(r.degraded) && !/фолбэк|недоступен/.test(r.degraded);
+      warn = `<div style="font-size:11px; color:${benign ? 'var(--ink3)' : 'var(--amber)'}; margin-top:2px;">`
+           + `${benign ? '·' : '⚠'} ${esc(r.degraded)}</div>`;
+    }
     return `<div class="run-row">
       <div class="run-ts">${esc(r.ts)}</div>
       <div class="run-goal" title="${esc(r.goal)}">«${esc(r.goal)}»${warn}</div>
@@ -1395,8 +1484,13 @@ async function pollRun() {
         btnIdeas.disabled = true;
         btnFinish.disabled = true;
         btnStop.disabled = false;
+        if (runStartMs == null) runStartMs = Date.now();
+        const _el = Math.max(0, Math.floor((Date.now() - runStartMs) / 1000));
+        const _mmss = Math.floor(_el/60) + ':' + String(_el%60).padStart(2,'0');
+        const _curNm = cur ? ' · ' + (orgNames[cur] || cur) : '';
         stLine.className = 'run-status-line active';
-        stLine.innerHTML = `<span class="spin">⚙</span> работает: «${esc(r.goal)}»`;
+        stLine.innerHTML = `<span class="spin">⚙</span> работает${_curNm} · идёт ${_mmss}`;
+        { const ss = document.getElementById('stop-safe'); if (ss) ss.style.display = 'block'; }
         renderHeader();
         await new Promise(res => setTimeout(res, 900));
       } else {
@@ -1411,9 +1505,12 @@ async function pollRun() {
           }
         }
         workOrgan = null;
+        { const ss = document.getElementById('stop-safe'); if (ss) ss.style.display = 'none'; }
         stLine.className = 'run-status-line';
-        if (r.goal) stLine.textContent = r.rc === 0
-          ? `✓ готово: «${r.goal}»` : r.rc == null ? '' : `завершился с кодом ${r.rc}`;
+        // в простое — не пустота (провоцирует «потыкать»), а явное «всё тихо, можно уйти»
+        stLine.textContent = (r.goal && r.rc === 0) ? `✓ готово: «${r.goal}»`
+          : (r.goal && r.rc != null) ? `завершился с кодом ${r.rc}`
+          : '✓ всё тихо, киборг жив';
         break;
       }
     }
@@ -1563,6 +1660,11 @@ async function refresh() {
     renderCouncilModal();
   } catch(e) {
     document.getElementById('h-now').innerHTML = `<span style="color:var(--red)">сервер молчит</span>`;
+    // честный пульс: сервер лёг — точка гаснет (красная), а не остаётся зелёной и не врёт «жив»
+    const pulse = document.getElementById('h-pulse');
+    if (pulse) pulse.className = 'h-pulse dead';
+    const pst = document.getElementById('h-pstate');
+    if (pst) { pst.textContent = 'молчит'; pst.className = 'h-pstate dead'; }
   }
 }
 

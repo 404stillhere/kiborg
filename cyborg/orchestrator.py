@@ -75,6 +75,9 @@ class Cyborg:
             "degraded": bool(mem.data.get("degraded")),
             "dropped_stub": int(mem.data.get("dropped_stub") or 0),
             "dropped_dup": int(mem.data.get("dropped_dup") or 0),
+            # мозг был недоступен: ключ есть, но модель не ответила (вся партия — болванки),
+            # deliver их в инбокс не пустил. Панель/лог честно скажут «мозг недоступен — идей нет».
+            "brain_down": bool(mem.data.get("brain_down")),
             # кто РЕАЛЬНО ответил в генераторе (gemini=подписка/бесплатно, muse-spark=closerouter/платно).
             # Гибрид: платный фолбэк светится в логе/пульте, иначе молча жжёт closerouter-баланс.
             "provider": mem.data.get("provider") or "",
