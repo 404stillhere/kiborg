@@ -38,7 +38,7 @@ def run(inputs, env):
     # принимаем и очищенные (ideas_safe от scrub), и сырые (ideas) — что дали
     inp = inputs or {}
     ideas = list(inp.get("ideas_safe") or inp.get("ideas") or [])
-    added, dropped_stub, queue_open = 0, 0, 0
+    added, dropped_stub, dropped_dup, queue_open = 0, 0, 0, 0
     # Фильтр болванок: бросаем stub-идеи только если в партии есть ХОТЯ БЫ ОДНА настоящая
     # LLM-идея (brain=llm). Если ВСЕ болванки — LLM упал в моменте (402/сеть/пустой ответ)
     # несмотря на живой ключ; выбросить всё = ноль в инбоксе, хотя болванки лучше пустоты.
@@ -62,15 +62,17 @@ def run(inputs, env):
                 continue
             idea.setdefault("kind", "new")
             idea.setdefault("source", "cyborg")
-            if store.add_idea(idea):    # обратная тяга: не влезет сверх потолка
-                added += 1
             if not store.has_room():
                 break
+            if store.add_idea(idea):    # обратная тяга: не влезет сверх потолка
+                added += 1
+            else:
+                dropped_dup += 1        # идея отклонена как дубликат
         store.save()
         ie._write_inbox(store)
         queue_open = len(store.open_ideas())
     return {"delivered": added, "inbox": ie.INBOX, "queue_open": queue_open,
-            "dropped_stub": dropped_stub}
+            "dropped_stub": dropped_stub, "dropped_dup": dropped_dup}
 
 
 if __name__ == "__main__":

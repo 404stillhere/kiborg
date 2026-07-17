@@ -58,6 +58,40 @@ class TestOrchestrator(unittest.TestCase):
         self.assertTrue(out["degraded"])
         self.assertEqual(out["dropped_stub"], 0)
 
+    def test_dropped_dup_surfaces_in_output(self):
+        # dropped_dup (незакоммиченная правка): счётчик отклонённых дубликатов из sink/transform
+        # поднимается из mem.data в out — как соседние degraded/dropped_stub. Лог/пульт показывают
+        # «дубликатов=N», а не рапортуют здоровье, когда deliver тихо отбросил повторы.
+        def xf_dups(inputs, env):
+            return {"ideas": ["a", "b"], "dropped_dup": 3}
+
+        organs = [
+            Organ("collect_source", "собрать свежие идеи источник", src, role="source",
+                  produces=["items"], tags=["идеи", "собрать", "свежие"]),
+            Organ("ideate", "придумать идеи предложить", xf_dups, role="transform",
+                  produces=["ideas"], consumes=["items"], tags=["идея", "идеи"]),
+        ]
+        out = Cyborg(organs, max_steps=6).run("приноси свежие идеи", env={})
+        self.assertEqual(out["dropped_dup"], 3)        # проброс звена orchestrator
+        self.assertEqual(out["dropped_stub"], 0)       # этого сигнала не было — 0
+
+    def test_provider_surfaces_in_output(self):
+        # provider (гибрид 2026-07-16): кто РЕАЛЬНО ответил в генераторе — пробрасывается из органа в
+        # out, как dropped_stub/dropped_dup. Без этого платный фолбэк (muse-spark) молчит в логе/пульте,
+        # хотя жжёт closerouter-баланс. Модульный ask_llm.last_provider _run_ideate кладёт в out органа,
+        # orchestrator поднимает сюда.
+        def xf_provider(inputs, env):
+            return {"ideas": ["a"], "provider": "muse-spark"}
+
+        organs = [
+            Organ("collect_source", "собрать свежие идеи источник", src, role="source",
+                  produces=["items"], tags=["идеи", "собрать", "свежие"]),
+            Organ("ideate", "придумать идеи предложить", xf_provider, role="transform",
+                  produces=["ideas"], consumes=["items"], tags=["идея", "идеи"]),
+        ]
+        out = Cyborg(organs, max_steps=6).run("приноси свежие идеи", env={})
+        self.assertEqual(out["provider"], "muse-spark")  # проброшен orchestrator'ом
+
     def test_router_selects_relevant_subset(self):
         many = base_organs() + [Organ("noise%d" % i, "нерелевантный шум",
                                        lambda i, e: {}, tags=["zzz"]) for i in range(12)]

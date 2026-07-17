@@ -21,7 +21,6 @@ M:/projects/funpay/venv/Scripts/python.exe panel/serve.py   # → http://127.0.0
 | `serve.py` | сервер (`ThreadingHTTPServer`, порт 8737): API + отдача статики + автоцикл |
 | `index.html` | весь UI (разметка + CSS + JS) |
 | `bodies.js` | SVG-тела облика рыцаря (3 стиля: metal/flat/poly) |
-| `layout.json` | сохранённая раскладка карточек (drag-drop) |
 
 ## API
 
@@ -38,7 +37,6 @@ M:/projects/funpay/venv/Scripts/python.exe panel/serve.py   # → http://127.0.0
 | `GET /api/folders/probe` | проба текущих папок: по каждому пути — существует ли + сколько пригодных текстовых файлов (счётчики пульта при загрузке) |
 | `POST /api/stop` | оборвать текущий прогон |
 | `POST /api/idea` | статус идее: `take` / `later` / `trash` |
-| `POST /api/layout` | сохранить раскладку карточек |
 
 Прогоны (`run.py`/`harvest.py`/`observe_sources.py`) запускаются отдельным подпроцессом
 (`_start_proc`), их stdout стримится в живую консоль страницы построчно. Автономный фон

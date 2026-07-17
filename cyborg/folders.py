@@ -7,10 +7,11 @@
 в пульте мышкой (или прямо в файле). Смотрит на папки НЕЙТРАЛЬНО — как на чужой проект со
 стороны, без «чини себя». Секреты и мусорные папки отсеивает сам орган (collect_source._files),
 не этот модуль. Только stdlib (panel/serve.py импортит его, а он без venv)."""
-import json
 import os
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+import _panel_config
+
+DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "folders.json")
 
 _MAX_PATHS = 40      # папок немного; больше — мусор/раздувание
@@ -38,13 +39,7 @@ def _clean_paths(seq):
 
 def load():
     """Список папок с диска. Нет файла / битый → пусто (источник выключен)."""
-    try:
-        with open(PATH, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:
-        d = {}
-    if not isinstance(d, dict):
-        d = {}
+    d = _panel_config.load_obj(PATH)
     paths = d.get("paths")
     paths = _clean_paths(paths) if isinstance(paths, list) else []
     return {"paths": paths}
@@ -58,11 +53,7 @@ def current():
 def save(paths):
     """Атомарно сохранить список папок. Чистка/дедуп/потолки — здесь."""
     clean = _clean_paths(paths) if isinstance(paths, list) else []
-    os.makedirs(DATA, exist_ok=True)
-    tmp = PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"paths": clean}, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, PATH)                # атомарно: обрыв записи не бьёт существующий список
+    _panel_config.atomic_save(PATH, {"paths": clean})
     return {"paths": clean}
 
 

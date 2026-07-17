@@ -12,16 +12,21 @@ import os
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
 
 # Цепочка ИНТУИЦИИ (ask_llm): id, имя ключа, endpoint (полный chat-completions URL), модель.
-# Реш. юзера 2026-07-13: интуиция — ТОЛЬКО closerouter, но ЦЕПОЧКА фолбэка из 4 моделей
-# (кто ответит — того ответ). Порядок задан юзером: deepseek → glm5 → muse-spark → codex-spark.
-# Все на одном ключе/endpoint closerouter, отличается только модель. Так перемежающийся 502
-# по одной модели больше не глушит интуицию — есть запас. Прочие провайдеры — в СОВЕТ.
+# Реш. юзера 2026-07-16: ГИБРИД — две модели на РАЗНЫХ ключах/endpoint'ах (build_chain берёт
+# keys[key] per-entry, поэтому смешанные endpoint/ключи поддержаны).
+#   1) gemini-2.5-flash-lite через НАТИВНЫЙ ключ Google-подписки (первичная, дёшево — подписка).
+#   2) muse-spark через closerouter (фолбэк при отлёте gemini — доказанно рабочая, тянула
+#      генерацию, пока её душили таймаутами мёртвых моделей).
+# Корень болванок был в гонке таймаутов старой 4-модельной closerouter-цепочки (deepseek-pro
+# регулярно таймаутил, glm5 — 503, бюджет сжирался впустую). Гибрид решает это: быстрая
+# первичная, и надёжный фолбэк, когда нативный gemini с этой сети провисает на TLS
+# (интермиттент, та же причина по которой киборг уходил с gemini в 2026-07-13 — но теперь
+# он не один в цепочке). Порядок = приоритет. Прочие провайдеры — в СОВЕТ.
 _CR_URL = "https://api.closerouter.dev/v1/chat/completions"
+_GEM_NATIVE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 _SPEC = [
-    ("deepseek", "CLOSEROUTER_API_KEY", _CR_URL, "deepseek/deepseek-v4-pro"),
-    ("glm5", "CLOSEROUTER_API_KEY", _CR_URL, "z-ai/glm-5"),
+    ("gemini", "GEMINI_API_KEY", _GEM_NATIVE_URL, "gemini-2.5-flash-lite"),
     ("muse-spark", "CLOSEROUTER_API_KEY", _CR_URL, "meta/muse-spark-1.1"),
-    ("codex-spark", "CLOSEROUTER_API_KEY", _CR_URL, "openai/gpt-5.3-codex-spark"),
 ]
 
 
@@ -60,6 +65,17 @@ def build_chain(path=None):
     keys = load_keys(path)
     return [{"id": pid, "baseUrl": url, "apiKey": keys[key], "model": model}
             for pid, key, url, model in _SPEC if keys.get(key)]
+
+
+def chain_summary(path=None):
+    """БЕЗОПАСНАЯ строка цепочки для логов/пульта/отладки: только id + model, БЕЗ apiKey/baseUrl.
+
+    Защита от класса косяка (инцидент 2026-07-16): `print(chain)` / `print(_chain())` утёк
+    ЗНАЧЕНИЯМИ ключей в вывод. В отладке/логах/пульте печатать ТОЛЬКО chain_summary —
+    `apiKey`/`baseUrl` несут секрет (closerouter/gemini-ключи), id+model достаточно для диагноза
+    «какая модель ответила / сколько в цепочке». Пусто -> '' (без секретов даже при пустой цепи)."""
+    return ", ".join(f"{c['id']}({c['model']})" for c in build_chain(path)) if build_chain(path) else ""
+
 
 
 def available(path=None):
@@ -181,10 +197,9 @@ def orchestra_context(path=None):
 
 
 if __name__ == "__main__":
-    chain = build_chain()
-    if not chain:
+    summary = chain_summary()
+    if not summary:
         print("SMOKE: ключей нет — впиши хотя бы один в llm_keys.env, интуиция пока воздержится")
     else:
-        # печатаем БЕЗ ключей — только id и модели
-        print("SMOKE OK: цепочка из", len(chain), "провайдеров:",
-              ", ".join(f"{c['id']}({c['model']})" for c in chain))
+        # печатаем БЕЗ ключей — только id и модели (chain_summary; инцидент 2026-07-16: print(chain) утёк секретом)
+        print("SMOKE OK: цепочка из", len(build_chain()), "провайдеров:", summary)

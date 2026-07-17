@@ -282,10 +282,37 @@ class TestDegradeNote(unittest.TestCase):
     def test_dropped_stub(self):
         self.assertEqual(harvest._degrade_note({"dropped_stub": 3}), "stub-отсеяно=3")
 
+    def test_dropped_dup(self):
+        # dropped_dup (незакоммиченная правка): идеи, отклонённые deliver как дубликаты,
+        # рендерятся в человекочитаемый флаг — как соседние dropped_stub/degraded.
+        self.assertEqual(harvest._degrade_note({"dropped_dup": 4}), "дубликатов=4")
+
     def test_both_flags(self):
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2})
         self.assertIn("источник в фолбэке", note)
         self.assertIn("stub-отсеяно=2", note)
+
+    def test_all_three_flags(self):
+        # все три сигнала деградации в одной строке, разделены · (provider не передан → нет фолбэк-флага)
+        note = harvest._degrade_note({"degraded": True, "dropped_stub": 2, "dropped_dup": 1})
+        self.assertEqual(note, "источник в фолбэке · stub-отсеяно=2 · дубликатов=1")
+
+    def test_paid_fallback_provider_flagged(self):
+        # гибрид (2026-07-16): muse-spark = ПЛАТНЫЙ фолбэк closerouter (gemini провисла на TLS) →
+        # светим «фолбэк=muse-spark», иначе автосбор молча жжёт баланс. Это budget-деградация.
+        note = harvest._degrade_note({"provider": "muse-spark"})
+        self.assertEqual(note, "фолбэк=muse-spark")
+
+    def test_free_provider_not_flagged(self):
+        # gemini = подписка = БЕСПЛАТНО — фолбэк-флагом НЕ помечаем (это штатный путь, не деградация).
+        # Иначе каждый здоровый прогон светился бы «фолбэк=gemini» и затирал реальные сигналы.
+        self.assertEqual(harvest._degrade_note({"provider": "gemini"}), "")
+        self.assertEqual(harvest._degrade_note({}), "")          # нет provider — нет флага
+
+    def test_paid_fallback_with_other_flags(self):
+        # фолбэк встаёт в общую строку деградации рядом с источником/дубликатами
+        note = harvest._degrade_note({"degraded": True, "provider": "muse-spark", "dropped_dup": 1})
+        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · фолбэк=muse-spark")
 
 
 if __name__ == "__main__":

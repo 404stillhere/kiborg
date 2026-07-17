@@ -16,10 +16,16 @@ import wiring  # noqa: E402
 
 
 class _Proc:
-    def __init__(self, stdout, rc=0):
+    """Фейк подпроцесса для мока subprocess.Popen. Код ask_llm._run_chain вызывает
+    Popen(...).communicate(input=..., timeout=...) и читает proc.returncode/stdout/stderr.
+    rc=0+stdout -> успех; rc!=0+пусто -> ""; возбуждение в communicate -> "" (сбой)."""
+    def __init__(self, stdout="", rc=0, stderr=""):
         self.stdout = stdout
+        self.stderr = stderr
         self.returncode = rc
-        self.stderr = ""
+
+    def communicate(self, input=None, timeout=None):
+        return self.stdout, self.stderr
 
 
 _CHAIN = [{"id": "deepseek", "baseUrl": "u", "apiKey": "k", "model": "deepseek/deepseek-v4-pro"}]
@@ -27,13 +33,13 @@ _CHAIN = [{"id": "deepseek", "baseUrl": "u", "apiKey": "k", "model": "deepseek/d
 
 class TestAskLlm(unittest.TestCase):
     def setUp(self):
-        self._orig_run = ask_llm.subprocess.run
+        self._orig_popen = ask_llm.subprocess.Popen
         self._orig_chain = ask_llm.keychain.build_chain
         self._orig_exists = ask_llm.os.path.exists
         ask_llm.os.path.exists = lambda p: True         # organ.js «на месте» — сеть всё равно мок
 
     def tearDown(self):
-        ask_llm.subprocess.run = self._orig_run
+        ask_llm.subprocess.Popen = self._orig_popen
         ask_llm.keychain.build_chain = self._orig_chain
         ask_llm.os.path.exists = self._orig_exists
 
@@ -41,11 +47,11 @@ class TestAskLlm(unittest.TestCase):
         ask_llm.keychain.build_chain = lambda path=None: _CHAIN if items is None else items
 
     def _mock_run(self, stdout=None, exc=None, rc=0):
-        def fake(cmd, **kw):
-            if exc:
-                raise exc
-            return _Proc(stdout, rc)
-        ask_llm.subprocess.run = fake
+        """Конфигурит subprocess.Popen фейком. exc поднимается из communicate() (сбой node/таймаут)."""
+        proc = _Proc(stdout=stdout or "", rc=rc)
+        if exc is not None:
+            proc.communicate = lambda input=None, timeout=None: (_ for _ in ()).throw(exc)
+        ask_llm.subprocess.Popen = lambda cmd, **kw: proc
 
     def test_strip_fence(self):
         self.assertEqual(ask_llm._strip_fence('```json\n{"a":1}\n```'), '{"a":1}')
@@ -71,6 +77,30 @@ class TestAskLlm(unittest.TestCase):
         self._chain()
         self._mock_run(stdout=json.dumps({"ok": False, "error": "all providers failed"}))
         self.assertEqual(ask_llm.ask("prompt"), "")
+
+    def test_last_provider_set_on_success(self):
+        # organ.js возвращает provider (кто РЕАЛЬНО ответил) — гибрид делает это критичным для
+        # учёта фолбэка (gemini=бесплатно, muse-spark=платно). ask() ставит last_provider, не ломая
+        # контракт callable(prompt)->str.
+        self._chain()
+        self._mock_run(stdout=json.dumps({"ok": True, "text": '{"title":"X"}', "provider": "muse-spark"}))
+        ask_llm.ask("prompt")
+        self.assertEqual(ask_llm.last_provider, "muse-spark")   # фолбэк сработал — видно
+
+    def test_last_provider_cleared_on_failure(self):
+        # при сбое (not ok / пусто / exception) last_provider сбрасывается — не врёт «ответил прошлый»
+        self._chain()
+        self._mock_run(stdout=json.dumps({"ok": True, "text": '{"t":1}', "provider": "gemini"}))
+        ask_llm.ask("prompt")
+        self.assertEqual(ask_llm.last_provider, "gemini")
+        self._mock_run(stdout=json.dumps({"ok": False, "error": "boom"}))  # след. вызов упал
+        ask_llm.ask("prompt")
+        self.assertEqual(ask_llm.last_provider, "")              # сброс, а не зависший «gemini»
+
+    def test_last_provider_empty_without_chain(self):
+        self._chain([])                                          # нет ключей — спросить некого
+        ask_llm.ask("prompt")
+        self.assertEqual(ask_llm.last_provider, "")
 
     def test_available_reflects_chain(self):
         self._chain([])

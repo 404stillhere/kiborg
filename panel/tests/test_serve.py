@@ -1,9 +1,8 @@
 """Тесты сервера пульта (panel/serve.py) — чистые хелперы.
 
 Прицел — не UI, а места, где сервер трогает диск и чужой ввод:
-  1. _save_layout — ЕДИНСТВЕННАЯ запись POST-данных браузера на диск: валидатор + атомарность + потолок.
-  2. _read_runs — парсинг файла журнала прогонов, устойчивость к мусору/отсутствию.
-  3. _set_idea — гейт статуса ДО subprocess (никаких сторонних значений в CLI).
+  1. _read_runs — парсинг файла журнала прогонов, устойчивость к мусору/отсутствию.
+  2. _set_idea — гейт статуса ДО subprocess (никаких сторонних значений в CLI).
 Пишем во временные папки через монкипатч глобалей serve.* — реальные файлы пульта не трогаем.
 Только stdlib. Запуск: cd panel && python -m unittest discover -s tests -p "test_*.py"
 """
@@ -17,48 +16,6 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # panel/
 sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
-
-
-class TestSaveLayout(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="serve_lay_")
-        self.f = os.path.join(self.tmp, "layout.json")
-        self._orig = serve.LAYOUT_FILE
-        serve.LAYOUT_FILE = self.f
-
-    def tearDown(self):
-        serve.LAYOUT_FILE = self._orig
-
-    def _read(self):
-        with open(self.f, encoding="utf-8") as fh:
-            return json.load(fh)
-
-    def test_valid_roundtrip(self):
-        serve._save_layout({"ideate": {"x": 10, "y": 20.44}})
-        self.assertEqual(self._read(), {"ideate": {"x": 10.0, "y": 20.4}})  # округление до 0.1
-
-    def test_rejects_bad_entries(self):
-        serve._save_layout({
-            "ok": {"x": 1, "y": 2},
-            "": {"x": 1, "y": 2},                # пустой ключ
-            "k" * 41: {"x": 1, "y": 2},          # ключ длиннее 40
-            "not_dict": "строка",                # значение не словарь
-            "no_y": {"x": 1},                    # нет y
-            "str_xy": {"x": "1", "y": "2"},      # x/y не числа
-            "bool_xy": {"x": True, "y": False},  # bool — не координата
-        })
-        self.assertEqual(list(self._read().keys()), ["ok"])
-
-    def test_atomic_no_temp_and_overwrite(self):
-        serve._save_layout({"a": {"x": 1, "y": 1}})
-        serve._save_layout({"b": {"x": 2, "y": 2}})   # перезапись поверх существующего
-        self.assertFalse(os.path.exists(self.f + ".tmp"))  # хвоста .tmp нет
-        self.assertEqual(list(self._read().keys()), ["b"])  # файл цел, второе сохранение на диске
-
-    def test_caps_key_count(self):
-        big = {f"k{i}": {"x": i, "y": i} for i in range(serve._LAYOUT_MAX_KEYS + 30)}
-        serve._save_layout(big)
-        self.assertLessEqual(len(self._read()), serve._LAYOUT_MAX_KEYS)
 
 
 class TestReadRuns(unittest.TestCase):
@@ -83,6 +40,34 @@ class TestReadRuns(unittest.TestCase):
         self.assertEqual(runs[0]["chain"], ["collect_source", "ideate", "deliver"])
         self.assertEqual(runs[0]["deliverable"], "delivered")
         self.assertEqual(runs[0]["value"], "3")
+        self.assertIsNone(runs[0]["degraded"])        # без хвоста ⚠ = None
+        self.assertIsNone(runs[0]["council"])         # без хвоста совет = None
+
+    def test_parses_degraded_tail(self):
+        # незакоммиченная правка: _read_runs парсит хвост « | ⚠ <flag>» в поле degraded
+        # (то, что harvest._log пишет через _degrade_note → пульт показывает деградацию).
+        p = os.path.join(self.tmp, "data", "runs.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("- [2026-07-11 11:52:34] «приноси свежие идеи» → "
+                    "collect_source -> deliver | delivered=1 | ⚠ stub-отсеяно=2 · дубликатов=1\n")
+        runs = serve._read_runs()
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["deliverable"], "delivered")   # ⚠ отрезан, key=val цел
+        self.assertEqual(runs[0]["value"], "1")
+        self.assertEqual(runs[0]["degraded"], "stub-отсеяно=2 · дубликатов=1")
+
+    def test_parses_degraded_and_council_tails(self):
+        # оба хвоста в ОДНОЙ строке. Прод-порядок (harvest._log:317-321): совет ПЕРВЫМ,
+        # потом ⚠. Парсер должен корректно разделить оба, не склеив совет в degraded.
+        p = os.path.join(self.tmp, "data", "runs.md")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("- [2026-07-11 11:52:34] «приноси свежие идеи» → ideate | ideas=2 "
+                    "| совет: оркестр ПРОСНУЛСЯ | ⚠ источник в фолбэке\n")
+        runs = serve._read_runs()
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["value"], "2")
+        self.assertEqual(runs[0]["council"], "оркестр ПРОСНУЛСЯ")
+        self.assertEqual(runs[0]["degraded"], "источник в фолбэке")
 
     def test_missing_file_safe(self):
         self.assertEqual(serve._read_runs(), [])
@@ -317,6 +302,46 @@ class TestReadLab(unittest.TestCase):
         lab = serve._read_lab()
         self.assertFalse(lab["locked"])                      # проверена → замка нет
         self.assertEqual(lab["needs_manual"], 2)
+
+
+class TestKeyState(unittest.TestCase):
+    """_key_state — шапка показывает ЖИВОЙ состав цепочки (id плеч), а не статичный ярлык.
+    Регресс-страж против бага 2026-07-17: при одном ключе бейдж врал «gemini→muse (hybrid)»."""
+
+    def setUp(self):
+        self._orig = serve.keychain.build_chain
+
+    def tearDown(self):
+        serve.keychain.build_chain = self._orig
+
+    def test_both_arms_present(self):
+        serve.keychain.build_chain = lambda *a, **k: [
+            {"id": "gemini", "model": "x"}, {"id": "muse-spark", "model": "y"}]
+        st = serve._key_state()
+        self.assertTrue(st["present"])
+        self.assertEqual(st["model"], "gemini→muse-spark")
+
+    def test_single_arm_not_lying_about_second(self):
+        # только closerouter-ключ → плечо одно; бейдж НЕ обещает gemini (корень бага)
+        serve.keychain.build_chain = lambda *a, **k: [{"id": "muse-spark", "model": "y"}]
+        st = serve._key_state()
+        self.assertTrue(st["present"])
+        self.assertEqual(st["model"], "muse-spark")
+        self.assertNotIn("gemini", st["model"])
+
+    def test_no_keys_absent(self):
+        serve.keychain.build_chain = lambda *a, **k: []
+        st = serve._key_state()
+        self.assertFalse(st["present"])            # ключей нет → шапка покажет «нет ключа»
+
+    def test_id_only_no_secret_leak(self):
+        # печатаем ТОЛЬКО id плеча, не model/apiKey/baseUrl (защита от утечки ключа в шапку)
+        serve.keychain.build_chain = lambda *a, **k: [
+            {"id": "gemini", "model": "gemini-2.5-flash-lite", "apiKey": "SECRET", "baseUrl": "u"}]
+        st = serve._key_state()
+        self.assertNotIn("SECRET", st["model"])
+        self.assertNotIn("gemini-2.5-flash-lite", st["model"])   # model-строка не в бейдже
+        self.assertEqual(st["model"], "gemini")
 
 
 if __name__ == "__main__":

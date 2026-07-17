@@ -39,6 +39,18 @@ class TestCollectSource(unittest.TestCase):
         self.assertTrue(out["degraded"])
         self.assertNotIn("error", out)
 
+    def test_empty_sources_collects_nothing_not_hn(self):
+        # D7 (аудит 2026-07-17): все ленты выключены + папок нет → sources=[] (ЯВНО пусто).
+        # Орган НЕ дефолтит на hn и НЕ выдаёт _FALLBACK — честно пусто + degraded, пульт предупредит.
+        def boom(*a, **k):
+            raise AssertionError("не должен ходить в сеть при пустом списке источников")
+        collect_source.urllib.request.urlopen = boom
+        out = collect_source.run({}, {"n": 4, "sources": []})
+        self.assertEqual(out["items"], [])              # ничего не собрано (не hn, не резерв)
+        self.assertTrue(out["degraded"])
+        self.assertIn("нет источников", out["degraded_reason"])
+        self.assertNotIn("error", out)                  # не ложный 'error' — источник не «сдох»
+
 
 class TestNewSources(unittest.TestCase):
     """reddit/lobsters/gh_trending — каждый мокается на СВОЁМ формате ответа сети."""

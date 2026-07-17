@@ -295,12 +295,20 @@ def council_note(out):
 def _degrade_note(out):
     """Строка про ДЕГРАДАЦИЮ прогона для консоли/лога (root #1: показать сбой, а не прятать за
     «доставлено N»). Пусто, если прогон здоров. Источник ушёл в фолбэк (4 захардкоженных
-    заголовка) → «источник в фолбэке»; доставка отсеяла болванки при живом ключе → «stub-отсеяно=N»."""
+    заголовка) → «источник в фолбэке»; доставка отсеяла болванки при живом ключе → «stub-отсеяно=N»;
+    генератор ответил ПЛАТНЫМ фолбэком (muse-spark вместо бесплатной gemini-подписки) → «фолбэк=…»
+    (учёт бюджета closerouter автосбора — gemini провисает на TLS ~1/3 прогонов)."""
     flags = []
     if out.get("degraded"):
         flags.append("источник в фолбэке")
     if out.get("dropped_stub"):
         flags.append(f"stub-отсеяно={out['dropped_stub']}")
+    if out.get("dropped_dup"):
+        flags.append(f"дубликатов={out['dropped_dup']}")
+    # провайдер — только когда это ПЛАТНЫЙ фолбэк (muse-spark); gemini=подписка=бесплатно, не флаг
+    prov = out.get("provider") or ""
+    if prov and prov != "gemini":
+        flags.append(f"фолбэк={prov}")
     return " · ".join(flags)
 
 

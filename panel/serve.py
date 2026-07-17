@@ -35,6 +35,7 @@ if CYBORG not in sys.path:
     sys.path.insert(0, CYBORG)
 
 import ask_llm  # noqa: E402  (только available() — ключ не читаем и не показываем)
+import keychain  # noqa: E402  (живой состав цепочки для шапки: id'ы плеч, БЕЗ значений ключей)
 import direction  # noqa: E402  (руль темы: чтение/запись cyborg/data/direction.json)
 import folders  # noqa: E402  (папки-источник: чтение/запись cyborg/data/folders.json)
 import feeds  # noqa: E402  (ленты-источник: какие ленты включены, тумблеры пульта, cyborg/data/feeds.json)
@@ -227,14 +228,18 @@ def _read_runs():
                 if not m:
                     continue
                 res = m.group("res")
+                degraded = None
+                if " | ⚠ " in res:
+                    res, degraded = res.split(" | ⚠ ", 1)
                 council = None
-                if " | совет: " in res:                 # опциональный хвост «проснулся ли оркестр»
+                if " | совет: " in res:                 # опциональный хвост вердикта от арбитра
                     res, council = res.split(" | совет: ", 1)
                 key, _, val = res.partition("=")
                 runs.append({"ts": m.group("ts"), "goal": m.group("goal"),
                              "chain": [s.strip() for s in m.group("chain").split("->")],
                              "deliverable": key, "value": val,
-                             "council": council.strip() if council else None})
+                             "council": council.strip() if council else None,
+                             "degraded": degraded.strip() if degraded else None})
     except Exception:
         pass
     return runs
@@ -298,39 +303,15 @@ def _read_lab():
         return {"exists": False, "locked": False, "features": [], "needs_manual": 0}
 
 
-LAYOUT_FILE = os.path.join(HERE, "layout.json")
-
-
-def _read_layout():
-    """Раскладка органов на каркасе (конструктор юзера). Нет файла = все в лотке."""
-    try:
-        with open(LAYOUT_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-
-
-_LAYOUT_MAX_KEYS = 64  # органов немного; больше — мусор/раздувание, режем
-
-
-def _num(v):  # число-координата, но НЕ bool (isinstance(True, int) == True в питоне)
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
-
-
-def _save_layout(lay):
-    clean = {}
-    for k, v in lay.items():
-        if len(clean) >= _LAYOUT_MAX_KEYS:
-            break
-        if not isinstance(k, str) or not k or len(k) > 40:
-            continue
-        if isinstance(v, dict) and _num(v.get("x")) and _num(v.get("y")):
-            clean[k] = {"x": round(float(v["x"]), 1), "y": round(float(v["y"]), 1)}
-    tmp = LAYOUT_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(clean, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, LAYOUT_FILE)  # атомарно: обрыв записи не бьёт существующую раскладку
+def _key_state():
+    """Живой статус ключа для шапки: РЕАЛЬНО сконфигуренные плечи цепочки, а не статичный ярлык.
+    present — есть ли хоть одно плечо; model — «gemini→muse» / «muse» / «gemini» по ФАКТУ заданных
+    ключей (keychain.build_chain даёт только те плечи, чей ключ непуст), а не обещание обоих. Раньше
+    отдавали статичный ask_llm._MODEL «gemini→muse (hybrid)» — при одном ключе бейдж врал про второе
+    плечо (аудит 2026-07-17). Печатаем ТОЛЬКО id плеч (не model/apiKey/baseUrl) — секрет не утечёт."""
+    chain = keychain.build_chain()
+    return {"present": bool(chain),
+            "model": "→".join(c["id"] for c in chain) or ask_llm._MODEL}
 
 
 def _api_state():
@@ -339,7 +320,7 @@ def _api_state():
               "tags": o.tags, "needs": o.needs} for o in _ORGANS]
     return {
         "now": time.strftime("%H:%M:%S"),
-        "key": {"present": ask_llm.available(), "model": ask_llm._MODEL},
+        "key": _key_state(),
         "organs": wired,
         "inbox": _read_inbox(),
         "sources": _read_source_status(),
@@ -347,7 +328,6 @@ def _api_state():
         "runs": _read_runs(),
         "registry": _read_registry(),
         "lab": _read_lab(),
-        "layout": _read_layout(),
         "direction": direction.load(),
         "folders": folders.load(),
         "feeds": feeds.load(),
@@ -390,8 +370,11 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": str(e)[:300]}, 500)
         elif self.path == "/api/run":
-            with _LOCK:
-                self._json({k: RUN[k] for k in ("running", "goal", "lines", "rc")})
+            try:
+                with _LOCK:
+                    self._json({k: RUN[k] for k in ("running", "goal", "lines", "rc")})
+            except Exception as e:
+                self._json({"error": str(e)[:300]}, 500)
         elif self.path == "/api/folders/probe":
             # проба текущих папок при загрузке пульта (счётчики не на каждом poll /api/state —
             # обход дорог; отдельный редкий вызов). Валиден ли путь + сколько в нём файлов.
@@ -485,16 +468,6 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/stop":
             ok = _stop_run()
             self._json({"ok": ok, "msg": "" if ok else "нечего останавливать"})
-        elif self.path == "/api/layout":
-            lay = body.get("layout")
-            if not isinstance(lay, dict):
-                self._json({"ok": False, "msg": "нужен объект layout"}, 400)
-                return
-            try:
-                _save_layout(lay)
-                self._json({"ok": True, "msg": ""})
-            except Exception as e:
-                self._json({"ok": False, "msg": str(e)[:200]}, 500)
         elif self.path == "/api/idea":
             try:
                 idea_id = int(body.get("id"))

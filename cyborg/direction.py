@@ -6,10 +6,11 @@
 current="" (пусто) = БЕЗ направления — генерим как раньше, из того что в лентах.
 Юзер выбирает пресет ИЛИ вписывает своё (панель); руль долетает до ideate/rank через env.
 Только stdlib (panel/serve.py импортит этот модуль, а он без venv)."""
-import json
 import os
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+import _panel_config
+
+DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "direction.json")
 
 # стартовый набор — юзер правит на панели (это лишь дефолт, когда файла ещё нет)
@@ -36,13 +37,7 @@ def _clean_presets(seq):
 
 def load():
     """Текущее состояние руля с диска. Нет файла / битый → дефолт (current='', пресеты-семя)."""
-    try:
-        with open(PATH, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:
-        d = {}
-    if not isinstance(d, dict):
-        d = {}
+    d = _panel_config.load_obj(PATH)
     current = _clean(d.get("current", ""))
     presets = d.get("presets")
     presets = _clean_presets(presets) if isinstance(presets, list) else list(_DEFAULT_PRESETS)
@@ -61,11 +56,7 @@ def save(current=None, presets=None):
         cur["current"] = _clean(current)
     if presets is not None and isinstance(presets, list):
         cur["presets"] = _clean_presets(presets)
-    os.makedirs(DATA, exist_ok=True)
-    tmp = PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cur, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, PATH)           # атомарно: обрыв записи не бьёт существующий выбор
+    _panel_config.atomic_save(PATH, cur)
     return cur
 
 

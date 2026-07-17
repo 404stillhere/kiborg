@@ -64,14 +64,18 @@ class Cyborg:
             "goal": goal,
             "deliverable": deliverable,
             "result": mem.data.get(deliverable) if deliverable else None,
-            "council": mem.data.get("council"),  # метаданные совещания на отборе (если совет судил)
+            "council": mem.data.get("council"),  # черновик решения на отборе (для пульта)
             "memory_keys": list(mem.data.keys()),
             "trace": trace,
             "steps": len(trace),
             "routed": [o.name for o in router_mod.route(goal, self.organs, self.k)],
-            # сигналы деградации наружу (root #1: провенанс не только ВНУТРИ mem.data, но и в
-            # выхлопе — чтобы лог/пульт показывали «источник в фолбэке» / «отсеяно болванок»,
-            # а не рапортовали здоровье на мусоре). observe() кладёт ВСЕ ключи результата органа.
+            # проброс сигналов корня (root #1: вызывающий не видит весь mem.data, но эти
+            # маркеры нужны логгеру/панели, чтобы юзер не думал, что сломалось, когда
+            # просто упала сеть или идеи дубликаты).
             "degraded": bool(mem.data.get("degraded")),
             "dropped_stub": int(mem.data.get("dropped_stub") or 0),
+            "dropped_dup": int(mem.data.get("dropped_dup") or 0),
+            # кто РЕАЛЬНО ответил в генераторе (gemini=подписка/бесплатно, muse-spark=closerouter/платно).
+            # Гибрид: платный фолбэк светится в логе/пульте, иначе молча жжёт closerouter-баланс.
+            "provider": mem.data.get("provider") or "",
         }

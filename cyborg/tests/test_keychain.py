@@ -22,44 +22,72 @@ def _keys_file(**pairs):
     return path
 
 
-def test_intuition_is_closerouter_chain():
-    # реш. юзера: интуиция — цепочка на ОДНОМ ключе closerouter; gemini/sambanova ушли в совет
+def test_intuition_is_hybrid_chain():
+    # реш. юзера 2026-07-16: интуиция — ГИБРИД: gemini на нативном Google-ключе + muse-spark
+    # на ключе closerouter. ДВА разных endpoint/ключа в одной цепочке (build_chain берёт
+    # keys[key] per-entry, поэтому смешивание поддержано). gemini здесь — первичная интуиции,
+    # а не рецензент совета.
     p = _keys_file(GEMINI_API_KEY="g", SAMBANOVA_API_KEY="s", CLOSEROUTER_API_KEY="cr")
     try:
         chain = keychain.build_chain(p)
-        assert all(c["baseUrl"] == "https://api.closerouter.dev/v1/chat/completions" for c in chain)
-        assert all(c["apiKey"] == "cr" for c in chain)              # весь фолбэк на одном ключе
-        ids = [c["id"] for c in chain]
-        assert "gemini" not in ids and "sambanova" not in ids
+        assert len(chain) == 2
+        gem = chain[0]
+        assert gem["id"] == "gemini"
+        assert gem["baseUrl"] == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        assert gem["apiKey"] == "g"                       # нативный ключ подписки
+        muse = chain[1]
+        assert muse["id"] == "muse-spark"
+        assert muse["baseUrl"] == "https://api.closerouter.dev/v1/chat/completions"
+        assert muse["apiKey"] == "cr"                     # отдельный ключ closerouter
     finally:
         os.remove(p)
 
 def test_intuition_fallback_order():
-    # порядок цепочки задан юзером: deepseek -> glm5 -> muse-spark -> codex-spark
-    p = _keys_file(CLOSEROUTER_API_KEY="cr")
+    # порядок цепочки задан юзером: gemini(натив) -> muse-spark(closerouter)
+    p = _keys_file(GEMINI_API_KEY="g", CLOSEROUTER_API_KEY="cr")
     try:
         chain = keychain.build_chain(p)
         assert [c["model"] for c in chain] == [
-            "deepseek/deepseek-v4-pro", "z-ai/glm-5", "meta/muse-spark-1.1", "openai/gpt-5.3-codex-spark"]
+            "gemini-2.5-flash-lite", "meta/muse-spark-1.1"]
     finally:
         os.remove(p)
 
-def test_intuition_empty_without_closerouter_key():
-    # без ключа closerouter вся цепочка пуста -> интуиция воздержится
-    p = _keys_file(GEMINI_API_KEY="g")
+def test_intuition_drops_entries_without_key():
+    # элемент цепочки без ключа выпадает (а не роняет всю цепочку): нет closerouter -> остаётся
+    # только gemini; нет gemini -> только muse-spark; нет обоих -> пусто, интуиция воздержится
+    p_gem_only = _keys_file(GEMINI_API_KEY="g")
+    p_cr_only = _keys_file(CLOSEROUTER_API_KEY="cr")
+    p_none = _keys_file()
     try:
-        assert keychain.build_chain(p) == []
+        assert [c["id"] for c in keychain.build_chain(p_gem_only)] == ["gemini"]
+        assert [c["id"] for c in keychain.build_chain(p_cr_only)] == ["muse-spark"]
+        assert keychain.build_chain(p_none) == []
     finally:
-        os.remove(p)
+        os.remove(p_gem_only); os.remove(p_cr_only); os.remove(p_none)
 
 
 def test_intuition_chain_length():
-    # вся цепочка интуиции — 4 модели на ключе closerouter
-    p = _keys_file(CLOSEROUTER_API_KEY="cr")
+    # вся цепочка интуиции — 2 модели (гибрид gemini + muse-spark), когда оба ключа есть
+    p = _keys_file(GEMINI_API_KEY="g", CLOSEROUTER_API_KEY="cr")
     try:
         chain = keychain.build_chain(p)
-        assert len(chain) == 4
-        assert all(c["baseUrl"] == "https://api.closerouter.dev/v1/chat/completions" for c in chain)
+        assert len(chain) == 2
+    finally:
+        os.remove(p)
+
+
+def test_chain_summary_has_no_secrets():
+    # СТРАЖ инцидента 2026-07-16: chain_summary для логов/отладки НЕ должна нести секретные
+    # значения (apiKey/baseUrl) — только id+model. print(chain)/_chain() в лог утёк ключами;
+    # отладка и пульт обязаны печатать chain_summary. Проверка: ни ключ, ни URL не в строке.
+    SECRET = "sk-SUPER-SECRET-VALUE-xyz"
+    p = _keys_file(GEMINI_API_KEY=SECRET, CLOSEROUTER_API_KEY="cr")
+    try:
+        summary = keychain.chain_summary(p)
+        assert SECRET not in summary                      # значение ключа не утекло
+        assert "https://" not in summary                  # endpoint не утёк
+        assert "gemini(" in summary and "muse-spark(" in summary   # id+model на месте (диагноз работает)
+        assert keychain.chain_summary(_keys_file()) == ""  # пустая цепь -> '' без секретов
     finally:
         os.remove(p)
 

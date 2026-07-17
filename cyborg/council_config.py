@@ -10,10 +10,11 @@
 
 Только stdlib (panel/serve.py импортит его без venv).
 """
-import json
 import os
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+import _panel_config
+
+DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "council.json")
 
 ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
@@ -22,13 +23,7 @@ DEFAULT_ENABLED = ["rank_ideas", "ask_llm", "orchestra"]
 
 def load():
     """{"all": ALL_ADVISORS, "enabled": [...]} с диска."""
-    try:
-        with open(PATH, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:
-        d = {}
-    if not isinstance(d, dict):
-        d = {}
+    d = _panel_config.load_obj(PATH)
     enabled = d.get("enabled")
     if not isinstance(enabled, list):
         enabled = list(DEFAULT_ENABLED)
@@ -46,9 +41,5 @@ def save(names):
     if not isinstance(names, list):
         names = []
     clean = [x for x in ALL_ADVISORS if x in names]
-    os.makedirs(DATA, exist_ok=True)
-    tmp = PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"enabled": clean}, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, PATH)
+    _panel_config.atomic_save(PATH, {"enabled": clean})
     return {"all": list(ALL_ADVISORS), "enabled": clean}

@@ -10,10 +10,11 @@ harvest.SOURCES: только telegram, лично курированный юз
 валиден (юзер выключил все ленты; идеи тогда только из папок, если заданы).
 
 Юзер щёлкает тумблеры в пульте. Только stdlib (panel/serve.py импортит его без venv)."""
-import json
 import os
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+import _panel_config
+
+DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "feeds.json")
 
 # Порядок = порядок показа тумблеров в пульте. Совпадает с collect_source._SOURCES
@@ -34,13 +35,7 @@ def _clean(seq):
 def load():
     """{"all": ALL_FEEDS, "enabled": [...]} с диска. Нет файла / битый / нет ключа →
     enabled = DEFAULT_FEEDS. Пустой сохранённый список остаётся пустым (это выбор юзера)."""
-    try:
-        with open(PATH, encoding="utf-8") as f:
-            d = json.load(f)
-    except Exception:
-        d = {}
-    if not isinstance(d, dict):
-        d = {}
+    d = _panel_config.load_obj(PATH)
     enabled = _clean(d.get("enabled"))
     if enabled is None:                       # ключа нет / битый тип → дефолт (не пусто)
         enabled = list(DEFAULT_FEEDS)
@@ -58,11 +53,7 @@ def save(names):
     clean = _clean(names)
     if clean is None:
         clean = []
-    os.makedirs(DATA, exist_ok=True)
-    tmp = PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"enabled": clean}, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, PATH)                     # атомарно: обрыв записи не бьёт существующий набор
+    _panel_config.atomic_save(PATH, {"enabled": clean})
     return {"all": list(ALL_FEEDS), "enabled": clean}
 
 

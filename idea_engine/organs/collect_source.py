@@ -350,6 +350,12 @@ def run(inputs, env):
     n = int(env.get("n", 8))
     timeout = float(env.get("timeout", 8))
     sources = env.get("sources")
+    if sources is not None and not sources:
+        # ЯВНО пустой список (все ленты выключены в пульте И папок нет) — НЕ дефолтим на hn и НЕ
+        # выдаём _FALLBACK. Контракт harvest._active_sources: пусто → не собираем, пульт предупреждает.
+        # Иначе выключение всех тумблеров молча тащило бы HN, вопреки им (аудит 2026-07-17, D7).
+        return {"items": [], "source": "", "degraded": True,
+                "degraded_reason": "нет источников: включи ленту в пульте или добавь папку"}
     names = list(sources) if sources else [env.get("source", "hn")]
     per_n = max(1, -(-n // len(names)))  # общий бюджет n делим (ceil) между источниками
 

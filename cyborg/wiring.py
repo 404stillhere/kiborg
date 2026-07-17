@@ -57,8 +57,9 @@ def _run_collect(inputs, env):
     if isinstance(pf, dict) and pf.get("items") is not None:
         return pf
     e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
-    if env.get("sources"):
-        e["sources"] = env["sources"]
+    if env.get("sources") is not None:
+        e["sources"] = env["sources"]   # пробрасываем И пустой список: пусто = «нет источников»,
+        #                                 collect_source честно вернёт пусто+degraded, не дефолт hn (D7)
     if env.get("timeout"):
         e["timeout"] = env["timeout"]
     # keyed/конфиг-источники читают свои данные из env по своим ключам — их тоже надо ПРОКИНУТЬ,
@@ -124,6 +125,19 @@ def _run_ideate(inputs, env):
         produced_real = any(isinstance(i, dict) and i.get("brain") != "stub" for i in ideas)
         if produced_real or not callable(llm):
             seen_items.mark_seen(fresh)
+    # PROVIDER — кто РЕАЛЬНО ответил в генераторе (gemini=подписка/бесплатно, muse-spark=closerouter/
+    # платно). Гибрид сделал это нужным: платный фолбэк молча жжёт баланс автосбора, если не светить.
+    # ask_llm.last_provider ставит _run_chain от organ.js result.provider; поднимаем в out органа →
+    # orchestrator пробросит в run-выхлоп → harvest._degrade_note рендерит «фолбэк=…». Только при
+    # живой модели (stub-режим без ключа провайдера не имеет).
+    if callable(llm):
+        try:
+            import ask_llm as _ask
+            prov = _ask.last_provider
+        except Exception:
+            prov = ""
+        if prov:
+            out["provider"] = prov
     return out
 
 
@@ -209,8 +223,17 @@ def _rank_by_council(inputs, env, keep):
     ranked = sorted(orig, key=lambda oid: (-float(scores.get(oid, 0.0)), oid))  # по баллу, стабильно
     solo = len(live) < 2                             # по факту судил один арбитр (честная пометка)
     tag = "solo" if solo else "council"
-    best = [dict(orig[oid], judged=tag) if isinstance(orig[oid], dict) else orig[oid]
-            for oid in ranked[:keep]]
+    best = []
+    for oid in ranked[:keep]:
+        o = orig[oid]
+        if not isinstance(o, dict):
+            best.append(o)
+            continue
+        card = dict(o, judged=tag)
+        sc = scores.get(oid)
+        if sc is not None:
+            card["score"] = round(float(sc) * 10, 1)   # балл совета 0..1 → 0-10 для бейджа «оценка совета» (D6)
+        best.append(card)
     return {"ideas_best": best,
             "council": {"live": live, "solo": solo, "woken": ("orchestra" in live),
                         "why": verdict.get("why")}}
@@ -266,6 +289,11 @@ def _run_rank(inputs, env):
                 return out
         except Exception:
             pass                                     # совет никогда не роняет отбор идей
+
+    import council_config
+    if not council_config.is_enabled("rank_ideas"):
+        e.pop("llm", None)  # Если арбитр выключен явно, фолбэк строго оффлайн
+
     return rank_ideas.run(inputs, e)
 
 

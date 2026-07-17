@@ -1,6 +1,6 @@
 """HTTP-тесты роутов пульта (serve.Handler) через реальный сервер на эфемерном порту.
 
-Раньше покрыты были только ХЕЛПЕРЫ (_save_layout/_read_runs/...), а сами POST-роуты и их
+Раньше покрыты были только ХЕЛПЕРЫ (_read_runs/...), а сами POST-роуты и их
 валидация — нет. Тут проверяем POST /api/folders, /api/direction, /api/feeds (добавлены под
 фичи направление/папки/тумблеры-лент) + общие гейты do_POST: Content-Type (415), битый JSON
 (400), тип тела (400). folders/direction/feeds пишут в temp (реальные data/*.json не трогаем)."""
@@ -39,19 +39,16 @@ class TestServeRoutes(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="serve_routes_")
         # все пишущие роуты уводим в temp — реальные конфиги/раскладку/авто не трогаем
         self._saved = {"fp": serve.folders.PATH, "dp": serve.direction.PATH,
-                       "auto": serve.AUTO_FILE, "layout": serve.LAYOUT_FILE,
-                       "feeds": serve.feeds.PATH}
+                       "auto": serve.AUTO_FILE, "feeds": serve.feeds.PATH}
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
         serve.AUTO_FILE = os.path.join(self.tmp, "auto.json")
-        serve.LAYOUT_FILE = os.path.join(self.tmp, "layout.json")
         serve.feeds.PATH = os.path.join(self.tmp, "feeds.json")
 
     def tearDown(self):
         serve.folders.PATH = self._saved["fp"]
         serve.direction.PATH = self._saved["dp"]
         serve.AUTO_FILE = self._saved["auto"]
-        serve.LAYOUT_FILE = self._saved["layout"]
         serve.feeds.PATH = self._saved["feeds"]
 
     def _post(self, path, body=None, ctype="application/json", raw=None):
@@ -149,17 +146,6 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/nope", {})
         self.assertEqual(code, 404)
 
-    def test_layout_non_dict_rejected(self):
-        code, body = self._post("/api/layout", {"layout": "не объект"})
-        self.assertEqual(code, 400)
-        self.assertFalse(body["ok"])
-
-    def test_layout_valid_saves(self):
-        code, body = self._post("/api/layout", {"layout": {"heart": {"x": 10, "y": 20}}})
-        self.assertEqual(code, 200)
-        self.assertTrue(body["ok"])
-        self.assertTrue(os.path.exists(serve.LAYOUT_FILE))          # раскладка записана в temp
-
     def test_idea_bad_id_rejected(self):
         code, body = self._post("/api/idea", {"status": "take"})     # без id → не доходит до подпроцесса
         self.assertEqual(code, 400)
@@ -234,6 +220,30 @@ class TestServeRoutes(unittest.TestCase):
             serve._start_observe = orig
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
+
+    def test_run_get_returns_state(self):
+        # GET /api/run — состояние прогона (happy path). RUN по умолчанию в покое.
+        code, body = self._get("/api/run")
+        self.assertEqual(code, 200)
+        self.assertIn("running", body)
+        self.assertIn("goal", body)
+        self.assertIn("rc", body)
+
+    def test_run_get_error_returns_500_json(self):
+        # error_gap (закрыт): при падении чтения RUN — 500 с JSON-телом, как у соседних GET-роутов
+        # /api/state и /api/folders/probe (try/except). Раньше /api/run был единственный GET без
+        # error-ветки → необработанный трейсбек в лог, пульту пустой 500.
+        orig_run = serve.RUN
+        class _Boom(dict):
+            def __getitem__(self, k):
+                raise RuntimeError("RUN порчен")
+        serve.RUN = _Boom()
+        try:
+            code, body = self._get("/api/run")
+        finally:
+            serve.RUN = orig_run
+        self.assertEqual(code, 500)
+        self.assertIn("error", body)
 
 
 if __name__ == "__main__":

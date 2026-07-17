@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import wiring  # noqa: E402
 import seen_items  # noqa: E402
+import ask_llm  # noqa: E402  (last_provider мок для provider-проброса в _run_ideate)
 
 
 class TestRunCollectPassesEnv(unittest.TestCase):
@@ -48,6 +49,22 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         self.assertEqual(captured["n"], 8)
         self.assertEqual(captured["source"], "hn")
         self.assertNotIn("sources", captured)
+
+    def test_empty_sources_passed_through_not_dropped(self):
+        # D7 (аудит 2026-07-17): пустой список (все ленты off, папок нет) должен ДОЙТИ до
+        # collect_source как [], а не быть выброшенным — иначе орган дефолтит на hn (молчаливый
+        # сбор вопреки выключенным тумблерам). Раньше `if env.get("sources")` ронял [].
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            captured["_had_sources_key"] = "sources" in env
+            return {"items": [], "degraded": True}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"n": 8, "sources": []})
+        self.assertTrue(captured["_had_sources_key"])   # ключ есть (пустой список не выброшен)
+        self.assertEqual(captured["sources"], [])       # именно [], не hn-дефолт
 
     def test_telegram_creds_reach_collect_source(self):
         # регресс 2026-07-12 (2-й раз): telegram в sources есть, но креды НЕ прокидывались
@@ -329,6 +346,55 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         wiring._run_rank({}, {"content_llm": content, "llm": lambda p: "g"})
         self.assertIs(captured["llm"], content)
 
+    def test_rank_disabled_strips_llm_for_offline_fallback(self):
+        # council_config рубильник: rank_ideas выключен → fallback rank_ideas идёт СТРОГО
+        # офлайн (e.pop("llm")), даже если llm принесли. Арбитр выключен явно = не тратим
+        # модель на отбор. (незакоммиченная правка wiring.py:270-272.)
+        # council_config импортируется в wiring ЛОКАЛЬНО (паттерн: top-level dep не плодим),
+        # поэтому мокаем через sys.modules — wiring.council_config как атрибута нет.
+        import sys
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas_best": []}
+
+        wiring.rank_ideas.run = fake
+        real_cc = sys.modules.get("council_config")
+        fake_cc = type("M", (), {"is_enabled": staticmethod(lambda name: False)})()
+        sys.modules["council_config"] = fake_cc
+        try:
+            wiring._run_rank({}, {"content_llm": lambda p: "c", "llm": lambda p: "g"})
+        finally:
+            if real_cc is not None:
+                sys.modules["council_config"] = real_cc
+            else:
+                del sys.modules["council_config"]
+        self.assertNotIn("llm", captured)             # llm снят → строго офлайн fallback
+
+    def test_rank_enabled_keeps_llm(self):
+        # контр-кейс: rank_ideas включен (по умолчанию) → llm доходит до rank_ideas.run.
+        import sys
+        captured = {}
+
+        def fake(inputs, env):
+            captured.update(env)
+            return {"ideas_best": []}
+
+        wiring.rank_ideas.run = fake
+        real_cc = sys.modules.get("council_config")
+        fake_cc = type("M", (), {"is_enabled": staticmethod(lambda name: True)})()
+        sys.modules["council_config"] = fake_cc
+        try:
+            content = lambda p: "c"
+            wiring._run_rank({}, {"content_llm": content, "llm": lambda p: "g"})
+        finally:
+            if real_cc is not None:
+                sys.modules["council_config"] = real_cc
+            else:
+                del sys.modules["council_config"]
+        self.assertIs(captured.get("llm"), content)    # llm дошёл (content приоритетнее)
+
     def test_ideate_threads_direction(self):
         captured = {}
 
@@ -400,6 +466,20 @@ class TestRunRankCouncil(unittest.TestCase):
         self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "F", "C", "G"])
         self.assertTrue(all(i["judged"] == "council" for i in out["ideas_best"]))
         self.assertEqual(self.rank_calls, [])   # НИ ОДНОГО повторного вызова судьи
+
+    def test_council_score_wired_to_cards(self):
+        # D6 (аудит 2026-07-17): реальный балл совета (0..1) впаян в карточку как 0-10 для бейджа
+        # пульта «оценка совета». Раньше balls считались и ВЫБРАСЫВАЛИСЬ → бейдж не рисовался никогда.
+        def fake_think(q, options, council, context):
+            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
+                    "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3}, "why": "x"}
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        by_title = {i["title"]: i for i in out["ideas_best"]}
+        self.assertEqual(by_title["D"]["score"], 9.0)   # 0.9 совета → 9.0 бейджа (>=8 high)
+        self.assertEqual(by_title["A"]["score"], 8.0)   # 0.8 → 8.0
+        self.assertEqual(by_title["G"]["score"], 3.0)   # 0.3 → 3.0 (low)
 
     def test_council_emits_live_progress(self):
         # живой суб-прогресс на самом медленном шаге (совет × идеи, минуты): «совет судит N идей»
@@ -616,6 +696,41 @@ class TestCollectLockedTgSession(unittest.TestCase):
             wiring._TG_LOCK_TIMEOUT = orig_to
         self.assertTrue(proceeded["yes"])                       # прошёл по таймауту, не завис
         self.assertTrue(os.path.exists(self.sess + ".lock"))    # ЧУЖОЙ лок не тронут
+
+
+class TestRunIdeateProviderSurfaces(unittest.TestCase):
+    """_run_ideate пробрасывает ask_llm.last_provider в out органа (звено конвейера provider
+    гибрида gemini→muse-spark). Только при callable llm; gemini=бесплатно vs muse-spark=платно —
+    без этого звена фолбэк не дойдёт до harvest._degrade_note (consumer)."""
+
+    def setUp(self):
+        self._orig_ideate = wiring.ideate.run
+        self._orig_lp = ask_llm.last_provider
+
+    def tearDown(self):
+        wiring.ideate.run = self._orig_ideate
+        ask_llm.last_provider = self._orig_lp
+
+    def test_provider_in_out_when_llm_present(self):
+        # живая модель отозвалась muse-spark (платный фолбэк) → _run_ideate кладёт provider в out
+        wiring.ideate.run = lambda inputs, env: {"ideas": [{"title": "X"}]}
+        ask_llm.last_provider = "muse-spark"
+        out = wiring._run_ideate({"items": [{"title": "t"}]}, {"content_llm": lambda p: "x"})
+        self.assertEqual(out.get("provider"), "muse-spark")
+
+    def test_no_provider_when_llm_absent(self):
+        # stub-режим (нет callable llm) — provider неуместен (спросить некого), не кладём в out.
+        # Иначе гонял бы ask_llm.last_provider от чужого прошлого вызова.
+        wiring.ideate.run = lambda inputs, env: {"ideas": [{"title": "X", "brain": "stub"}]}
+        out = wiring._run_ideate({"items": [{"title": "t"}]}, {})
+        self.assertNotIn("provider", out)
+
+    def test_no_provider_when_last_provider_empty(self):
+        # llm есть, но last_provider пуст (сбой/первый вызов) → не кладём пустышку в out
+        wiring.ideate.run = lambda inputs, env: {"ideas": [{"title": "X"}]}
+        ask_llm.last_provider = ""
+        out = wiring._run_ideate({"items": [{"title": "t"}]}, {"content_llm": lambda p: "x"})
+        self.assertNotIn("provider", out)
 
 
 if __name__ == "__main__":
