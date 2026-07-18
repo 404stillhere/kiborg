@@ -439,6 +439,7 @@ body {
 .plod-btn { margin-top:4px; padding:7px 16px; font-size:12px; border-radius:8px;
   border:1px solid var(--line,#1e2233); background: var(--bg3); color: var(--ink2); cursor:pointer; }
 .plod-btn:hover { color: var(--ink); border-color: var(--green); }
+.plod-btn:disabled { opacity: .5; cursor: default; border-color: var(--border); color: var(--ink3); }
 /* пульс мёртв: сервер молчит — точка гаснет, не врёт зелёным */
 .h-pulse.dead { background: var(--red); box-shadow:none; animation:none; }
 .h-pstate { font-size:11px; color: var(--ink3); margin-left:6px; }
@@ -585,6 +586,9 @@ body {
   color: var(--ink); font: 11.5px var(--font); outline: none;
 }
 .folder-add-row input:focus { border-color: var(--blue); }
+.folder-tgl { flex-shrink: 0; }
+.folder-tgl.on { border-color: rgba(34,197,94,0.4); color: var(--green); }
+.folder-path.off { color: var(--ink3); text-decoration: line-through; opacity: .7; }
 
 /* SVG knight styles */
 #knight-svg .breath {
@@ -1020,6 +1024,24 @@ function renderHeader() {
   const al = document.getElementById('h-auto-label');
   ab.className = 'h-auto-badge' + (auto.on ? ' on' : '');
   al.textContent = auto.on ? `авто: ${auto.interval_min}мин` : 'авто: выкл';
+
+  // фон молчит? checked_at — последняя ПРОВЕРКА источников автоциклом (фон пишет его КАЖДЫЙ тик,
+  // даже когда пропускает пустой прогон — «нет нового»). Протух при включённом авто = цикл реально
+  // встал → КРАСНЫЙ. По самой свежести (последней ДОСТАВКЕ) краснеть нельзя: она законно бывает
+  // старой, когда нового просто нет — вышла бы ложная тревога (аудит 2026-07-18).
+  if (fresh && auto.on) {
+    const chk = S && S.sources && S.sources.checked_at;
+    const chAt = chk ? _parseTs(chk) : null;
+    if (chAt && !isNaN(+chAt)) {
+      const ageMin = (Date.now() - chAt.getTime()) / 60000;
+      const staleMin = Math.max((auto.interval_min || 30) * 3, 12);  // 3 пропущенных цикла = встал
+      if (ageMin > staleMin) {
+        fresh.innerHTML = `<b style="color:var(--red)">⚠ фон молчит: ${agoText(chk)}</b>`;
+        fresh.title = `автоцикл должен проверять источники каждые ~${auto.interval_min} мин, `
+                    + `но последняя проверка — ${agoText(chk)}. Похоже, встал — перезапусти пульт.`;
+      }
+    }
+  }
 }
 
 // ─── SOURCES ───
@@ -1217,15 +1239,17 @@ function plodCardHTML() {
   } else {
     batch = 'Сборов ещё не было';
   }
-  const nextLine = auto.on ? `Сам сходит за новыми каждые ~${auto.interval_min} мин`
-                           : 'Авто выкл — можно нажать кнопку';
+  // во время прогона не зовём жать (кнопка задизейблена) — иначе «потыкать вслепую», пока и так идёт
+  const nextLine = busy ? 'идёт сбор — скоро появятся, можно уйти'
+                        : auto.on ? `Сам сходит за новыми каждые ~${auto.interval_min} мин`
+                        : 'Авто выкл — можно нажать кнопку';
   const totals = `Всего наработал: <b>${runs.length}</b> прогонов · <b>${brought}</b> идей принёс · `
                + `<b>${extracted}</b> органов добыто · <b>${nOrg}</b> впаяно · помнит <b>${seen}</b>`;
   return `<div class="plod">
     <div class="plod-status ${busy ? 'busy' : 'alive'}">${statusTxt}</div>
     <div class="plod-batch">${batch}<br><span style="color:var(--ink3)">${nextLine}</span></div>
     <div class="plod-totals">${totals}</div>
-    <button class="plod-btn" onclick="runGoal('приноси свежие идеи')">⚡ Принести сейчас</button>
+    <button class="plod-btn" onclick="runGoal('приноси свежие идеи')"${busy ? ' disabled' : ''}>${busy ? '⚙ идёт сбор…' : '⚡ Принести сейчас'}</button>
   </div>`;
 }
 
@@ -1345,9 +1369,9 @@ function renderAutoModal() {
 }
 
 // ─── FOLDERS ───
-async function postFolders(paths) {
+async function postFolders(items) {
   const r = await fetch('/api/folders', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({paths})});
+    body: JSON.stringify({folders: items})});
   try { const j = await r.json(); if (j && j.probe) FOLD_PROBE = j.probe; } catch(e){}
   refresh();
 }
@@ -1365,29 +1389,40 @@ function foldNote(p) {
   return `<span class="folder-note ok">${pr.files}${pr.capped?'+':''} файл.</span>`;
 }
 function renderFoldersModal() {
-  const paths = ((S && S.folders && S.folders.paths) || []);
+  const items = ((S && S.folders && S.folders.folders) || []);
   const el = document.getElementById('modal-folders');
   if (!el) return;
-  el.innerHTML = paths.length
-    ? paths.map((p, i) => `<div class="folder-item">
-        <span class="folder-path" title="${esc(p)}">${esc(p)}</span>
-        ${foldNote(p)}
+  el.innerHTML = items.length
+    ? items.map((f, i) => `<div class="folder-item">
+        <button class="btn-mini folder-tgl${f.on?' on':''}" onclick="toggleFolder(${i})" title="${f.on?'выключить папку':'включить папку'}">${f.on ? '✓ вкл' : '○ выкл'}</button>
+        <span class="folder-path${f.on?'':' off'}" title="${esc(f.path)}">${esc(f.path)}</span>
+        ${foldNote(f.path)}
         <button class="folder-rm" onclick="removeFolder(${i})" title="убрать">×</button>
       </div>`).join('')
     : '<div style="font-size:11.5px;color:var(--ink3);margin-bottom:6px">нет папок — добавь путь ниже</div>';
+}
+// копия списка папок из state (чтобы мутировать локально и отправить целиком)
+function _foldersCopy() {
+  return ((S && S.folders && S.folders.folders) || []).map(f => ({path: f.path, on: f.on}));
 }
 function addFolder() {
   const t = (document.getElementById('modal-folder-input').value || '').trim();
   if (!t) return;
   document.getElementById('modal-folder-input').value = '';
-  const paths = ((S && S.folders && S.folders.paths) || []).slice();
-  paths.push(t);
-  postFolders(paths);
+  const items = _foldersCopy();
+  items.push({path: t, on: true});
+  postFolders(items);
+}
+function toggleFolder(i) {
+  const items = _foldersCopy();
+  if (!items[i]) return;
+  items[i].on = !items[i].on;         // вкл ↔ выкл: выключенная папка остаётся в списке, но прогон её не читает
+  postFolders(items);
 }
 function removeFolder(i) {
-  const paths = ((S && S.folders && S.folders.paths) || []).slice();
-  paths.splice(i, 1);
-  postFolders(paths);
+  const items = _foldersCopy();
+  items.splice(i, 1);
+  postFolders(items);
 }
 
 // ─── SETTINGS MODAL ───
@@ -1505,6 +1540,7 @@ async function pollRun() {
           }
         }
         workOrgan = null;
+        runStartMs = null;   // прогон кончился → таймер «идёт M:SS» стартует с нуля на следующем (в т.ч. фоновом)
         { const ss = document.getElementById('stop-safe'); if (ss) ss.style.display = 'none'; }
         stLine.className = 'run-status-line';
         // в простое — не пустота (провоцирует «потыкать»), а явное «всё тихо, можно уйти»
@@ -1645,6 +1681,10 @@ async function refresh() {
   try {
     S = await fetch('/api/state').then(r => r.json());
     if (S.error) throw new Error(S.error);
+    // ground-truth от сервера: фоновый (cron/авто) прогон честно виден 5-сек рефрешу, а не только
+    // pollRun (который стартовал лишь с кнопки). Пульс/статус/карточка-плод теперь не врут «отдыхает»,
+    // пока киборг сам собирает по расписанию (honesty-аудит 2026-07-18).
+    running = !!S.running;
     renderHeader();
     renderLab();
     renderKnight();
@@ -1658,6 +1698,9 @@ async function refresh() {
     renderAutoModal();
     renderFoldersModal();
     renderCouncilModal();
+    // фон замечен рефрешем → поднять живой поллер (консоль/трекер органов/«прервать безопасно»),
+    // если он ещё не крутится. pollRun сам заглохнет, когда прогон кончится.
+    if (S.running && !runPolling) pollRun();
   } catch(e) {
     document.getElementById('h-now').innerHTML = `<span style="color:var(--red)">сервер молчит</span>`;
     // честный пульс: сервер лёг — точка гаснет (красная), а не остаётся зелёной и не врёт «жив»

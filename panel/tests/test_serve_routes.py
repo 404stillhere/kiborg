@@ -111,6 +111,40 @@ class TestServeRoutes(unittest.TestCase):
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
+    def test_folders_toggle_off_excluded_from_paths(self):
+        # новый формат с тумблерами (2026-07-18): выключенная папка остаётся в списке, но НЕ в paths
+        # (прогон читает только включённые). folders — полный список для пульта, paths — для прогона.
+        code, body = self._post("/api/folders",
+                                {"folders": [{"path": "M:/on", "on": True},
+                                             {"path": "M:/off", "on": False}]})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["paths"], ["M:/on"])                     # прогон видит только включённые
+        self.assertEqual([f["path"] for f in body["folders"]], ["M:/on", "M:/off"])
+        self.assertEqual([f["on"] for f in body["folders"]], [True, False])
+
+    def test_folders_legacy_paths_still_accepted(self):
+        # старый фронт слал {"paths":[...]} — роут принимает и его (обратная совместимость), все вкл
+        code, body = self._post("/api/folders", {"paths": ["M:/legacy"]})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["paths"], ["M:/legacy"])
+        self.assertEqual(body["folders"], [{"path": "M:/legacy", "on": True}])
+
+    def test_folders_missing_both_keys_rejected(self):
+        # ни folders, ни paths → 400 (не список), сервер жив
+        code, body = self._post("/api/folders", {"nonsense": 1})
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_state_carries_running_flag(self):
+        # /api/state теперь несёт running/run_goal — чтобы 5-сек refresh пульта видел и ФОНОВЫЙ
+        # (cron) прогон, а не только ручной через pollRun (honesty-аудит 2026-07-18). RUN в покое.
+        code, body = self._get("/api/state")
+        self.assertEqual(code, 200)
+        self.assertIn("running", body)
+        self.assertFalse(body["running"])
+        self.assertIn("run_goal", body)
+
     def test_feeds_valid_saves_and_canonicalizes(self):
         # тумблеры лент: произвольный порядок + дубль + неизвестное → канон-порядок, только известные
         code, body = self._post("/api/feeds", {"enabled": ["telegram", "hn", "telegram", "myspace"]})

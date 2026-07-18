@@ -318,8 +318,15 @@ def _api_state():
     wired = [{"name": o.name, "purpose": o.purpose, "role": o.role,
               "produces": o.produces, "consumes": o.consumes,
               "tags": o.tags, "needs": o.needs} for o in _ORGANS]
+    # running/goal текущего прогона в общем state — чтобы 5-сек refresh пульта видел и ФОНОВЫЙ
+    # (cron/авто) прогон, а не только ручной через pollRun (раньше /api/state его не нёс → пульт
+    # показывал «отдыхает», пока киборг сам собирал по расписанию; аудит honesty 2026-07-18).
+    with _LOCK:
+        running, run_goal = RUN["running"], RUN["goal"]
     return {
         "now": time.strftime("%H:%M:%S"),
+        "running": running,
+        "run_goal": run_goal,
         "key": _key_state(),
         "organs": wired,
         "inbox": _read_inbox(),
@@ -378,8 +385,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/folders/probe":
             # проба текущих папок при загрузке пульта (счётчики не на каждом poll /api/state —
             # обход дорог; отдельный редкий вызов). Валиден ли путь + сколько в нём файлов.
-            try:
-                self._json({"probe": collect_source.probe_paths(folders.current())})
+            try:                              # проба ВСЕХ папок (вкл+выкл) — счётчик файлов виден
+                self._json({"probe": collect_source.probe_paths(folders.all_paths())})
             except Exception as e:
                 self._json({"error": str(e)[:300]}, 500)
         else:
@@ -437,14 +444,18 @@ class Handler(BaseHTTPRequestHandler):
             saved = direction.save(current=cur, presets=presets)
             self._json({"ok": True, **saved})
         elif self.path == "/api/folders":
-            # папки-источник: paths (list of str). Чистку/дедуп/нормализацию/потолки делает folders.save.
-            paths = body.get("paths")
-            if not isinstance(paths, list):
-                self._json({"ok": False, "msg": "paths должен быть списком"}, 400)
+            # папки-источник: folders (list of str или {path,on}) — у каждой свой тумблер вкл/выкл.
+            # Старый фронт слал "paths" (плоский список) — принимаем и его. Чистку/дедуп/нормализацию/
+            # потолки делает folders.save.
+            items = body.get("folders")
+            if items is None:
+                items = body.get("paths")     # обратная совместимость
+            if not isinstance(items, list):
+                self._json({"ok": False, "msg": "folders должен быть списком"}, 400)
                 return
-            saved = folders.save(paths)
-            try:                              # проба сохранённых путей (валиден? сколько файлов?) —
-                probe = collect_source.probe_paths(saved.get("paths", []))   # юзер видит сразу
+            saved = folders.save(items)
+            try:                              # проба ВСЕХ сохранённых папок (валиден? сколько файлов?) —
+                probe = collect_source.probe_paths([f["path"] for f in saved.get("folders", [])])
             except Exception:
                 probe = {}                    # проба — удобство, её сбой не валит сохранение
             self._json({"ok": True, **saved, "probe": probe})

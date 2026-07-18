@@ -21,7 +21,7 @@ class TestFolders(unittest.TestCase):
         folders.PATH = self._orig
 
     def test_default_when_no_file(self):
-        self.assertEqual(folders.load(), {"paths": []})     # нет файла = источник выключен
+        self.assertEqual(folders.load(), {"folders": [], "paths": []})  # нет файла = источник выключен
         self.assertEqual(folders.current(), [])
 
     def test_save_and_read(self):
@@ -66,8 +66,45 @@ class TestFolders(unittest.TestCase):
         self.assertEqual(folders.current(), [])              # не падаем, источник выключен
 
     def test_non_str_entries_skipped(self):
-        folders.save(["M:/ok", 123, None, {"x": 1}, "C:/ok2"])
+        folders.save(["M:/ok", 123, None, "C:/ok2"])
         self.assertEqual(folders.current(), ["M:/ok", "C:/ok2"])
+
+    # --- индивидуальный вкл/выкл (2026-07-18) ---
+
+    def test_string_items_default_on(self):
+        folders.save(["M:/a", "M:/b"])                       # строки = включены по умолчанию
+        self.assertEqual(folders.load()["folders"],
+                         [{"path": "M:/a", "on": True}, {"path": "M:/b", "on": True}])
+
+    def test_off_folder_excluded_from_current(self):
+        folders.save([{"path": "M:/on", "on": True}, {"path": "M:/off", "on": False}])
+        self.assertEqual(folders.current(), ["M:/on"])       # прогон видит только включённые
+        self.assertEqual(folders.all_paths(), ["M:/on", "M:/off"])  # проба пульта — все
+
+    def test_all_off_disables_source(self):
+        folders.save([{"path": "M:/x", "on": False}])
+        self.assertEqual(folders.current(), [])              # все выкл = источник-папка выключен
+        self.assertEqual(len(folders.load()["folders"]), 1)  # но папка в списке остаётся
+
+    def test_toggle_preserves_order_and_flags(self):
+        folders.save([{"path": "M:/a", "on": True},
+                      {"path": "M:/b", "on": False},
+                      {"path": "M:/c", "on": True}])
+        self.assertEqual(folders.load()["folders"],
+                         [{"path": "M:/a", "on": True},
+                          {"path": "M:/b", "on": False},
+                          {"path": "M:/c", "on": True}])
+
+    def test_legacy_paths_format_reads_as_all_on(self):
+        with open(folders.PATH, "w", encoding="utf-8") as f:
+            json.dump({"paths": ["M:/old1", "M:/old2"]}, f)   # старый формат до тумблеров
+        self.assertEqual(folders.current(), ["M:/old1", "M:/old2"])
+        self.assertEqual(folders.load()["folders"],
+                         [{"path": "M:/old1", "on": True}, {"path": "M:/old2", "on": True}])
+
+    def test_dedup_keeps_first_flag(self):
+        folders.save([{"path": "M:/dup", "on": False}, {"path": "M:/DUP", "on": True}])
+        self.assertEqual(folders.load()["folders"], [{"path": "M:/dup", "on": False}])
 
 
 if __name__ == "__main__":
