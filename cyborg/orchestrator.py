@@ -75,6 +75,10 @@ class Cyborg:
             "degraded": bool(mem.data.get("degraded")),
             "dropped_stub": int(mem.data.get("dropped_stub") or 0),
             "dropped_dup": int(mem.data.get("dropped_dup") or 0),
+            # секретов вычищено скрабом из идей перед доставкой (0 = чисто). >0 = АНОМАЛИЯ
+            # безопасности (в идею просочился секрет из источника). Поднимаем, чтобы счётчик не
+            # терялся молча — вся система scrub построена вокруг защиты от утечки секрета в промпт.
+            "redacted": int(mem.data.get("redacted") or 0),
             # мозг был недоступен: ключ есть, но модель не ответила (вся партия — болванки),
             # deliver их в инбокс не пустил. Панель/лог честно скажут «мозг недоступен — идей нет».
             "brain_down": bool(mem.data.get("brain_down")),

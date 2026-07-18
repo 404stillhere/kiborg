@@ -38,7 +38,7 @@ def run(inputs, env):
     # принимаем и очищенные (ideas_safe от scrub), и сырые (ideas) — что дали
     inp = inputs or {}
     ideas = list(inp.get("ideas_safe") or inp.get("ideas") or [])
-    added, dropped_stub, dropped_dup, queue_open = 0, 0, 0, 0
+    added, dropped_stub, dropped_dup = 0, 0, 0
     # Болванка (brain='stub') в LLM-режиме = НЕ идея, а знак что мозг не ответил (нет баланса/
     # сети/непарс: ideate свалился на «Идея по мотиву: <файл>»). Раньше при ПОЛНОМ отказе (вся
     # партия — болванки) их всё равно клали в инбокс: «болванки лучше пустоты». Но в инбоксе
@@ -72,8 +72,7 @@ def run(inputs, env):
                 dropped_dup += 1        # идея отклонена как дубликат
         store.save()
         ie._write_inbox(store)
-        queue_open = len(store.open_ideas())
-    return {"delivered": added, "inbox": ie.INBOX, "queue_open": queue_open,
+    return {"delivered": added, "inbox": ie.INBOX,
             "dropped_stub": dropped_stub, "dropped_dup": dropped_dup,
             "brain_down": brain_down}
 

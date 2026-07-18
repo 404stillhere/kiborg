@@ -287,6 +287,13 @@ class TestDegradeNote(unittest.TestCase):
         # рендерятся в человекочитаемый флаг — как соседние dropped_stub/degraded.
         self.assertEqual(harvest._degrade_note({"dropped_dup": 4}), "дубликатов=4")
 
+    def test_redacted_secrets_flagged(self):
+        # сигнал БЕЗОПАСНОСТИ (нашла фабрика б-3 2026-07-18): скраб вычистил секрет из идеи →
+        # «секретов-вырезано=N» в флагах прогона, иначе счётчик redacted молча теряется.
+        # Не деградация выдачи — но surface обязателен (в источник просочился секрет).
+        self.assertEqual(harvest._degrade_note({"redacted": 2}), "секретов-вырезано=2")
+        self.assertEqual(harvest._degrade_note({"redacted": 0}), "")   # чисто → нет флага
+
     def test_both_flags(self):
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2})
         self.assertIn("источник в фолбэке", note)

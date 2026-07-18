@@ -1,9 +1,10 @@
 """HTTP-тесты роутов пульта (serve.Handler) через реальный сервер на эфемерном порту.
 
 Раньше покрыты были только ХЕЛПЕРЫ (_read_runs/...), а сами POST-роуты и их
-валидация — нет. Тут проверяем POST /api/folders, /api/direction, /api/feeds (добавлены под
-фичи направление/папки/тумблеры-лент) + общие гейты do_POST: Content-Type (415), битый JSON
-(400), тип тела (400). folders/direction/feeds пишут в temp (реальные data/*.json не трогаем)."""
+валидация — нет. Тут проверяем POST /api/folders, /api/direction (current+presets), /api/feeds,
+/api/council (рубильники совета) — под фичи направление/папки/тумблеры-лент/совет + общие гейты
+do_POST: Content-Type (415), битый JSON (400), тип тела (400). folders/direction/feeds/council
+пишут в temp (реальные data/*.json не трогаем)."""
 import json
 import os
 import shutil
@@ -39,17 +40,20 @@ class TestServeRoutes(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="serve_routes_")
         # все пишущие роуты уводим в temp — реальные конфиги/раскладку/авто не трогаем
         self._saved = {"fp": serve.folders.PATH, "dp": serve.direction.PATH,
-                       "auto": serve.AUTO_FILE, "feeds": serve.feeds.PATH}
+                       "auto": serve.AUTO_FILE, "feeds": serve.feeds.PATH,
+                       "cc": serve.council_config.PATH}
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
         serve.AUTO_FILE = os.path.join(self.tmp, "auto.json")
         serve.feeds.PATH = os.path.join(self.tmp, "feeds.json")
+        serve.council_config.PATH = os.path.join(self.tmp, "council.json")
 
     def tearDown(self):
         serve.folders.PATH = self._saved["fp"]
         serve.direction.PATH = self._saved["dp"]
         serve.AUTO_FILE = self._saved["auto"]
         serve.feeds.PATH = self._saved["feeds"]
+        serve.council_config.PATH = self._saved["cc"]
 
     def _post(self, path, body=None, ctype="application/json", raw=None):
         data = raw if raw is not None else json.dumps(body).encode("utf-8")
@@ -133,6 +137,44 @@ class TestServeRoutes(unittest.TestCase):
     def test_direction_wrong_type_rejected(self):
         code, body = self._post("/api/direction", {"current": 123})
         self.assertEqual(code, 400)
+
+    def test_direction_presets_valid_saves(self):
+        # ветка presets (список пресетов темы) — была без теста (нашла фабрика б-3 2026-07-18):
+        # test_serve_routes покрывал только current, а роут отдельно валидирует и сохраняет presets
+        code, body = self._post("/api/direction", {"presets": ["железки", "музыка"]})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertIsInstance(body["presets"], list)
+        self.assertIn("железки", body["presets"])
+
+    def test_direction_presets_non_list_rejected(self):
+        # presets не список → type-guard роута (serve.py:434) → 400, сервер жив
+        code, body = self._post("/api/direction", {"presets": "железки"})
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_council_valid_canonicalizes(self):
+        # рубильники совета: произвольный порядок + дубль + неизвестное → канон-порядок ALL_ADVISORS,
+        # только известные. /api/council был единственным ПИШУЩИМ POST-роутом без route-теста (фабрика б-3)
+        code, body = self._post("/api/council",
+                                {"enabled": ["orchestra", "ask_llm", "bogus", "rank_ideas", "orchestra"]})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["enabled"], ["rank_ideas", "ask_llm", "orchestra"])   # порядок ALL_ADVISORS
+        self.assertEqual(body["all"], serve.council_config.ALL_ADVISORS)
+
+    def test_council_empty_all_off(self):
+        # пустой список — законно: все советники выключены, saved.enabled=[]
+        code, body = self._post("/api/council", {"enabled": []})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["enabled"], [])
+
+    def test_council_non_list_rejected(self):
+        # не-список → type-guard роута (serve.py:463) → 400
+        code, body = self._post("/api/council", {"enabled": "rank_ideas"})
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
 
     def test_bad_json_rejected(self):
         code, body = self._post("/api/folders", raw=b"{not json")
