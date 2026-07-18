@@ -19,7 +19,7 @@
   `blocked`: упавшие/гейтнутые органы не переизбираются).
 - **`registry.py`** — каталог `_shared/organs.json` (89 карточек), «книга инструментов».
 - **`wiring.py`** — ИСПОЛНЯЕМЫЕ органы беты: **8** (локальны, чисты, безопасны, растим по одному).
-  Дорожка идей: `collect_source → ideate → rank_ideas (судья) → scrub_secrets → deliver (инбокс)`.
+  Дорожка идей: `collect_source → ideate → rank_ideas/совет (судья) → readability_gate → scrub_secrets → deliver (инбокс)`.
   `collect_source` тянет сырьё, смешивая за прогон: Hacker News, Reddit (r/SideProject),
   Lobsters, GitHub Trending (все публичные, без ключа) + Telegram-каналы (личный аккаунт — единственная
   лента с кредами) + локальный источник `files` (читает текстовые файлы из папок, что заданы в пульте
