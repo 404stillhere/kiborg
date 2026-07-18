@@ -768,11 +768,9 @@ body {
           <path class="nerve" d="M255,230 Q290,290 320,320" style="animation-delay:-.8s"></path>
           <path class="nerve" d="M255,160 Q255,140 255,120" style="animation-delay:-.4s"></path>
         </svg>
-        <!-- Body style picker -->
+        <!-- Body style picker (только Металл — Плоский/Грани убраны по просьбе юзера 2026-07-18) -->
         <div style="display:flex;gap:5px;margin-top:6px">
           <button class="btn-mini bstyle" data-style="metal" onclick="setBody('metal')">⚔ Металл</button>
-          <button class="btn-mini bstyle" data-style="flat"  onclick="setBody('flat')">🛡 Плоский</button>
-          <button class="btn-mini bstyle" data-style="poly"  onclick="setBody('poly')">💠 Грани</button>
         </div>
       </div>
 
@@ -955,7 +953,7 @@ let runPolling = false;
 let workOrgan = null;
 let replayed = true;
 let runStartMs = null;   // старт текущего прогона (клиентские часы) — для таймера «идёт M:SS», сигнал «не завис»
-let bodyStyle = localStorage.getItem('kbodyStyle') || 'metal';
+let bodyStyle = 'metal';   // только Металл (Плоский/Грани убраны); старый выбор из localStorage игнорим
 let consoleOpen = false;
 let doneOpen = false;
 let FOLD_PROBE = {};
@@ -1050,7 +1048,16 @@ function renderSources() {
   const el = document.getElementById('sources-chips');
   const s = S && S.sources;
   if (!s || !s.sources) { el.innerHTML = '<span class="src-chip"><span class="src-dot"></span>нет данных</span>'; return; }
-  el.innerHTML = Object.keys(SRC_NM).filter(k => s.sources[k]).map(k => {
+  // показываем только источники, что СЕЙЧАС включены в конфиге (ленты enabled + files, если есть папки),
+  // а не всё, что осталось в source_status с прошлого прогона. Иначе выключенный источник «висит» в
+  // дашборде, хотя в настройках его нет (honesty-баг 2026-07-18: папки удалили → folders.json пуст, а
+  // «Папки 102» ещё светился из стухшего source_status.json).
+  const activeFeeds = (S.feeds && S.feeds.enabled) || [];
+  const filesOn = (((S.folders && S.folders.paths) || []).length > 0);
+  const active = new Set([...activeFeeds, ...(filesOn ? ['files'] : [])]);
+  const keys = Object.keys(SRC_NM).filter(k => s.sources[k] && active.has(k));
+  if (!keys.length) { el.innerHTML = '<span class="src-chip"><span class="src-dot"></span>источники выключены</span>'; return; }
+  el.innerHTML = keys.map(k => {
     const v = s.sources[k];
     const cls = v.ok ? 'ok' : 'bad';
     const cnt = v.ok && v.items ? ` ${v.items}` : '';
