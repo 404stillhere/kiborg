@@ -1250,8 +1250,10 @@ function plodCardHTML() {
   const nextLine = busy ? 'идёт сбор — скоро появятся, можно уйти'
                         : auto.on ? `Сам сходит за новыми каждые ~${auto.interval_min} мин`
                         : 'Авто выкл — можно нажать кнопку';
+  const rej = (S.rejected | 0);
   const totals = `Всего наработал: <b>${runs.length}</b> прогонов · <b>${brought}</b> идей принёс · `
-               + `<b>${extracted}</b> органов добыто · <b>${nOrg}</b> впаяно · помнит <b>${seen}</b>`;
+               + `<b>${extracted}</b> органов добыто · <b>${nOrg}</b> впаяно · помнит <b>${seen}</b>`
+               + (rej ? ` · отклонил <b>${rej}</b>` : '');
   return `<div class="plod">
     <div class="plod-status ${busy ? 'busy' : 'alive'}">${statusTxt}</div>
     <div class="plod-batch">${batch}<br><span style="color:var(--ink3)">${nextLine}</span></div>

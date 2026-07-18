@@ -10,6 +10,7 @@ sys.path.insert(0, BASE)
 
 from store import Store, OPEN, TAKE, LATER, TRASH  # noqa: E402
 import run  # noqa: E402
+import rejected  # noqa: E402
 
 
 def _idea(title="x"):
@@ -276,6 +277,42 @@ class TestDedup(unittest.TestCase):
             json.dump(legacy, f, ensure_ascii=False)
         s = Store(self.path, cap=3)                                  # без поля seen
         self.assertFalse(s.add_idea(_idea("старая идея")))           # засеяно из legacy -> не повторяем
+
+
+class TestRunTrashRejects(unittest.TestCase):
+    """Оболочка run.py: «мусор» = ОТКЛОНЕНА — убрать из списков + записать суть в rejected (2026-07-18)."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="runtrash_")
+        self._saved = (run.STATE, run.INBOX, rejected.PATH, rejected.DATA)
+        run.STATE = os.path.join(self.tmp, "state.json")
+        run.INBOX = os.path.join(self.tmp, "inbox.md")
+        rejected.DATA = self.tmp
+        rejected.PATH = os.path.join(self.tmp, "rejected.json")
+        s = Store(run.STATE, cap=0)
+        s.add_idea(_idea("Плохая идея"))          # id=1
+        s.save()
+
+    def tearDown(self):
+        run.STATE, run.INBOX, rejected.PATH, rejected.DATA = self._saved
+
+    def test_trash_removes_from_ideas_and_records(self):
+        run._cli(["status", "1", "trash"])
+        s = Store(run.STATE, cap=0)
+        self.assertEqual(s.data["ideas"], [])                 # убрана из списков совсем (не tombstone)
+        self.assertEqual(rejected.recent(), ["Плохая идея"])  # суть записана в rejected
+
+    def test_take_keeps_idea_not_rejected(self):
+        run._cli(["status", "1", "take"])
+        s = Store(run.STATE, cap=0)
+        self.assertEqual(len(s.data["ideas"]), 1)             # взял — идея остаётся (в разобранных)
+        self.assertEqual(s.data["ideas"][0]["status"], "take")
+        self.assertEqual(rejected.count(), 0)                 # не отклонена
+
+    def test_later_keeps_idea_not_rejected(self):
+        run._cli(["status", "1", "later"])
+        s = Store(run.STATE, cap=0)
+        self.assertEqual(s.data["ideas"][0]["status"], "later")
+        self.assertEqual(rejected.count(), 0)
 
 
 if __name__ == "__main__":

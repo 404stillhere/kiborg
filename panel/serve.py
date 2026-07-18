@@ -42,6 +42,7 @@ import feeds  # noqa: E402  (ленты-источник: какие ленты 
 import council_config  # noqa: E402  (рубильники совета: rank_ideas, ask_llm, orchestra)
 from wiring import build_organs  # noqa: E402  (метаданные органов; импорт чистый)
 from organs import collect_source  # noqa: E402  (проба папок: probe_paths — путь валиден? сколько файлов? импорт wiring уже положил idea_engine на path)
+import rejected  # noqa: E402  (счётчик отклонённых для пульта; idea_engine на path через wiring)
 
 _ORGANS = build_organs()
 
@@ -339,6 +340,7 @@ def _api_state():
         "folders": folders.load(),
         "feeds": feeds.load(),
         "council": council_config.load(),
+        "rejected": rejected.count(),   # сколько идей отклонено «мусором» (учат генератор/судью)
     }
 
 

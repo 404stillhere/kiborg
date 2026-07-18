@@ -66,6 +66,11 @@ def run(inputs, env):
         if direction:                       # при прочих равных — идеи В НАПРАВЛЕНИИ выше
             prompt = (f"Отбираешь под НАПРАВЛЕНИЕ «{direction}»: при прочих равных идея, "
                       f"бьющая в «{direction}», предпочтительнее.\n" + prompt)
+        rejected = [r for r in (env.get("rejected") or []) if r]
+        if rejected:                        # похожее на УЖЕ ОТКЛОНЁННОЕ юзером — в топ не брать
+            rej = "\n".join("- " + str(r) for r in rejected)
+            prompt = ("НЕ бери в топ идеи, похожие на эти УЖЕ ОТКЛОНЁННЫЕ (юзер их забраковал):\n"
+                      f"{rej}\n" + prompt)
         idxs = _pick(llm(prompt), len(ideas), keep)
         if idxs:
             picked = set(idxs)

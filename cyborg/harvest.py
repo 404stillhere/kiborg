@@ -32,6 +32,7 @@ import keychain  # noqa: E402  (ключи -> совет на отборе; вп
 import direction  # noqa: E402  (руль темы: env["direction"] для генератора/судьи)
 import folders  # noqa: E402  (папки-источник: env["files_paths"], список правится в пульте)
 import feeds  # noqa: E402  (ленты-источник: какие публичные ленты включены, тумблеры в пульте)
+import rejected  # noqa: E402  (отклонённые: env["rejected"] — генератор/судья не приносят похожее; idea_engine на path через wiring)
 import seen_items  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402
 
@@ -148,6 +149,9 @@ def _source_env():
     paths = folders.current()
     if paths:
         env["files_paths"] = paths          # источник-папка активен только когда папки заданы
+    rej = rejected.recent()
+    if rej:
+        env["rejected"] = rej               # отклонённые «мусором» — генератор/судья не приносят похожее
     return env
 
 

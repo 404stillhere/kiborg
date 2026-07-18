@@ -64,6 +64,15 @@ class TestRankIdeas(unittest.TestCase):
         self.assertIn("здоровье", seen["p"])
         self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
 
+    def test_rejected_downranked_in_prompt(self):
+        # отклонённые идеи попадают в рубрику судьи как «не бери в топ похожее» (2026-07-18)
+        seen = {}
+        rank_ideas.run({"ideas": POOL},
+                       {"keep": 3, "rejected": ["Клон Trello", "Ещё один RSS"],
+                        "llm": lambda p: seen.setdefault("p", p) or '{"top":[0,1,2]}'})
+        self.assertIn("ОТКЛОНЁННЫЕ", seen["p"])
+        self.assertIn("Клон Trello", seen["p"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -96,6 +96,22 @@ class TestIdeateParse(unittest.TestCase):
         self.assertEqual(len(ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: ARRAY,
                                                            "on_progress": "nope"})["ideas"]), 2)
 
+    def test_rejected_avoided_in_prompt(self):
+        # отклонённые идеи попадают в запрос как «не приноси похожее» (учёт на отказах 2026-07-18)
+        seen = {}
+        ideate.run({"items": ITEMS},
+                   {"k": 2, "rejected": ["Ещё один todo-лист", "Клон Notion"],
+                    "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        self.assertIn("ОТКЛОНЁННЫЕ", seen["p"])
+        self.assertIn("Ещё один todo-лист", seen["p"])
+        self.assertIn("Клон Notion", seen["p"])
+
+    def test_no_rejected_no_avoid_block(self):
+        # без отклонённых блок «не приноси похожее» в запрос НЕ вставляется
+        seen = {}
+        ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        self.assertNotIn("ОТКЛОНЁННЫЕ", seen["p"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

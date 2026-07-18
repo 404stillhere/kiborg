@@ -43,6 +43,13 @@ _STEER_TMPL = (
     "как толчок, а саму идею гни в «{direction}».\n\n"
 )
 
+# Отклонённые идеи (env["rejected"]): юзер уже забраковал их «мусором». Ставим ПЕРЕД запросом,
+# чтобы модель не приносила ни их, ни близкие вариации — учимся на отказах, не только на дедупе.
+_AVOID_TMPL = (
+    "НЕ ПРЕДЛАГАЙ идеи, похожие на эти УЖЕ ОТКЛОНЁННЫЕ (юзер их забраковал) — ни сами, ни\n"
+    "близкие вариации той же сути:\n{rejected}\n\n"
+)
+
 
 def _stub(items, k):
     out = []
@@ -116,6 +123,9 @@ def run(inputs, env):
         direction = (env.get("direction") or "").strip()
         if direction:                       # руль темы — впереди основного запроса
             prompt = _STEER_TMPL.format(direction=direction) + prompt
+        rejected = [r for r in (env.get("rejected") or []) if r]
+        if rejected:                        # учёт отклонённого — «не приноси похожее на забракованное»
+            prompt = _AVOID_TMPL.format(rejected="\n".join("- " + str(r) for r in rejected)) + prompt
         ideas = _parse(llm(prompt), k)
         if ideas:
             return {"ideas": ideas}

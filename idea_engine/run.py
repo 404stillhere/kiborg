@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from store import Store, state_lock  # noqa: E402
 from organs import collect_source, ideate, finish_step  # noqa: E402
+import rejected  # noqa: E402  (мусор = отклонена: суть уходит сюда, учит генератор/судью)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
@@ -139,6 +140,14 @@ def _cli(argv):
         with state_lock(STATE):        # триаж пульта: замок вокруг load→set_status→save
             store = Store(STATE, cap=CFG["cap"])
             ok = store.set_status(idea_id, st)
+            if ok and st == "trash":
+                # «мусор» = ОТКЛОНЕНА (юзер 2026-07-18): суть → rejected.json (учит генератор/судью
+                # не приносить похожее), и убираем идею из списков совсем — не тихий tombstone со
+                # статусом trash в state. Store не трогаем (заморожен): работаем с его data в оболочке.
+                victim = next((i for i in store.data["ideas"] if i["id"] == idea_id), None)
+                if victim:
+                    rejected.add(victim.get("title", ""), victim.get("why", ""))
+                    store.data["ideas"] = [i for i in store.data["ideas"] if i["id"] != idea_id]
             store.save()
             _write_inbox(store)
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")
