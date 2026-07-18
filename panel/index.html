@@ -1533,7 +1533,7 @@ function renderLab() {
   let txt, color, title;
   if (!lab.exists) {
     txt = 'спит'; color = 'var(--ink3)';
-    title = 'папка .feature-lab отсутствует — фабрика фич сейчас не запускалась';
+    title = 'фабрика фич: активного пакета нет (router.json отсутствует — либо не запускалась, либо пакет впитан в код/архив)';
   } else if (!feats.length) {
     txt = 'пусто'; color = 'var(--ink3)'; title = 'фабрика запускалась, готовых фич нет';
   } else if (lab.locked) {
