@@ -3,6 +3,50 @@
 Проект — автономный агент «приносит идеи». Перед правками прочитайте `README.md`
 (общая архитектура: `idea_engine/` → `cyborg/` → `panel/`) и секцию «Заморожено» ниже.
 
+## 🟢 CI enforced
+
+Любой `push` в `master` и любой pull request автоматически запускают GitHub Actions
+(см. `.github/workflows/ci.yml`, job `test`):
+
+| Шаг | Что | Команда |
+|-----|-----|---------|
+| 1 | Checkout кода | `actions/checkout@v4` |
+| 2 | Python 3.9 (минимальная заявленная версия) | `actions/setup-python@v5` |
+| 3 | Установка зависимостей | `pip install -r requirements.txt` |
+| 4 | Прогон всех тестов | `python run_tests.py` (452 теста + 1 skipped) |
+| 5 | Линтер | `ruff check .` |
+| 6 | Форматирование | `black --check .` |
+
+Статус прогона виден в интерфейсе GitHub: зелёная галочка / красный крест.
+Падение любого шага = красный PR.
+
+### Branch protection — текущий статус
+
+На момент написания (2026-07-21): репозиторий **PRIVATE**, GitHub Pro **отсутствует**.
+Branch protection rules требуют Pro или публичного репо — поэтому **серверно прямой пуш
+в master НЕ заблокирован**. Это сознательное решение (см. ниже).
+
+| Механизм | Статус |
+|----------|--------|
+| CI на каждый push/PR | ✅ работает |
+| CONTRIBUTING.md фиксирует процесс | ✅ задокументировано |
+| Прямой пуш в master заблокирован сервером | ❌ требует Pro/public |
+
+**Дисциплина:** правки идут через PR даже без серверной защиты — это норма проекта.
+CI всё равно ловит регрессии (прогон срабатывает на любой push). Если в будущем репо
+станет публичным или будет куплен Pro — branch protection включается одной командой:
+
+```bash
+gh api -X PUT repos/404stillhere/kiborg/branches/master/protection \
+  -H "Accept: application/vnd.github+json" \
+  -F "required_status_checks[strict]=true" \
+  -F "required_status_checks[contexts][]=test" \
+  -F "enforce_admins=true" \
+  -F "required_pull_request_reviews[required_approving_review_count]=0" \
+  -F "restrictions=" \
+  -F "allow_force_pushes=false"
+```
+
 ## TL;DR
 
 ```bash

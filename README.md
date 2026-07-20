@@ -1,5 +1,9 @@
 # kiborg — автономный агент «приносит идеи»
 
+![CI](https://github.com/404stillhere/kiborg/actions/workflows/ci.yml/badge.svg)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 Один агент, собранный из органов (извлечённых из других проектов), с одной работой:
 **приносить свежие идеи** (новый проект / аддон / скилл), а когда их накопилось — толкать
 к финишу старое. Работает сам по расписанию, судит идеи советом моделей, показывает работу
@@ -41,6 +45,14 @@ M:/projects/darbot/venv/Scripts/python.exe run_tests.py
 
 Автономный фон живёт ВНУТРИ пульта (умрёт пульт — встанет фон). Кнопкой в пульте включается
 автосбор по интервалу; каждый прогон — свежий подпроцесс `harvest.py`.
+
+## CI и разработка
+
+Каждый push/PR в `master` проходит GitHub Actions: 452 теста (`python run_tests.py`) +
+линтер (`ruff check .`) + форматирование (`black --check .`). См. бейдж вверху.
+
+Как вносить изменения — см. **[CONTRIBUTING.md](CONTRIBUTING.md)**:
+создать ветку → локальные проверки → PR → дождаться зелёного CI → squash-merge.
 
 ## Заморожено (без явного разрешения не трогать)
 
