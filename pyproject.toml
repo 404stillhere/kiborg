@@ -1,0 +1,61 @@
+# Конфигурация инструмент разработки для kiborg.
+# Проект runtime = чистый Python stdlib, поэтому тут ТОЛЬКО конфиги линтеров/форматтера
+# (pytest настроен через run_tests.py из-за коллизии имён модулей cyborg/idea_engine).
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+# Замороженные ядра и рабочий процесс — НЕ линтим:
+# - idea_engine/store.py, idea_engine/organs/collect_source.py — frozen core (гейт человека)
+# - cyborg/mind.py, cyborg/advisors.py — движок совета (правит параллельная сессия)
+# - organs_vendored/ — вендоренный код из других проектов (не наш, не трогаем)
+# - .feature-lab/ — песочница ночной фабрики (временный код)
+# - .brain/, handoffs/, .zcode/ — рабочий процесс/заметки (не код проекта)
+# - *.bak-* — снапшоты редактора (история, не живой код)
+extend-exclude = [
+    "organs_vendored",
+    ".feature-lab",
+    ".brain",
+    "handoffs",
+    ".zcode",
+    ".claude",
+]
+
+[tool.ruff.lint]
+# Минимальный набор правил: ошибки стиля + явные проблемы.
+# Не включаем D (docstrings) — у проекта своя плотная комментирующая традиция.
+select = ["E", "F", "W", "I"]
+# F401 (unused import) глушим в файлах с паттерном «импорт для сайд-эффекта» (sys.path insert),
+# таких много и они помечены `# noqa: E402` — уважаем.
+ignore = [
+    "E402",  # module level import not at top of file (проект намеренно ставит sys.path ПЕРЕД импортами)
+    "E501",  # line too long (line-length=120 + длинные URL/комментарии в кириллице)
+    "E702",  # multiple statements on one line (semicolon) — компактный restore в setUp/tearDown
+    "E731",  # lambda assignment — inline-mocks в тестах и демо в __main__ (не production-код)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Тесты часто используют неиспользуемые импорты для side-effect и фикстуры.
+"tests/**/*.py" = ["F401", "F811"]
+
+[tool.black]
+line-length = 120
+target-version = ["py39"]
+# Замороженные ядра и рабочий процесс — форматтер НЕ трогает. Паттерны — regex (re.search
+# по строковому пути). Стали надёжнее после упрощения (без сложной группировки с ошибками
+# экранирования на Windows). Дополнительная страховка: # fmt: off в шапке store.py/mind.py.
+extend-exclude = '''
+/(
+  idea_engine/store\.py
+  | idea_engine/organs/collect_source\.py
+  | cyborg/mind\.py
+  | cyborg/advisors\.py
+  | organs_vendored
+  | \.feature-lab
+  | \.brain
+  | handoffs
+  | \.zcode
+  | \.claude
+)/
+'''
