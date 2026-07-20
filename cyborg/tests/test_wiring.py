@@ -625,20 +625,21 @@ class TestRunIdeateDeferredSeen(unittest.TestCase):
         out = wiring._run_ideate({"items": self._items()},
                                  {"filter_seen_items": True, "content_llm": lambda p: "x"})
         self.assertTrue(out["ideas"])
-        self.assertEqual(seen_items.load(), set())               # ничего не сожжено
+        self.assertEqual(seen_items.load(), {})                  # ничего не сожжено (dict пустой)
         self.assertEqual(len(seen_items.filter_fresh(self._items(), mark=False)), 2)  # оба ещё свежи
 
     def test_real_generation_marks_items(self):
         wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "реальная", "brain": "llm"}]}
         wiring._run_ideate({"items": self._items()},
                            {"filter_seen_items": True, "content_llm": lambda p: "x"})
-        self.assertEqual(seen_items.load(), {"hn:1", "hn:2"})     # успех -> отмечены
+        # успех -> отмечены (формат dict[str,int] с 2026-07-21; проверяем ключи, не ts)
+        self.assertEqual(set(seen_items.load().keys()), {"hn:1", "hn:2"})
 
     def test_stub_marks_when_no_key(self):
         # без ключа (stub-режим) болванки ожидаемы -> метим как обычно
         wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "болванка", "brain": "stub"}]}
         wiring._run_ideate({"items": self._items()}, {"filter_seen_items": True})
-        self.assertEqual(seen_items.load(), {"hn:1", "hn:2"})
+        self.assertEqual(set(seen_items.load().keys()), {"hn:1", "hn:2"})
 
 
 class TestCollectLockedTgSession(unittest.TestCase):
@@ -700,8 +701,8 @@ class TestCollectLockedTgSession(unittest.TestCase):
 
 class TestRunIdeateProviderSurfaces(unittest.TestCase):
     """_run_ideate пробрасывает ask_llm.last_provider в out органа (звено конвейера provider
-    гибрида gemini→muse-spark). Только при callable llm; gemini=бесплатно vs muse-spark=платно —
-    без этого звена фолбэк не дойдёт до harvest._degrade_note (consumer)."""
+    цепочки closerouter). Только при callable llm; без этого звена id ответившей модели
+    (muse-spark/deepseek/nemotron) не дойдёт до harvest._degrade_note (consumer)."""
 
     def setUp(self):
         self._orig_ideate = wiring.ideate.run
@@ -712,7 +713,7 @@ class TestRunIdeateProviderSurfaces(unittest.TestCase):
         ask_llm.last_provider = self._orig_lp
 
     def test_provider_in_out_when_llm_present(self):
-        # живая модель отозвалась muse-spark (платный фолбэк) → _run_ideate кладёт provider в out
+        # живая модель отозвалась muse-spark (первичная цепочки) → _run_ideate кладёт provider в out
         wiring.ideate.run = lambda inputs, env: {"ideas": [{"title": "X"}]}
         ask_llm.last_provider = "muse-spark"
         out = wiring._run_ideate({"items": [{"title": "t"}]}, {"content_llm": lambda p: "x"})

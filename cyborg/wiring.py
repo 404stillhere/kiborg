@@ -125,11 +125,12 @@ def _run_ideate(inputs, env):
         produced_real = any(isinstance(i, dict) and i.get("brain") != "stub" for i in ideas)
         if produced_real or not callable(llm):
             seen_items.mark_seen(fresh)
-    # PROVIDER — кто РЕАЛЬНО ответил в генераторе (gemini=подписка/бесплатно, muse-spark=closerouter/
-    # платно). Гибрид сделал это нужным: платный фолбэк молча жжёт баланс автосбора, если не светить.
-    # ask_llm.last_provider ставит _run_chain от organ.js result.provider; поднимаем в out органа →
-    # orchestrator пробросит в run-выхлоп → harvest._degrade_note рендерит «фолбэк=…». Только при
-    # живой модели (stub-режим без ключа провайдера не имеет).
+    # PROVIDER — кто РЕАЛЬНО ответил в генераторе (muse-spark/deepseek/nemotron — цепочка
+    # closerouter, см. keychain._SPEC). Полезно видеть, какое плечо сработало: muse-spark=первичная,
+    # остальное=фолбэк при отлёте первичной. ask_llm.last_provider ставит _run_chain от organ.js
+    # result.provider; поднимаем в out органа → orchestrator пробросит в run-выхлоп →
+    # harvest._degrade_note рендерит «модель=…». Только при живой модели (stub-режим без ключа
+    # провайдера не имеет).
     if callable(llm):
         try:
             import ask_llm as _ask

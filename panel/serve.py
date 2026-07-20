@@ -306,10 +306,10 @@ def _read_lab():
 
 def _key_state():
     """Живой статус ключа для шапки: РЕАЛЬНО сконфигуренные плечи цепочки, а не статичный ярлык.
-    present — есть ли хоть одно плечо; model — «gemini→muse» / «muse» / «gemini» по ФАКТУ заданных
-    ключей (keychain.build_chain даёт только те плечи, чей ключ непуст), а не обещание обоих. Раньше
-    отдавали статичный ask_llm._MODEL «gemini→muse (hybrid)» — при одном ключе бейдж врал про второе
-    плечо (аудит 2026-07-17). Печатаем ТОЛЬКО id плеч (не model/apiKey/baseUrl) — секрет не утечёт."""
+    present — есть ли хоть одно плечо; model — «muse-spark→deepseek→nemotron» по ФАКТУ заданного
+    ключа (keychain.build_chain даёт только те плечи, чей ключ непуст). Раньше отдавали статичный
+    ask_llm._MODEL — при отсутствии ключа бейдж врал про плечи, которых нет (аудит 2026-07-17).
+    Печатаем ТОЛЬКО id плеч (не model/apiKey/baseUrl) — секрет не утечёт."""
     chain = keychain.build_chain()
     return {"present": bool(chain),
             "model": "→".join(c["id"] for c in chain) or ask_llm._MODEL}

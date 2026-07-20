@@ -79,23 +79,23 @@ class TestAskLlm(unittest.TestCase):
         self.assertEqual(ask_llm.ask("prompt"), "")
 
     def test_last_provider_set_on_success(self):
-        # organ.js возвращает provider (кто РЕАЛЬНО ответил) — гибрид делает это критичным для
-        # учёта фолбэка (gemini=бесплатно, muse-spark=платно). ask() ставит last_provider, не ломая
-        # контракт callable(prompt)->str.
+        # organ.js возвращает provider (кто РЕАЛЬНО ответил) — цепочка closerouter делает это
+        # диагностически полезным (muse-spark=первичная, deepseek/nemotron=фолбэк). ask() ставит
+        # last_provider, не ломая контракт callable(prompt)->str.
         self._chain()
         self._mock_run(stdout=json.dumps({"ok": True, "text": '{"title":"X"}', "provider": "muse-spark"}))
         ask_llm.ask("prompt")
-        self.assertEqual(ask_llm.last_provider, "muse-spark")   # фолбэк сработал — видно
+        self.assertEqual(ask_llm.last_provider, "muse-spark")   # первичная ответила — видно
 
     def test_last_provider_cleared_on_failure(self):
         # при сбое (not ok / пусто / exception) last_provider сбрасывается — не врёт «ответил прошлый»
         self._chain()
-        self._mock_run(stdout=json.dumps({"ok": True, "text": '{"t":1}', "provider": "gemini"}))
+        self._mock_run(stdout=json.dumps({"ok": True, "text": '{"t":1}', "provider": "deepseek"}))
         ask_llm.ask("prompt")
-        self.assertEqual(ask_llm.last_provider, "gemini")
+        self.assertEqual(ask_llm.last_provider, "deepseek")
         self._mock_run(stdout=json.dumps({"ok": False, "error": "boom"}))  # след. вызов упал
         ask_llm.ask("prompt")
-        self.assertEqual(ask_llm.last_provider, "")              # сброс, а не зависший «gemini»
+        self.assertEqual(ask_llm.last_provider, "")              # сброс, а не зависший «deepseek»
 
     def test_last_provider_empty_without_chain(self):
         self._chain([])                                          # нет ключей — спросить некого

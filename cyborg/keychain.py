@@ -12,21 +12,15 @@ import os
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
 
 # Цепочка ИНТУИЦИИ (ask_llm): id, имя ключа, endpoint (полный chat-completions URL), модель.
-# Реш. юзера 2026-07-16: ГИБРИД — две модели на РАЗНЫХ ключах/endpoint'ах (build_chain берёт
-# keys[key] per-entry, поэтому смешанные endpoint/ключи поддержаны).
-#   1) gemini-2.5-flash-lite через НАТИВНЫЙ ключ Google-подписки (первичная, дёшево — подписка).
-#   2) muse-spark через closerouter (фолбэк при отлёте gemini — доказанно рабочая, тянула
-#      генерацию, пока её душили таймаутами мёртвых моделей).
-# Корень болванок был в гонке таймаутов старой 4-модельной closerouter-цепочки (deepseek-pro
-# регулярно таймаутил, glm5 — 503, бюджет сжирался впустую). Гибрид решает это: быстрая
-# первичная, и надёжный фолбэк, когда нативный gemini с этой сети провисает на TLS
-# (интермиттент, та же причина по которой киборг уходил с gemini в 2026-07-13 — но теперь
-# он не один в цепочке). Порядок = приоритет. Прочие провайдеры — в СОВЕТ.
+# Реш. юзера 2026-07-20: интуиция — meta/muse-spark-1.1 через closerouter; fallback на deepseek-
+# v4-pro и nvidia nemotron-3-ultra (тоже через closerouter, тот же ключ CLOSEROUTER_API_KEY).
+# Одна цепочка free-first: muse-spark (бесплатный tier) → deepseek-v4-pro → nemotron-3-ultra.
+# Порядок = приоритет. Mistral и все остальные — в СОВЕТ.
 _CR_URL = "https://api.closerouter.dev/v1/chat/completions"
-_GEM_NATIVE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 _SPEC = [
-    ("gemini", "GEMINI_API_KEY", _GEM_NATIVE_URL, "gemini-2.5-flash-lite"),
     ("muse-spark", "CLOSEROUTER_API_KEY", _CR_URL, "meta/muse-spark-1.1"),
+    ("deepseek", "CLOSEROUTER_API_KEY", _CR_URL, "deepseek/deepseek-v4-pro"),
+    ("nemotron", "CLOSEROUTER_API_KEY", _CR_URL, "nvidia/nemotron-3-ultra"),
 ]
 
 
@@ -86,9 +80,10 @@ def available(path=None):
 # --- СОВЕТ (orchestra): модели-рецензенты на ключах kiborg ---------------------
 # Реш. юзера 2026-07-13: в совет — ВСЕ модели, кроме интуиции (closerouter). Все endpoint'ы
 # OpenAI-совместимы (Bearer). id рецензента -> (имя ключа, endpoint, модель). Проверены живьём:
-# ✅ sambanova, groq, mistral, openrouter, cohere, nvidia отвечают; ✅ gemini валиден (429 —
-# лимит бесплатного тира); ❌ cerebras даёт 403 (ключ отклонён) — оставлен в списке, но
-# воздержится, пока юзер не поправит ключ (рецензент падает → совет идёт с остальными).
+# ✅ sambanova, groq, mistral, openrouter, cohere, nvidia отвечают; ❌ cerebras даёт 403 (ключ
+# отклонён) — оставлен в списке, но воздержится (см. _COUNCIL_DISABLED). ❌ gemini geoblocked с
+# сети юзера (HTTP 400 "User location is not supported") — тоже отключён 2026-07-21, спека
+# остается на случай смены сети/VPN (вернуть = убрать из _COUNCIL_DISABLED).
 _COUNCIL_SPEC = {
     "sambanova": ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2"),
     "groq": ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
@@ -102,7 +97,10 @@ _COUNCIL_SPEC = {
 
 # Рецензенты ОТКЛЮЧЕНЫ, но НЕ удалены (реш. юзера 2026-07-13): спека остаётся, из совета
 # выпадают. Вернуть в строй = убрать id отсюда. cerebras — ключ отдаёт 403.
-_COUNCIL_DISABLED = {"cerebras"}
+# gemini отключён 2026-07-21 (реш. юзера): нативный Google-эндпоинт geoblocked с сети юзера
+# (HTTP 400 "User location is not supported"), в совете бесполезен — молча падает каждый вызов.
+# Ключ/спека остаются; вернуть = убрать 'gemini' отсюда И убедиться что эндпоинт отвечает с сети.
+_COUNCIL_DISABLED = {"cerebras", "gemini"}
 
 
 _COUNCIL_DEADLINE = 50   # жёсткий wall-clock потолок на один вызов рецензента (см. _with_deadline)
@@ -174,10 +172,11 @@ def make_council_chat(path=None):
 
 
 def council_models(path=None):
-    """Имена рецензентов совета: есть ключ И не отключены (_COUNCIL_DISABLED)."""
+    """Имена рецензентов совета: есть ключ И не отключены (_COUNCIL_DISABLED) И не в интуиции (_SPEC)."""
     keys = load_keys(path)
+    intuition_ids = {pid for pid, _, _, _ in _SPEC}
     return [rid for rid, spec in _COUNCIL_SPEC.items()
-            if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED]
+            if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED and rid not in intuition_ids]
 
 
 def orchestra_context(path=None):

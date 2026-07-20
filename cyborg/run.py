@@ -56,7 +56,7 @@ def main(argv):
     # молча падал на дефолт HN(n=8), и «Принеси идеи» ходила мимо телеграм-пула. Это чинит ту дырку.
     env = harvest._source_env()
     if env.get("content_llm"):
-        # генератор идей идёт по ТОЙ ЖЕ цепочке, что интуиция (гибрид gemini→muse, см. keychain._SPEC)
+        # генератор идей идёт по ТОЙ ЖЕ цепочке, что интуиция (muse→deepseek→nemotron closerouter, см. keychain._SPEC)
         brain_mode = f"идеи+интуиция={ask_llm._MODEL} (одна цепочка), планировщик=stub"
     else:
         brain_mode = "идеи=stub, планировщик=stub (ключа цепочки нет)"

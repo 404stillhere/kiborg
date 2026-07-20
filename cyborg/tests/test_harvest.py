@@ -300,26 +300,25 @@ class TestDegradeNote(unittest.TestCase):
         self.assertIn("stub-отсеяно=2", note)
 
     def test_all_three_flags(self):
-        # все три сигнала деградации в одной строке, разделены · (provider не передан → нет фолбэк-флага)
+        # все три сигнала деградации в одной строке, разделены · (provider не передан → нет флага модели)
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2, "dropped_dup": 1})
         self.assertEqual(note, "источник в фолбэке · stub-отсеяно=2 · дубликатов=1")
 
-    def test_paid_fallback_provider_flagged(self):
-        # гибрид (2026-07-16): muse-spark = ПЛАТНЫЙ фолбэк closerouter (gemini провисла на TLS) →
-        # светим «фолбэк=muse-spark», иначе автосбор молча жжёт баланс. Это budget-деградация.
-        note = harvest._degrade_note({"provider": "muse-spark"})
-        self.assertEqual(note, "фолбэк=muse-spark")
-
-    def test_free_provider_not_flagged(self):
-        # gemini = подписка = БЕСПЛАТНО — фолбэк-флагом НЕ помечаем (это штатный путь, не деградация).
-        # Иначе каждый здоровый прогон светился бы «фолбэк=gemini» и затирал реальные сигналы.
-        self.assertEqual(harvest._degrade_note({"provider": "gemini"}), "")
+    def test_provider_flagged_always(self):
+        # реш. юзера 2026-07-21: провайдер генератора светится ВСЕГДА (id модели, что ответила),
+        # без деления на «бесплатно/платно» — вся цепочка на closerouter, делить не на что.
+        # Раньше (гибрид gemini→muse) gemini-подписку прятали, флажили только платный muse-фолбэк;
+        # теперь тег «модель=…» показывает, какое плечо цепочки ответило (muse-spark=первичная,
+        # deepseek/nemotron=фолбэк). Полезно для диагностики, не бюджет-деградация.
+        self.assertEqual(harvest._degrade_note({"provider": "muse-spark"}), "модель=muse-spark")
+        self.assertEqual(harvest._degrade_note({"provider": "deepseek"}), "модель=deepseek")
+        self.assertEqual(harvest._degrade_note({"provider": "nemotron"}), "модель=nemotron")
         self.assertEqual(harvest._degrade_note({}), "")          # нет provider — нет флага
 
-    def test_paid_fallback_with_other_flags(self):
-        # фолбэк встаёт в общую строку деградации рядом с источником/дубликатами
-        note = harvest._degrade_note({"degraded": True, "provider": "muse-spark", "dropped_dup": 1})
-        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · фолбэк=muse-spark")
+    def test_provider_with_other_flags(self):
+        # модель встаёт в общую строку деградации рядом с источником/дубликатами
+        note = harvest._degrade_note({"degraded": True, "provider": "deepseek", "dropped_dup": 1})
+        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · модель=deepseek")
 
 
 if __name__ == "__main__":
