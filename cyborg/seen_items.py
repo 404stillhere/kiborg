@@ -48,7 +48,10 @@ def _item_key(it):
     # источников (папки тематические, имена файлов уникальны внутри). Для источников со
     # стабильным id (hn/lobsters/gh_trending/reddit/telegram) — id как есть, без хеша.
     if src == "files":
-        iid = hashlib.sha1(os.path.basename(str(iid)).encode("utf-8")).hexdigest()[:12]
+        # КРОСС-ПЛАТФОРМЕННАЯ СТАБИЛЬНОСТЬ: см. _normalize_key — Windows-пути с '\\' на Linux
+        # дают другой basename. Нормализуем '\\' → '/' перед basename, чтобы хеш был одинаковый.
+        iid_norm = str(iid).replace("\\", "/")
+        iid = hashlib.sha1(os.path.basename(iid_norm).encode("utf-8")).hexdigest()[:12]
     return f"{src}:{iid}"
 
 
@@ -71,6 +74,12 @@ def _normalize_key(k):
         rest = k[len("files:") :]
         if re.match(r"^[0-9a-f]{12}$", rest):
             return k  # уже нормализован
+        # КРОСС-ПЛАТФОРМЕННАЯ СТАБИЛЬНОСТЬ (баг всплыл на CI 2026-07-21): os.path.basename
+        # на Linux НЕ понимает обратные слеши (считает разделителем только '/') — для путей
+        # с '\\' (Windows-прогон создал ключ) возвращает весь путь целиком, basename не
+        # выделяется → хеш разный между платформами. Нормализуем '\\' → '/' ПЕРЕД basename,
+        # тогда обе платформы дают один и тот же basename и тот же хеш.
+        rest = rest.replace("\\", "/")
         return "files:" + hashlib.sha1(os.path.basename(rest).encode("utf-8")).hexdigest()[:12]
     return k
 

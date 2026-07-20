@@ -14,8 +14,14 @@ import wiring  # noqa: E402
 from registry import load_catalog  # noqa: E402
 from wiring import build_organs  # noqa: E402
 
+# Реестр _shared/organs.json — ВНЕШНИЙ файл (не в репо kiborg, лежит на прод-машине юзера
+# в M:/projects/_shared/). На CI его нет. Тест test_catalog_loads — интеграционный, пропускаем
+# при отсутствии файла; остальные тесты (build_organs/route/finish_cursor) НЕ зависят от него.
+_HAS_CATALOG = os.path.exists("M:/projects/_shared/organs.json")
+
 
 class TestRegistry(unittest.TestCase):
+    @unittest.skipUnless(_HAS_CATALOG, "каталог _shared/organs.json доступен только на прод-машине")
     def test_catalog_loads(self):
         cat = load_catalog()
         self.assertGreater(len(cat), 40)  # 89 карточек
