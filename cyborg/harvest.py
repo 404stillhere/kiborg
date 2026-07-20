@@ -11,6 +11,7 @@ rank -> scrub -> deliver в инбокс). Разница только в пов
 
 Каждый прогон логируется в data/runs.md (как и ручные прогоны).
 """
+
 import datetime
 import os
 import sys
@@ -25,16 +26,16 @@ except Exception:
 import hashlib  # noqa: E402
 import json  # noqa: E402
 
-from wiring import build_organs, _collect_locked  # noqa: E402  (цепочка + фетч под замком tg-сессии)
-from orchestrator import Cyborg  # noqa: E402
 import ask_llm  # noqa: E402
-import keychain  # noqa: E402  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
 import direction  # noqa: E402  (руль темы: env["direction"] для генератора/судьи)
-import folders  # noqa: E402  (папки-источник: env["files_paths"], список правится в пульте)
 import feeds  # noqa: E402  (ленты-источник: какие публичные ленты включены, тумблеры в пульте)
+import folders  # noqa: E402  (папки-источник: env["files_paths"], список правится в пульте)
+import keychain  # noqa: E402  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
 import rejected  # noqa: E402  (отклонённые: env["rejected"] — генератор/судья не приносят похожее; idea_engine на path через wiring)
 import seen_items  # noqa: E402
+from orchestrator import Cyborg  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402
+from wiring import _collect_locked, build_organs  # noqa: E402  (цепочка + фетч под замком tg-сессии)
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 # автосбор доставляет в ИНБОКС idea_engine (через deliver), НЕ в копилку — отчёт строим по инбоксу
@@ -74,6 +75,7 @@ def _active_sources():
     статуса пульта / лога. Все ленты выключены и папок нет -> [] (пульт предупреждает)."""
     return feeds.enabled() + (["files"] if folders.current() else [])
 
+
 # Каналы под тематику kiborg (тех/AI/pet-проекты) — НЕ список darbot (тот про новости/политику/
 # экономику, другая тема). @tproger — мой стартовый кандидат, подтверждён живым смоуком 2026-07-12.
 # 21 канал: @tproger (стартовый, подтверждён живым смоуком) + 20 из папки юзера
@@ -85,10 +87,24 @@ def _active_sources():
 TELEGRAM_CHANNELS = [
     "@tproger",
     "@ai_machinelearning_big_data",
-    "@unitool", "@llm_under_hood", "@gpt_news", "@hiaimedia", "@openai_fan",
-    "@data_secrets", "@machinelearning_interview", "@data_analysis_ml", "@neuro_code",
-    "@neuraldvig", "@aitshnya", "@seeallochnaya", "@gptpublic", "@ai_newz",
-    "@notboring_tech", "@lovedeathtransformers", "@machinelearning_ru", "@boris_again",
+    "@unitool",
+    "@llm_under_hood",
+    "@gpt_news",
+    "@hiaimedia",
+    "@openai_fan",
+    "@data_secrets",
+    "@machinelearning_interview",
+    "@data_analysis_ml",
+    "@neuro_code",
+    "@neuraldvig",
+    "@aitshnya",
+    "@seeallochnaya",
+    "@gptpublic",
+    "@ai_newz",
+    "@notboring_tech",
+    "@lovedeathtransformers",
+    "@machinelearning_ru",
+    "@boris_again",
     "@techsparks",
 ]
 
@@ -140,18 +156,18 @@ def _source_env():
             env["telegram_api_id"] = api_id
             env["telegram_api_hash"] = api_hash
             env["telegram_session"] = _KIBORG_TG_SESSION
-            env["telegram_timeout"] = 90   # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
+            env["telegram_timeout"] = 90  # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
     if ask_llm.available():
         env["content_llm"] = ask_llm.ask
     d = direction.current()
     if d:
-        env["direction"] = d               # руль темы (пусто = без направления, как раньше)
+        env["direction"] = d  # руль темы (пусто = без направления, как раньше)
     paths = folders.current()
     if paths:
-        env["files_paths"] = paths          # источник-папка активен только когда папки заданы
+        env["files_paths"] = paths  # источник-папка активен только когда папки заданы
     rej = rejected.recent()
     if rej:
-        env["rejected"] = rej               # отклонённые «мусором» — генератор/судья не приносят похожее
+        env["rejected"] = rej  # отклонённые «мусором» — генератор/судья не приносят похожее
     return env
 
 
@@ -198,16 +214,22 @@ def _status_from_out(out):
         if src:
             counts[src] = counts.get(src, 0) + 1
     errs = {}
-    for e in (out.get("partial_errors") or []):
+    for e in out.get("partial_errors") or []:
         errs[str(e).split(":", 1)[0].strip()] = str(e)
     sources = {}
     for name in _active_sources():
         cnt = counts.get(name, 0)
-        sources[name] = {"items": cnt, "ok": cnt > 0 and name not in errs,
-                         "error": errs.get(name),
-                         "beta": name not in USER_VERIFIED_SOURCES}  # β в пульте: юзером не проверен
-    return {"checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "degraded": bool(out.get("degraded")), "sources": sources}
+        sources[name] = {
+            "items": cnt,
+            "ok": cnt > 0 and name not in errs,
+            "error": errs.get(name),
+            "beta": name not in USER_VERIFIED_SOURCES,
+        }  # β в пульте: юзером не проверен
+    return {
+        "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "degraded": bool(out.get("degraded")),
+        "sources": sources,
+    }
 
 
 def _atomic_write(path, text):
@@ -252,8 +274,7 @@ def _source_signature():
     titles = [(it.get("title", "") if isinstance(it, dict) else str(it)) for it in items]
     # 5-й элемент — сам `out` гейт-фетча: прогон переиспользует его вместо ВТОРОГО фетча телеги
     # (гейт и cy.run раньше тянули ленту независимо, 2 pyrogram-логина ~90с/тик; см. _run_collect)
-    return (_titles_sig(titles), bool(out.get("degraded")),
-            seen_items.count_fresh(items), _status_from_out(out), out)
+    return (_titles_sig(titles), bool(out.get("degraded")), seen_items.count_fresh(items), _status_from_out(out), out)
 
 
 def _last_sig():
@@ -333,28 +354,31 @@ def _log(goal, out):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
-    rv = (str(r)[:120] if r is not None else "нет")
+    rv = str(r)[:120] if r is not None else "нет"
     line = f"- [{ts}] «{goal}» → {steps} | {out['deliverable']}={rv}"
     note = council_note(out)
     if note:
-        line += f" | совет: {note}"   # тот же хвост, что у ручного прогона — пульт его уже парсит
+        line += f" | совет: {note}"  # тот же хвост, что у ручного прогона — пульт его уже парсит
     dn = _degrade_note(out)
     if dn:
-        line += f" | ⚠ {dn}"          # деградация видна в истории пульта, не только в консоли
+        line += f" | ⚠ {dn}"  # деградация видна в истории пульта, не только в консоли
     line += "\n"
     with open(os.path.join(DATA, "runs.md"), "a", encoding="utf-8") as f:
         f.write(scrub_secrets.scrub_text(line))
 
 
 def main(argv):
-    force = "--force" in argv or "force" in argv           # ручной клик из пульта перебивает гейт
+    force = "--force" in argv or "force" in argv  # ручной клик из пульта перебивает гейт
     nums = [a for a in argv if a.isdigit()]
     n = int(nums[0]) if nums else 1
     n = max(1, min(n, 50))  # предохранитель: не больше 50 прогонов за вызов
-    goal = "приноси свежие идеи"   # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
+    goal = "приноси свежие идеи"  # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
     env = _harvest_env()
-    mode = (f"идеи={ask_llm._MODEL}" if ask_llm.available() else "идеи=stub (ключа нет)") \
-        + f" · источники={'+'.join(_active_sources())} (бюджет {SOURCE_N})" + (" · force" if force else "")
+    mode = (
+        (f"идеи={ask_llm._MODEL}" if ask_llm.available() else "идеи=stub (ключа нет)")
+        + f" · источники={'+'.join(_active_sources())} (бюджет {SOURCE_N})"
+        + (" · force" if force else "")
+    )
 
     cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     total, skipped, total_dropped = 0, 0, 0
@@ -368,7 +392,7 @@ def main(argv):
         else:
             sig, _degraded, fresh_n, status, gate_out = _source_signature()
             if status:
-                _persist_status(status)   # живой статус источников для пульта (даже если прогон пропустим)
+                _persist_status(status)  # живой статус источников для пульта (даже если прогон пропустим)
         if not _should_run(sig, force, fresh_n):
             skipped += 1
             why = "нет новых items (уже разбирали)" if fresh_n == 0 else "источник не изменился"
@@ -381,21 +405,22 @@ def main(argv):
         r = out.get("result")
         added = r if isinstance(r, int) else 0
         total += added
-        total_dropped += int(out.get("dropped_stub") or 0)   # болванки, отсеянные доставкой за тик
+        total_dropped += int(out.get("dropped_stub") or 0)  # болванки, отсеянные доставкой за тик
         if sig is not None:
-            _save_sig(sig)   # запоминаем ленту только после реального прогона
+            _save_sig(sig)  # запоминаем ленту только после реального прогона
         _log(goal, out)
         dn = _degrade_note(out)
         print(f"прогон {i + 1}/{n}: +{added} свежих идей в инбокс" + (f"  ⚠ {dn}" if dn else ""))
 
     print(f"\n{mode}")
     line = f"ЗА ВЫЗОВ добавлено в инбокс: {total} | пропущено (лента не менялась): {skipped}"
-    if total_dropped:   # шапка выше = конфиг-модель; тут ФАКТ: болванки = ключ есть, но сеть/парс подвели
+    if total_dropped:  # шапка выше = конфиг-модель; тут ФАКТ: болванки = ключ есть, но сеть/парс подвели
         line += f" | ⚠ болванок отсеяно (сеть/парс LLM подводили): {total_dropped}"
     print(line)
     inbox_md = os.path.join(_IE_DATA, "inbox.md")
     try:
-        import store as _ie_store   # idea_engine/store.py (idea_engine уже в sys.path через wiring)
+        import store as _ie_store  # idea_engine/store.py (idea_engine уже в sys.path через wiring)
+
         open_n = len(_ie_store.Store(os.path.join(_IE_DATA, "state.json"), cap=0).open_ideas())
         print(f"ВСЕГО в инбоксе (открытых идей): {open_n}")
     except Exception:

@@ -1,6 +1,7 @@
 """Тесты советников (cyborg/advisors.py) — тонкие места без сети/ключей.
 
 Пока: арбитр (RankIdeasAdvisor) прокидывает руль направления из контекста в rank_ideas."""
+
 import os
 import sys
 import unittest
@@ -10,8 +11,7 @@ sys.path.insert(0, BASE)
 
 import advisors  # noqa: E402
 
-_OPTS = [{"id": "A", "title": "трекер сна", "why": "x"},
-         {"id": "B", "title": "агрегатор рецептов", "why": "y"}]
+_OPTS = [{"id": "A", "title": "трекер сна", "why": "x"}, {"id": "B", "title": "агрегатор рецептов", "why": "y"}]
 
 
 def _capturing_advisor():
@@ -30,12 +30,12 @@ class TestRankAdvisorDirection(unittest.TestCase):
     def test_direction_reaches_rank_env(self):
         adv, captured = _capturing_advisor()
         adv.opine("q", _OPTS, {"content_llm": lambda p: "m", "direction": "игры"})
-        self.assertEqual(captured.get("direction"), "игры")   # арбитр судит с рулём
+        self.assertEqual(captured.get("direction"), "игры")  # арбитр судит с рулём
 
     def test_no_direction_no_key(self):
         adv, captured = _capturing_advisor()
         adv.opine("q", _OPTS, {"content_llm": lambda p: "m"})
-        self.assertNotIn("direction", captured)               # без руля ключа нет
+        self.assertNotIn("direction", captured)  # без руля ключа нет
 
 
 class TestAskLlmMaxTokens(unittest.TestCase):
@@ -44,12 +44,15 @@ class TestAskLlmMaxTokens(unittest.TestCase):
 
     def _payload_for(self, adv):
         import json as _json
+
         captured = {}
-        adv._js = __file__                                    # существующий файл -> проходит os.path.exists
+        adv._js = __file__  # существующий файл -> проходит os.path.exists
         orig = advisors.subprocess.run
+
         def fake_run(cmd, **kw):
             captured["p"] = _json.loads(kw["input"])
             return type("P", (), {"returncode": 0, "stdout": '{"ok": true, "text": "5"}'})()
+
         advisors.subprocess.run = fake_run
         try:
             adv._ask(["prov1"], "prompt", 6000)
@@ -64,8 +67,9 @@ class TestAskLlmMaxTokens(unittest.TestCase):
     def test_nocap_subclass_omits_max_tokens(self):
         class _NoCap(advisors.AskLlmAdvisor):
             _MAX_TOKENS = None
+
         payload = self._payload_for(_NoCap())
-        self.assertNotIn("max_tokens", payload["inputs"])     # None -> ключ не кладём (как _IntuitionNoCap)
+        self.assertNotIn("max_tokens", payload["inputs"])  # None -> ключ не кладём (как _IntuitionNoCap)
         self.assertEqual(payload["inputs"]["prompt"], "prompt")
 
 

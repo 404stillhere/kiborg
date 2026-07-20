@@ -9,6 +9,7 @@
      Каждый орган делает только своё: Печень фильтрует, Рука кладёт.
 _load_ie_run монкипатчим на временную папку — не пишем в реальный инбокс/state.
 """
+
 import json
 import os
 import sys
@@ -51,25 +52,23 @@ class TestFinishSink(unittest.TestCase):
             return json.load(f)
 
     def test_routes_to_lane_B_not_A(self):
-        res = finish_sink.run(
-            {"nudge": {"title": "Доделать: x", "why": "почини путь", "folder": "x"}}, {})
+        res = finish_sink.run({"nudge": {"title": "Доделать: x", "why": "почини путь", "folder": "x"}}, {})
         self.assertEqual(res["delivered"], 1)
         self.assertEqual(res["lane"], "B")
         d = self._state()
-        self.assertIsNotNone(d["finish"])                    # дорожка B заполнена
+        self.assertIsNotNone(d["finish"])  # дорожка B заполнена
         self.assertEqual(d["finish"]["title"], "Доделать: x")
-        self.assertEqual(d["ideas"], [])                     # дорожка A НЕ тронута (потолок цел)
+        self.assertEqual(d["ideas"], [])  # дорожка A НЕ тронута (потолок цел)
 
     def test_pipeline_scrubs_secret_on_disk(self):
         # БЕЗОПАСНОСТЬ на уровне конвейера: нудж идёт через wiring._run_finish_sink,
         # где Печень (scrub_secrets) чистит его ДО руки. На диск секрет не попадает.
         secret = "sk-ant-api03-DEADBEEFsecret0000000000000000"
         token = "12345678:AAHrealbottoken0123456789ABCDEFGHIJKLMNOP"
-        wiring._run_finish_sink(
-            {"nudge": {"title": "ротация " + token, "why": "ключ " + secret}}, {})
+        wiring._run_finish_sink({"nudge": {"title": "ротация " + token, "why": "ключ " + secret}}, {})
         blob = json.dumps(self._state(), ensure_ascii=False)
-        self.assertNotIn(secret, blob)                       # sk-ant вычищен Печенью
-        self.assertNotIn("AAHrealbottoken", blob)            # TG-токен вычищен Печенью
+        self.assertNotIn(secret, blob)  # sk-ant вычищен Печенью
+        self.assertNotIn("AAHrealbottoken", blob)  # TG-токен вычищен Печенью
         self.assertIn("[REDACTED]", blob)
 
     def test_hand_alone_is_pure_placement(self):
@@ -79,14 +78,15 @@ class TestFinishSink(unittest.TestCase):
         token = "12345678:AAHrealbottoken0123456789ABCDEFGHIJKLMNOP"
         finish_sink.run({"nudge": {"title": "ротация " + token, "why": "как есть"}}, {})
         blob = json.dumps(self._state(), ensure_ascii=False)
-        self.assertIn("AAHrealbottoken", blob)               # рука положила текст нетронутым
-        self.assertNotIn("[REDACTED]", blob)                 # рука ничего не редактировала
+        self.assertIn("AAHrealbottoken", blob)  # рука положила текст нетронутым
+        self.assertNotIn("[REDACTED]", blob)  # рука ничего не редактировала
 
     def test_write_is_state_locked(self):
         # СТРАЖ (pair_gap, нашла фабрика б-3 2026-07-15): дорожка B пишет state.json ПОД тем же
         # межпроцессным замком, что дорожка A (deliver.py:45) — иначе окно lost-update. Пиним, что
         # finish_sink берёт state_lock на НАШ state.json (раньше писал без замка = асимметрия).
         import store as _store
+
         calls = []
         orig = _store.state_lock
 
@@ -99,13 +99,13 @@ class TestFinishSink(unittest.TestCase):
             finish_sink.run({"nudge": {"title": "Доделать: y", "why": "z"}}, {})
         finally:
             _store.state_lock = orig
-        self.assertIn(self.fake.STATE, calls)                # замок взят на нашем state.json
+        self.assertIn(self.fake.STATE, calls)  # замок взят на нашем state.json
 
     def test_empty_nudge_noop_no_disk(self):
         for empty in (None, {}, "нет", []):
             res = finish_sink.run({"nudge": empty}, {})
             self.assertEqual(res["delivered"], 0)
-        self.assertFalse(os.path.exists(self.fake.STATE))    # диск не тронут вовсе
+        self.assertFalse(os.path.exists(self.fake.STATE))  # диск не тронут вовсе
 
     def test_wired_and_terminal_closed(self):
         organs = wiring.build_organs()
@@ -115,7 +115,7 @@ class TestFinishSink(unittest.TestCase):
         self.assertEqual(sink.produces, ["delivered"])
         self.assertEqual(brain._terminal("nudge", organs), "delivered")  # pair_gap закрыт
         without = [o for o in organs if o.name != "finish_sink"]
-        self.assertEqual(brain._terminal("nudge", without), "nudge")     # без sink застревал
+        self.assertEqual(brain._terminal("nudge", without), "nudge")  # без sink застревал
 
     def test_ideas_goal_does_not_route_finish_sink(self):
         # скептик #4: цель «приноси идеи» НЕ должна тянуть finish_sink (ветка идей не задета),

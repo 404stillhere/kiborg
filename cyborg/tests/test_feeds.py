@@ -1,5 +1,6 @@
 """Тесты набора включённых лент (cyborg/feeds.py): дефолт, сохранение, чистка/канон-порядок,
 пустой набор допустим, только-известные ленты, атомарность записи."""
+
 import json
 import os
 import sys
@@ -35,7 +36,7 @@ class TestFeeds(unittest.TestCase):
     def test_save_persists_to_disk_atomic(self):
         feeds.save(["reddit", "hn"])
         with open(feeds.PATH, encoding="utf-8") as f:
-            json.load(f)                                       # валидный JSON на диске
+            json.load(f)  # валидный JSON на диске
         self.assertFalse(os.path.exists(feeds.PATH + ".tmp"))  # временный файл убран
         self.assertEqual(feeds.load()["enabled"], ["hn", "reddit"])
 
@@ -55,13 +56,13 @@ class TestFeeds(unittest.TestCase):
         self.assertEqual(feeds.enabled(), [])
 
     def test_non_list_save_becomes_empty(self):
-        feeds.save("hn")            # не список → пусто (не падаем)
+        feeds.save("hn")  # не список → пусто (не падаем)
         self.assertEqual(feeds.enabled(), [])
 
     def test_broken_file_falls_back_to_default(self):
         with open(feeds.PATH, "w", encoding="utf-8") as f:
             f.write("{ не json")
-        self.assertEqual(feeds.enabled(), feeds.DEFAULT_FEEDS)   # битый файл → дефолт
+        self.assertEqual(feeds.enabled(), feeds.DEFAULT_FEEDS)  # битый файл → дефолт
 
     def test_missing_key_falls_back_to_default(self):
         # файл есть, но ключа enabled нет (или битого типа) → дефолт, а не пусто
@@ -72,6 +73,7 @@ class TestFeeds(unittest.TestCase):
     def test_all_feeds_match_organ_sources_minus_files(self):
         # инвариант: тумблеры покрывают ровно ленты органа (collect_source._SOURCES) без 'files'
         from organs import collect_source
+
         organ = set(collect_source._SOURCES) - {"files"}
         self.assertEqual(set(feeds.ALL_FEEDS), organ)
 

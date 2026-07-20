@@ -7,6 +7,7 @@
 Значение ключа НИКОГДА не логируем и не возвращаем наружу, кроме самой chain.
 Только stdlib. Файл ключей — в .gitignore.
 """
+
 import os
 
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
@@ -40,7 +41,7 @@ def _read_env_file(fp):
         k, v = k.strip(), v.strip()
         if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
             v = v[1:-1]
-        if k and v:                              # пустое значение = ключ не задан, пропускаем
+        if k and v:  # пустое значение = ключ не задан, пропускаем
             out[k] = v
     return out
 
@@ -57,8 +58,11 @@ def load_keys(path=None):
 def build_chain(path=None):
     """Цепочка провайдеров с ключами (free-first) для context['llm_chain']. Пусто -> []."""
     keys = load_keys(path)
-    return [{"id": pid, "baseUrl": url, "apiKey": keys[key], "model": model}
-            for pid, key, url, model in _SPEC if keys.get(key)]
+    return [
+        {"id": pid, "baseUrl": url, "apiKey": keys[key], "model": model}
+        for pid, key, url, model in _SPEC
+        if keys.get(key)
+    ]
 
 
 def chain_summary(path=None):
@@ -69,7 +73,6 @@ def chain_summary(path=None):
     `apiKey`/`baseUrl` несут секрет (closerouter/gemini-ключи), id+model достаточно для диагноза
     «какая модель ответила / сколько в цепочке». Пусто -> '' (без секретов даже при пустой цепи)."""
     return ", ".join(f"{c['id']}({c['model']})" for c in build_chain(path)) if build_chain(path) else ""
-
 
 
 def available(path=None):
@@ -87,7 +90,11 @@ def available(path=None):
 _COUNCIL_SPEC = {
     "sambanova": ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2"),
     "groq": ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
-    "gemini": ("GEMINI_API_KEY", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "gemini-2.5-flash"),
+    "gemini": (
+        "GEMINI_API_KEY",
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "gemini-2.5-flash",
+    ),
     "mistral": ("MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"),
     "openrouter": ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free"),
     "cohere": ("COHERE_API_KEY", "https://api.cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025"),
@@ -103,7 +110,7 @@ _COUNCIL_SPEC = {
 _COUNCIL_DISABLED = {"cerebras", "gemini"}
 
 
-_COUNCIL_DEADLINE = 50   # жёсткий wall-clock потолок на один вызов рецензента (см. _with_deadline)
+_COUNCIL_DEADLINE = 50  # жёсткий wall-clock потолок на один вызов рецензента (см. _with_deadline)
 
 
 def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):
@@ -113,12 +120,13 @@ def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):
     фоне (демон, умрёт с процессом; его добьёт сокет-таймаут), но СОВЕТ идёт дальше — контракт
     review: рецензент, бросивший исключение, просто выпадает из голосования."""
     import threading
+
     box = {}
 
     def worker():
         try:
             box["r"] = fn()
-        except BaseException as e:   # noqa: BLE001 — любую ошибку донесём вызывающему как раньше
+        except BaseException as e:  # noqa: BLE001 — любую ошибку донесём вызывающему как раньше
             box["e"] = e
 
     t = threading.Thread(target=worker, daemon=True)
@@ -138,10 +146,12 @@ def _openai_chat(url, key, model, system, prompt, timeout=40):
     капле) сокет не ловит — его добивает жёсткий _with_deadline в make_council_chat (2026-07-14)."""
     import json as _json
     import urllib.request
+
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
     body = _json.dumps({"model": model, "messages": msgs, "max_tokens": 1024, "temperature": 0.3}).encode("utf-8")
-    req = urllib.request.Request(url, data=body,
-                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = _json.loads(r.read().decode("utf-8", "replace"))
     return d["choices"][0]["message"]["content"] or ""
@@ -152,13 +162,12 @@ def make_council_chat(path=None):
     _COUNCIL_SPEC по ключам kiborg. Неизвестная/без-ключа модель -> raise (рецензент падает,
     совет продолжает с остальными). None, если ни одного рецензента с ключом нет."""
     keys = load_keys(path)
-    live = {rid: spec for rid, spec in _COUNCIL_SPEC.items()
-            if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED}
+    live = {rid: spec for rid, spec in _COUNCIL_SPEC.items() if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED}
     if not live:
         return None
 
     def chat(model, system, prompt):
-        rid = str(model).split(":")[0]                 # 'gemini' или 'gemini:gemini-2.5-flash'
+        rid = str(model).split(":")[0]  # 'gemini' или 'gemini:gemini-2.5-flash'
         spec = live.get(rid)
         if not spec:
             raise RuntimeError("council: no key/endpoint for reviewer " + str(model))
@@ -175,8 +184,11 @@ def council_models(path=None):
     """Имена рецензентов совета: есть ключ И не отключены (_COUNCIL_DISABLED) И не в интуиции (_SPEC)."""
     keys = load_keys(path)
     intuition_ids = {pid for pid, _, _, _ in _SPEC}
-    return [rid for rid, spec in _COUNCIL_SPEC.items()
-            if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED and rid not in intuition_ids]
+    return [
+        rid
+        for rid, spec in _COUNCIL_SPEC.items()
+        if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED and rid not in intuition_ids
+    ]
 
 
 def orchestra_context(path=None):

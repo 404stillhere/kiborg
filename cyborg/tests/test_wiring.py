@@ -4,6 +4,7 @@
 переданный env и жёстко звал collect_source.run(inputs, {"n": 8, "source": "hn"}) —
 harvest.py-шный SOURCE_N=30 и список sources реально не долетали до живого прогона.
 """
+
 import json
 import os
 import sys
@@ -13,9 +14,9 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import wiring  # noqa: E402
-import seen_items  # noqa: E402
 import ask_llm  # noqa: E402  (last_provider мок для provider-проброса в _run_ideate)
+import seen_items  # noqa: E402
+import wiring  # noqa: E402
 
 
 class TestRunCollectPassesEnv(unittest.TestCase):
@@ -63,8 +64,8 @@ class TestRunCollectPassesEnv(unittest.TestCase):
 
         wiring.collect_source.run = fake_run
         wiring._run_collect({}, {"n": 8, "sources": []})
-        self.assertTrue(captured["_had_sources_key"])   # ключ есть (пустой список не выброшен)
-        self.assertEqual(captured["sources"], [])       # именно [], не hn-дефолт
+        self.assertTrue(captured["_had_sources_key"])  # ключ есть (пустой список не выброшен)
+        self.assertEqual(captured["sources"], [])  # именно [], не hn-дефолт
 
     def test_telegram_creds_reach_collect_source(self):
         # регресс 2026-07-12 (2-й раз): telegram в sources есть, но креды НЕ прокидывались
@@ -76,11 +77,17 @@ class TestRunCollectPassesEnv(unittest.TestCase):
             return {"items": [], "degraded": False}
 
         wiring.collect_source.run = fake_run
-        wiring._run_collect({}, {
-            "n": 30, "sources": ["hn", "telegram"],
-            "telegram_channels": ["@a", "@b"], "telegram_api_id": "1",
-            "telegram_api_hash": "h", "telegram_session": "s",
-        })
+        wiring._run_collect(
+            {},
+            {
+                "n": 30,
+                "sources": ["hn", "telegram"],
+                "telegram_channels": ["@a", "@b"],
+                "telegram_api_id": "1",
+                "telegram_api_hash": "h",
+                "telegram_session": "s",
+            },
+        )
         self.assertEqual(captured["telegram_channels"], ["@a", "@b"])
         self.assertEqual(captured["telegram_api_id"], "1")
         self.assertEqual(captured["telegram_api_hash"], "h")
@@ -97,8 +104,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
             return {"items": [{"title": "x", "source": "files"}], "degraded": False}
 
         wiring.collect_source.run = fake_run
-        wiring._run_collect({}, {"n": 30, "sources": ["files"],
-                                 "files_paths": ["M:/projects/kiborg", "C:/notes"]})
+        wiring._run_collect({}, {"n": 30, "sources": ["files"], "files_paths": ["M:/projects/kiborg", "C:/notes"]})
         self.assertEqual(captured["files_paths"], ["M:/projects/kiborg", "C:/notes"])
         self.assertEqual(captured["sources"], ["files"])
 
@@ -119,9 +125,13 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         # неполон) — заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. _run_collect чистит
         # заголовки scrub_secrets ДО генерации (downstream-scrub поздно — промпт уже ушёл).
         def fake_run(inputs, env):
-            return {"items": [{"title": "config.py — AQ.FAKEfake1234567890abcdefgh", "source": "files"},
-                              {"title": "обычный заголовок без секрета", "source": "files"}],
-                    "degraded": False}
+            return {
+                "items": [
+                    {"title": "config.py — AQ.FAKEfake1234567890abcdefgh", "source": "files"},
+                    {"title": "обычный заголовок без секрета", "source": "files"},
+                ],
+                "degraded": False,
+            }
 
         wiring.collect_source.run = fake_run
         out = wiring._run_collect({}, {"sources": ["files"], "files_paths": ["x"]})
@@ -150,7 +160,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         wiring.collect_source.run = boom
         pf = {"items": [{"title": "из гейта", "id": 1, "source": "telegram"}], "degraded": False}
         out = wiring._run_collect({}, {"prefetched_out": pf})
-        self.assertIs(out, pf)                        # тот же выхлоп гейта, без нового фетча
+        self.assertIs(out, pf)  # тот же выхлоп гейта, без нового фетча
 
     def test_no_prefetch_fetches_normally(self):
         captured = {}
@@ -161,7 +171,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
 
         wiring.collect_source.run = fake_run
         wiring._run_collect({}, {"n": 30, "sources": ["telegram"]})
-        self.assertTrue(captured.get("called"))       # без prefetch — фетчим как раньше
+        self.assertTrue(captured.get("called"))  # без prefetch — фетчим как раньше
 
     def test_invalid_prefetch_falls_back_to_fetch(self):
         # prefetched_out без ключа items (невалидно, напр. сбой гейта) -> фетчим сами
@@ -172,7 +182,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
             return {"items": [], "degraded": False}
 
         wiring.collect_source.run = fake_run
-        wiring._run_collect({}, {"prefetched_out": {"degraded": True}})   # нет items
+        wiring._run_collect({}, {"prefetched_out": {"degraded": True}})  # нет items
         self.assertTrue(captured.get("called"))
 
 
@@ -188,8 +198,11 @@ class TestRunCollectDoesNotFilter(unittest.TestCase):
 
     def test_flag_has_no_effect_on_eyes(self):
         def fake_run(inputs, env):
-            return {"items": [{"title": "A", "source": "hn", "id": 1},
-                              {"title": "B", "source": "hn", "id": 2}], "degraded": False}
+            return {
+                "items": [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}],
+                "degraded": False,
+            }
+
         wiring.collect_source.run = fake_run
         out = wiring._run_collect({}, {"filter_seen_items": True})
         self.assertEqual(len(out["items"]), 2)  # фильтра нет — приносит всё как увидел
@@ -208,6 +221,7 @@ class TestRunIdeateFilterSeenItems(unittest.TestCase):
 
         def fake_run(inputs, env):
             return {"ideas": [], "n_in": len(inputs.get("items") or [])}
+
         wiring.ideate.run = fake_run
 
     def tearDown(self):
@@ -224,9 +238,9 @@ class TestRunIdeateFilterSeenItems(unittest.TestCase):
     def test_flag_on_filters_across_calls(self):
         items = [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}]
         out1 = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
-        self.assertEqual(out1["n_in"], 2)   # первый раз — оба новые
+        self.assertEqual(out1["n_in"], 2)  # первый раз — оба новые
         out2 = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
-        self.assertEqual(out2["n_in"], 0)   # второй раз — те же items, уже видели
+        self.assertEqual(out2["n_in"], 0)  # второй раз — те же items, уже видели
 
 
 class TestRunIdeateRankForcing(unittest.TestCase):
@@ -302,7 +316,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         try:
             op = lambda m: None
             wiring._run_ideate({}, {"on_progress": op})
-            self.assertIs(captured.get("on_progress"), op)   # долетел до органа
+            self.assertIs(captured.get("on_progress"), op)  # долетел до органа
         finally:
             wiring.ideate.run = orig
 
@@ -353,6 +367,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
         # council_config импортируется в wiring ЛОКАЛЬНО (паттерн: top-level dep не плодим),
         # поэтому мокаем через sys.modules — wiring.council_config как атрибута нет.
         import sys
+
         captured = {}
 
         def fake(inputs, env):
@@ -370,11 +385,12 @@ class TestRunIdeateRankForcing(unittest.TestCase):
                 sys.modules["council_config"] = real_cc
             else:
                 del sys.modules["council_config"]
-        self.assertNotIn("llm", captured)             # llm снят → строго офлайн fallback
+        self.assertNotIn("llm", captured)  # llm снят → строго офлайн fallback
 
     def test_rank_enabled_keeps_llm(self):
         # контр-кейс: rank_ideas включен (по умолчанию) → llm доходит до rank_ideas.run.
         import sys
+
         captured = {}
 
         def fake(inputs, env):
@@ -393,7 +409,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
                 sys.modules["council_config"] = real_cc
             else:
                 del sys.modules["council_config"]
-        self.assertIs(captured.get("llm"), content)    # llm дошёл (content приоритетнее)
+        self.assertIs(captured.get("llm"), content)  # llm дошёл (content приоритетнее)
 
     def test_ideate_threads_direction(self):
         captured = {}
@@ -404,7 +420,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
 
         wiring.ideate.run = fake
         wiring._run_ideate({}, {"direction": "железки"})
-        self.assertEqual(captured["direction"], "железки")   # руль долетел до генератора
+        self.assertEqual(captured["direction"], "железки")  # руль долетел до генератора
 
     def test_ideate_no_direction_key_when_absent(self):
         captured = {}
@@ -415,7 +431,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
 
         wiring.ideate.run = fake
         wiring._run_ideate({}, {})
-        self.assertNotIn("direction", captured)              # без руля ключа нет
+        self.assertNotIn("direction", captured)  # без руля ключа нет
 
     def test_rank_threads_direction(self):
         captured = {}
@@ -425,7 +441,7 @@ class TestRunIdeateRankForcing(unittest.TestCase):
             return {"ideas_best": []}
 
         wiring.rank_ideas.run = fake
-        wiring._run_rank({}, {"direction": "игры"})          # без совета -> фолбэк-судья с рулём
+        wiring._run_rank({}, {"direction": "игры"})  # без совета -> фолбэк-судья с рулём
         self.assertEqual(captured["direction"], "игры")
 
 
@@ -434,9 +450,15 @@ class TestRunRankCouncil(unittest.TestCase):
     НЕТ двойного платного вызова судьи (регресс от скептика), откат по сбою/деградации/гварду."""
 
     # пул > keep(=5), иначе _rank_by_council вернёт «отбирать не из чего» до совета
-    IDEAS = [{"title": "A", "why": "a"}, {"title": "B", "why": "b"}, {"title": "C", "why": "c"},
-             {"title": "D", "why": "d"}, {"title": "E", "why": "e"}, {"title": "F", "why": "f"},
-             {"title": "G", "why": "g"}]
+    IDEAS = [
+        {"title": "A", "why": "a"},
+        {"title": "B", "why": "b"},
+        {"title": "C", "why": "c"},
+        {"title": "D", "why": "d"},
+        {"title": "E", "why": "e"},
+        {"title": "F", "why": "f"},
+        {"title": "G", "why": "g"},
+    ]
 
     def setUp(self):
         self._orig_deliberate = wiring.mind.deliberate
@@ -455,8 +477,13 @@ class TestRunRankCouncil(unittest.TestCase):
 
     def test_council_two_voices_ranks_by_score_no_double_call(self):
         def fake_think(q, options, council, context):
-            return {"live": ["rank_ideas", "ask_llm"], "degraded": False, "council_woken": False,
-                    "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3}, "why": "тест"}
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "council_woken": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "why": "тест",
+            }
 
         wiring.mind.deliberate = fake_think
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
@@ -465,40 +492,58 @@ class TestRunRankCouncil(unittest.TestCase):
         # топ-5 по баллу: D(.9) A(.8) F(.7) C(.5) G(.3)
         self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "F", "C", "G"])
         self.assertTrue(all(i["judged"] == "council" for i in out["ideas_best"]))
-        self.assertEqual(self.rank_calls, [])   # НИ ОДНОГО повторного вызова судьи
+        self.assertEqual(self.rank_calls, [])  # НИ ОДНОГО повторного вызова судьи
 
     def test_council_score_wired_to_cards(self):
         # D6 (аудит 2026-07-17): реальный балл совета (0..1) впаян в карточку как 0-10 для бейджа
         # пульта «оценка совета». Раньше balls считались и ВЫБРАСЫВАЛИСЬ → бейдж не рисовался никогда.
         def fake_think(q, options, council, context):
-            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
-                    "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3}, "why": "x"}
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "why": "x",
+            }
 
         wiring.mind.deliberate = fake_think
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
         by_title = {i["title"]: i for i in out["ideas_best"]}
-        self.assertEqual(by_title["D"]["score"], 9.0)   # 0.9 совета → 9.0 бейджа (>=8 high)
-        self.assertEqual(by_title["A"]["score"], 8.0)   # 0.8 → 8.0
-        self.assertEqual(by_title["G"]["score"], 3.0)   # 0.3 → 3.0 (low)
+        self.assertEqual(by_title["D"]["score"], 9.0)  # 0.9 совета → 9.0 бейджа (>=8 high)
+        self.assertEqual(by_title["A"]["score"], 8.0)  # 0.8 → 8.0
+        self.assertEqual(by_title["G"]["score"], 3.0)  # 0.3 → 3.0 (low)
 
     def test_council_emits_live_progress(self):
         # живой суб-прогресс на самом медленном шаге (совет × идеи, минуты): «совет судит N идей»
         def fake_think(q, options, council, context):
-            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
-                    "scores": {i: 0.5 for i in range(len(options))}, "why": "x"}
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {i: 0.5 for i in range(len(options))},
+                "why": "x",
+            }
 
         wiring.mind.deliberate = fake_think
         msgs = []
-        wiring._run_rank({"ideas": self.IDEAS},
-                         {"llm_chain": [{"id": "x"}], "on_progress": msgs.append,
-                          "orchestra": {"models": ["a", "b", "c"], "chat": lambda *a: ""}})
+        wiring._run_rank(
+            {"ideas": self.IDEAS},
+            {
+                "llm_chain": [{"id": "x"}],
+                "on_progress": msgs.append,
+                "orchestra": {"models": ["a", "b", "c"], "chat": lambda *a: ""},
+            },
+        )
         self.assertTrue(any("совет судит 7 идей" in m and "3 рецензентов" in m for m in msgs))
 
     def test_solo_arbiter_reuses_no_second_judge_call(self):
         # интуиция промолчала -> 1 голос (арбитр). Переиспользуем его результат, НЕ зовём судью снова.
         def fake_think(q, options, council, context):
-            return {"live": ["rank_ideas"], "degraded": False, "council_woken": False,
-                    "scores": {0: 0.5, 1: 0.9, 2: 0.1, 3: 0.7, 4: 0.2, 5: 0.6, 6: 0.4}, "why": "solo"}
+            return {
+                "live": ["rank_ideas"],
+                "degraded": False,
+                "council_woken": False,
+                "scores": {0: 0.5, 1: 0.9, 2: 0.1, 3: 0.7, 4: 0.2, 5: 0.6, 6: 0.4},
+                "why": "solo",
+            }
 
         wiring.mind.deliberate = fake_think
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
@@ -506,13 +551,13 @@ class TestRunRankCouncil(unittest.TestCase):
         # топ-5 по баллу: B(.9) D(.7) F(.6) A(.5) G(.4)
         self.assertEqual([i["title"] for i in out["ideas_best"]], ["B", "D", "F", "A", "G"])
         self.assertTrue(all(i["judged"] == "solo" for i in out["ideas_best"]))
-        self.assertEqual(self.rank_calls, [])   # ключевой регресс: второго платного вызова НЕТ
+        self.assertEqual(self.rank_calls, [])  # ключевой регресс: второго платного вызова НЕТ
 
     def test_degraded_all_abstain_falls_back_to_single_judge(self):
         wiring.mind.deliberate = lambda q, o, c, ctx: {"live": [], "degraded": True, "scores": {}}
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
         self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})
-        self.assertEqual(len(self.rank_calls), 1)   # ровно один — прежний судья
+        self.assertEqual(len(self.rank_calls), 1)  # ровно один — прежний судья
 
     def test_council_exception_silent_fallback(self):
         def boom(q, o, c, ctx):
@@ -520,15 +565,15 @@ class TestRunRankCouncil(unittest.TestCase):
 
         wiring.mind.deliberate = boom
         out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
-        self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})   # конвейер не встал
+        self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})  # конвейер не встал
         self.assertEqual(len(self.rank_calls), 1)
 
     def test_no_chain_no_council(self):
         called = []
         wiring.mind.deliberate = lambda *a, **k: called.append(1) or {"live": ["x", "y"], "scores": {}}
-        out = wiring._run_rank({"ideas": self.IDEAS}, {})       # нет llm_chain/orchestra
+        out = wiring._run_rank({"ideas": self.IDEAS}, {})  # нет llm_chain/orchestra
         self.assertEqual(out, {"ideas_best": [{"title": "FALLBACK"}]})
-        self.assertEqual(called, [])                            # в совет даже не заходили
+        self.assertEqual(called, [])  # в совет даже не заходили
 
     def test_council_false_flag_disables(self):
         called = []
@@ -540,7 +585,7 @@ class TestRunRankCouncil(unittest.TestCase):
     def test_small_pool_returns_as_is_without_council(self):
         called = []
         wiring.mind.deliberate = lambda *a, **k: called.append(1) or {}
-        three = self.IDEAS[:3]                                  # <= keep=5 — отбирать не из чего
+        three = self.IDEAS[:3]  # <= keep=5 — отбирать не из чего
         out = wiring._run_rank({"ideas": three}, {"llm_chain": [{"id": "x"}]})
         self.assertEqual(out["ideas_best"], three)
         self.assertEqual(called, [])
@@ -551,8 +596,12 @@ class TestRunRankCouncil(unittest.TestCase):
 
         def fake_think(q, options, council, context):
             seen["q"], seen["ctx"] = q, context
-            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
-                    "scores": {i: 0.5 for i in range(len(options))}, "why": "t"}
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {i: 0.5 for i in range(len(options))},
+                "why": "t",
+            }
 
         wiring.mind.deliberate = fake_think
         wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "direction": "здоровье"})
@@ -564,12 +613,16 @@ class TestRunRankCouncil(unittest.TestCase):
 
         def fake_think(q, options, council, context):
             seen["q"] = q
-            return {"live": ["rank_ideas", "ask_llm"], "degraded": False,
-                    "scores": {i: 0.5 for i in range(len(options))}, "why": "t"}
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {i: 0.5 for i in range(len(options))},
+                "why": "t",
+            }
 
         wiring.mind.deliberate = fake_think
         wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
-        self.assertNotIn("направлении", seen["q"])              # без руля вопрос обычный
+        self.assertNotIn("направлении", seen["q"])  # без руля вопрос обычный
 
 
 class TestIntuitionNoCap(unittest.TestCase):
@@ -596,7 +649,7 @@ class TestIntuitionNoCap(unittest.TestCase):
         finally:
             wiring.advisors.subprocess.run = orig_run
             wiring.advisors.os.path.exists = orig_exists
-        self.assertNotIn("max_tokens", captured["payload"]["inputs"])   # потолок снят (унаследован, _MAX_TOKENS=None)
+        self.assertNotIn("max_tokens", captured["payload"]["inputs"])  # потолок снят (унаследован, _MAX_TOKENS=None)
         self.assertIn("chain", captured["payload"]["env"])
         self.assertEqual(txt, '{"scores":{"0":50}}')
 
@@ -622,16 +675,14 @@ class TestRunIdeateDeferredSeen(unittest.TestCase):
         # живой ключ + осечка -> болванки brain='stub'. Посты НЕ метятся: сбой транзиентный,
         # повторим на следующем тике (раньше метились ДО генерации и сгорали навсегда).
         wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "болванка", "brain": "stub"}]}
-        out = wiring._run_ideate({"items": self._items()},
-                                 {"filter_seen_items": True, "content_llm": lambda p: "x"})
+        out = wiring._run_ideate({"items": self._items()}, {"filter_seen_items": True, "content_llm": lambda p: "x"})
         self.assertTrue(out["ideas"])
-        self.assertEqual(seen_items.load(), {})                  # ничего не сожжено (dict пустой)
+        self.assertEqual(seen_items.load(), {})  # ничего не сожжено (dict пустой)
         self.assertEqual(len(seen_items.filter_fresh(self._items(), mark=False)), 2)  # оба ещё свежи
 
     def test_real_generation_marks_items(self):
         wiring.ideate.run = lambda inp, e: {"ideas": [{"title": "реальная", "brain": "llm"}]}
-        wiring._run_ideate({"items": self._items()},
-                           {"filter_seen_items": True, "content_llm": lambda p: "x"})
+        wiring._run_ideate({"items": self._items()}, {"filter_seen_items": True, "content_llm": lambda p: "x"})
         # успех -> отмечены (формат dict[str,int] с 2026-07-21; проверяем ключи, не ts)
         self.assertEqual(set(seen_items.load().keys()), {"hn:1", "hn:2"})
 
@@ -658,13 +709,13 @@ class TestCollectLockedTgSession(unittest.TestCase):
         held = {}
 
         def fake(inputs, env):
-            held["lock"] = os.path.exists(self.sess + ".lock")   # замок держится В МОМЕНТ фетча
+            held["lock"] = os.path.exists(self.sess + ".lock")  # замок держится В МОМЕНТ фетча
             return {"items": [], "degraded": False}
 
         wiring.collect_source.run = fake
         wiring._collect_locked({}, {"telegram_session": self.sess})
-        self.assertTrue(held["lock"])                            # держали эксклюзивно во время фетча
-        self.assertFalse(os.path.exists(self.sess + ".lock"))   # снят после выхода
+        self.assertTrue(held["lock"])  # держали эксклюзивно во время фетча
+        self.assertFalse(os.path.exists(self.sess + ".lock"))  # снят после выхода
 
     def test_no_lock_without_telegram(self):
         seen = {}
@@ -675,15 +726,15 @@ class TestCollectLockedTgSession(unittest.TestCase):
             return {"items": []}
 
         wiring.collect_source.run = fake
-        wiring._collect_locked({}, {"n": 8})                     # нет telegram_session -> без замка
-        self.assertTrue(seen["called"])                         # фетч всё равно прошёл
-        self.assertFalse(seen.get("any_lock"))                  # замка не было
+        wiring._collect_locked({}, {"n": 8})  # нет telegram_session -> без замка
+        self.assertTrue(seen["called"])  # фетч всё равно прошёл
+        self.assertFalse(seen.get("any_lock"))  # замка не было
 
     def test_second_caller_waits_then_proceeds_no_deadlock(self):
         # «чужой процесс» держит лок -> ждём до таймаута и ПРОХОДИМ (без дедлока), чужой лок не трогаем
         open(self.sess + ".lock", "w").close()
         orig_to = wiring._TG_LOCK_TIMEOUT
-        wiring._TG_LOCK_TIMEOUT = 0.2                            # короткий таймаут — тест быстрый
+        wiring._TG_LOCK_TIMEOUT = 0.2  # короткий таймаут — тест быстрый
         proceeded = {}
 
         def fake(inputs, env):
@@ -695,8 +746,8 @@ class TestCollectLockedTgSession(unittest.TestCase):
             wiring._collect_locked({}, {"telegram_session": self.sess})
         finally:
             wiring._TG_LOCK_TIMEOUT = orig_to
-        self.assertTrue(proceeded["yes"])                       # прошёл по таймауту, не завис
-        self.assertTrue(os.path.exists(self.sess + ".lock"))    # ЧУЖОЙ лок не тронут
+        self.assertTrue(proceeded["yes"])  # прошёл по таймауту, не завис
+        self.assertTrue(os.path.exists(self.sess + ".lock"))  # ЧУЖОЙ лок не тронут
 
 
 class TestRunIdeateProviderSurfaces(unittest.TestCase):

@@ -1,5 +1,6 @@
 """Тест вендоренного органа collect_tg_news: run(inputs, env) с фейковым клиентом, без сети,
 без pyrogram (импорт органа НЕ требует pyrogram — ленивый импорт внутри _make_client)."""
+
 import datetime
 import os
 import sys

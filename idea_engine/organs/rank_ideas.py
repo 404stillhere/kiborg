@@ -10,6 +10,7 @@
   env["keep"] — сколько оставить (default 3); env["llm"] — судья callable(prompt)->str.
 Без судьи или при непарсибельном ответе — фолбэк: первые keep (детерминированно, идеи не теряем).
 """
+
 import json
 import re
 
@@ -37,7 +38,7 @@ def _pick(raw, n, keep):
                 break
         except Exception:
             continue
-    if idxs is None:                       # последний шанс — выдрать числа из top:[...]
+    if idxs is None:  # последний шанс — выдрать числа из top:[...]
         m = re.search(r'"top"\s*:\s*\[([0-9,\s]+)\]', raw)
         if m:
             idxs = [int(x) for x in re.findall(r"\d+", m.group(1))]
@@ -56,21 +57,21 @@ def run(inputs, env):
     ideas = list((inputs or {}).get("ideas") or [])
     keep = int(env.get("keep", 3))
     if len(ideas) <= keep:
-        return {"ideas_best": ideas}       # отбирать не из чего — отдаём как есть
+        return {"ideas_best": ideas}  # отбирать не из чего — отдаём как есть
     llm = env.get("llm")
     if callable(llm):
-        items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')[:100]}"
-                          for i, d in enumerate(ideas))
+        items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')[:100]}" for i, d in enumerate(ideas))
         prompt = RUBRIC.format(n=len(ideas), keep=keep, items=items)
         direction = (env.get("direction") or "").strip()
-        if direction:                       # при прочих равных — идеи В НАПРАВЛЕНИИ выше
-            prompt = (f"Отбираешь под НАПРАВЛЕНИЕ «{direction}»: при прочих равных идея, "
-                      f"бьющая в «{direction}», предпочтительнее.\n" + prompt)
+        if direction:  # при прочих равных — идеи В НАПРАВЛЕНИИ выше
+            prompt = (
+                f"Отбираешь под НАПРАВЛЕНИЕ «{direction}»: при прочих равных идея, "
+                f"бьющая в «{direction}», предпочтительнее.\n" + prompt
+            )
         rejected = [r for r in (env.get("rejected") or []) if r]
-        if rejected:                        # похожее на УЖЕ ОТКЛОНЁННОЕ юзером — в топ не брать
+        if rejected:  # похожее на УЖЕ ОТКЛОНЁННОЕ юзером — в топ не брать
             rej = "\n".join("- " + str(r) for r in rejected)
-            prompt = ("НЕ бери в топ идеи, похожие на эти УЖЕ ОТКЛОНЁННЫЕ (юзер их забраковал):\n"
-                      f"{rej}\n" + prompt)
+            prompt = "НЕ бери в топ идеи, похожие на эти УЖЕ ОТКЛОНЁННЫЕ (юзер их забраковал):\n" f"{rej}\n" + prompt
         idxs = _pick(llm(prompt), len(ideas), keep)
         if idxs:
             picked = set(idxs)
@@ -81,8 +82,7 @@ def run(inputs, env):
                     break
                 if i not in picked:
                     chosen.append(i)
-            return {"ideas_best": [dict(ideas[i], judged=("llm" if i in picked else "fill"))
-                                   for i in chosen[:keep]]}
+            return {"ideas_best": [dict(ideas[i], judged=("llm" if i in picked else "fill")) for i in chosen[:keep]]}
     # фолбэк: первые keep (нет судьи / не распарсили) — идеи не теряем
     return {"ideas_best": [dict(d, judged="fallback") for d in ideas[:keep]]}
 

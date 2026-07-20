@@ -11,8 +11,7 @@ class Organ:
     needs    — {'network':bool, 'key':<имя>, 'prod':bool, 'stub_ok':bool} для прод-гейта.
     """
 
-    def __init__(self, name, purpose, run, role="transform",
-                 produces=None, consumes=None, tags=None, needs=None):
+    def __init__(self, name, purpose, run, role="transform", produces=None, consumes=None, tags=None, needs=None):
         self.name = name
         self.purpose = purpose
         self.run = run
@@ -34,7 +33,7 @@ class Memory:
 
     def __init__(self):
         self.data = {}
-        self.produced = set()   # ключи, ЗАПИСАННЫЕ хоть раз (даже пустым значением)
+        self.produced = set()  # ключи, ЗАПИСАННЫЕ хоть раз (даже пустым значением)
         self.blocked = set()
         self.trace = []
 
@@ -51,7 +50,7 @@ class Memory:
                 if k in ("error", "skipped"):
                     continue
                 self.data[k] = v
-                self.produced.add(k)   # орган отработал этот ключ, даже если значение пустое
+                self.produced.add(k)  # орган отработал этот ключ, даже если значение пустое
                 note["keys"].append(k)
         self.trace.append(note)
         return note

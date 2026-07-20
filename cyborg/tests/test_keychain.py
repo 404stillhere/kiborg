@@ -1,6 +1,7 @@
 """Тесты keychain — распределение ролей ask_llm (интуиция) / orchestra (совет).
 Не зависят от реального llm_keys.env: используют временный файл. Прогон: `python run_tests.py`.
 """
+
 import os
 import sys
 import tempfile
@@ -44,15 +45,20 @@ def test_intuition_is_mistral_chain():
     finally:
         os.remove(p)
 
+
 def test_intuition_fallback_order():
     # порядок цепочки задан юзером: muse-spark → deepseek-v4-pro → nemotron-3-ultra
     p = _keys_file(CLOSEROUTER_API_KEY="cr")
     try:
         chain = keychain.build_chain(p)
         assert [c["model"] for c in chain] == [
-            "meta/muse-spark-1.1", "deepseek/deepseek-v4-pro", "nvidia/nemotron-3-ultra"]
+            "meta/muse-spark-1.1",
+            "deepseek/deepseek-v4-pro",
+            "nvidia/nemotron-3-ultra",
+        ]
     finally:
         os.remove(p)
+
 
 def test_intuition_drops_entries_without_key():
     # элемент цепочки без ключа выпадает (а не роняет всю цепочку): нет CLOSEROUTER -> пусто,
@@ -64,7 +70,8 @@ def test_intuition_drops_entries_without_key():
         assert [c["id"] for c in chain] == ["muse-spark", "deepseek", "nemotron"]
         assert keychain.build_chain(p_none) == []
     finally:
-        os.remove(p_muse); os.remove(p_none)
+        os.remove(p_muse)
+        os.remove(p_none)
 
 
 def test_intuition_chain_length():
@@ -85,9 +92,9 @@ def test_chain_summary_has_no_secrets():
     p = _keys_file(CLOSEROUTER_API_KEY=SECRET)
     try:
         summary = keychain.chain_summary(p)
-        assert SECRET not in summary                      # значение ключа не утекло
-        assert "https://" not in summary                  # endpoint не утёк
-        assert "muse-spark(" in summary                  # все 3 моделей на месте
+        assert SECRET not in summary  # значение ключа не утекло
+        assert "https://" not in summary  # endpoint не утёк
+        assert "muse-spark(" in summary  # все 3 моделей на месте
         assert "deepseek(" in summary
         assert "nemotron(" in summary
         assert keychain.chain_summary(_keys_file()) == ""  # пустая цепь -> '' без секретов
@@ -102,8 +109,8 @@ def test_gemini_disabled_not_in_council():
     p = _keys_file(GEMINI_API_KEY="g")
     try:
         assert "gemini" not in keychain.council_models(p)
-        assert "gemini" in keychain._COUNCIL_SPEC          # спека на месте
-        assert "gemini" in keychain._COUNCIL_DISABLED      # флаг отключения установлен
+        assert "gemini" in keychain._COUNCIL_SPEC  # спека на месте
+        assert "gemini" in keychain._COUNCIL_DISABLED  # флаг отключения установлен
         # один только gemini-ключ -> совет пуст (других рецензентов с ключом нет)
         assert keychain.orchestra_context(p) is None
     finally:
@@ -124,27 +131,35 @@ def test_empty_keys_no_chain_no_council():
 def test_all_others_go_to_council():
     # реш. юзера: все модели, кроме muse-spark/deepseek/nemotron (интуиция) и отключённых
     # (cerebras, gemini) — рецензенты совета.
-    p = _keys_file(SAMBANOVA_API_KEY="a", GROQ_API_KEY="b", CLOSEROUTER_API_KEY="c",
-                   MISTRAL_API_KEY="d", OPENROUTER_API_KEY="e", GEMINI_API_KEY="g",
-                   COHERE_API_KEY="h", NVIDIA_API_KEY="i", CEREBRAS_API_KEY="j")
+    p = _keys_file(
+        SAMBANOVA_API_KEY="a",
+        GROQ_API_KEY="b",
+        CLOSEROUTER_API_KEY="c",
+        MISTRAL_API_KEY="d",
+        OPENROUTER_API_KEY="e",
+        GEMINI_API_KEY="g",
+        COHERE_API_KEY="h",
+        NVIDIA_API_KEY="i",
+        CEREBRAS_API_KEY="j",
+    )
     try:
         council = set(keychain.council_models(p))
-        assert "muse-spark" not in council              # интуиция не в совете
-        assert "deepseek" not in council               # интуиция не в совете
-        assert "nemotron" not in council               # интуиция не в совете
-        assert "gemini" not in council                 # отключён 2026-07-21 (geoblocked)
-        assert "cerebras" not in council               # отключён (ключ 403)
-        assert {"sambanova", "groq", "mistral", "openrouter",
-                "cohere", "nvidia"} <= council
+        assert "muse-spark" not in council  # интуиция не в совете
+        assert "deepseek" not in council  # интуиция не в совете
+        assert "nemotron" not in council  # интуиция не в совете
+        assert "gemini" not in council  # отключён 2026-07-21 (geoblocked)
+        assert "cerebras" not in council  # отключён (ключ 403)
+        assert {"sambanova", "groq", "mistral", "openrouter", "cohere", "nvidia"} <= council
     finally:
         os.remove(p)
+
 
 def test_cerebras_disabled_but_not_deleted():
     # cerebras отключён (реш. юзера) — не в совете, даже с ключом; но спека НЕ удалена
     p = _keys_file(CEREBRAS_API_KEY="j", GEMINI_API_KEY="g")
     try:
         assert "cerebras" not in keychain.council_models(p)
-        assert "cerebras" in keychain._COUNCIL_SPEC       # спека на месте (вернуть = убрать из DISABLED)
+        assert "cerebras" in keychain._COUNCIL_SPEC  # спека на месте (вернуть = убрать из DISABLED)
         assert "cerebras" in keychain._COUNCIL_DISABLED
     finally:
         os.remove(p)
@@ -194,10 +209,11 @@ def test_with_deadline_returns_and_propagates():
 def test_with_deadline_kills_slow_loris():
     # медленный/висящий вызов НЕ морозит совет — жёсткий wall-clock бросает TimeoutError
     import time
+
     t = time.time()
     try:
         keychain._with_deadline(lambda: time.sleep(30), deadline=1)
         assert False, "должен был бросить TimeoutError"
     except TimeoutError:
         pass
-    assert time.time() - t < 5   # уложился в ~1с (deadline), а не ждал 30с
+    assert time.time() - t < 5  # уложился в ~1с (deadline), а не ждал 30с

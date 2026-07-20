@@ -13,6 +13,7 @@
 Код возврата: 0 — все зелёные И реально прогнаны; 1 — падение/ошибка ЛИБО pytest не
 выполнился / 0 собранных тестов (для CI/pre-commit; ловит «нет модуля pytest» и пустой прогон).
 """
+
 import os
 import re
 import subprocess
@@ -43,7 +44,9 @@ def run_package(pkg):
         return {"pkg": pkg, "passed": 0, "failed": 0, "errors": 0, "skipped": True}
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", tests_dir, "-q"],
-        capture_output=True, text=True, cwd=BASE,
+        capture_output=True,
+        text=True,
+        cwd=BASE,
     )
     out = proc.stdout + proc.stderr
     res = {
@@ -101,8 +104,10 @@ def main(argv):
             mark = "FAIL "
         else:
             mark = "NORUN"  # pytest не выполнился / 0 тестов / rc!=0 — НЕ зелёное
-        line = (f"  [{mark}] {r['pkg']:<12} passed={r['passed']} failed={r['failed']} "
-                f"errors={r['errors']} rc={r.get('rc', '?')}")
+        line = (
+            f"  [{mark}] {r['pkg']:<12} passed={r['passed']} failed={r['failed']} "
+            f"errors={r['errors']} rc={r.get('rc', '?')}"
+        )
         print(line)
         if "tail" in r:
             print("        --- хвост pytest ---")

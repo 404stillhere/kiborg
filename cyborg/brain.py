@@ -3,6 +3,7 @@
   - иначе Stub: детерминированный дата-флоу планировщик (без ключа, но реально работает).
 Возвращает {'action':'call'|'finish', 'organ':Organ|None, 'inputs':dict, 'why':str}.
 """
+
 import json
 
 # что цель хочет на выходе -> ключ памяти-результат
@@ -65,16 +66,18 @@ def stub_plan(goal, candidates, memory, deliverable):
     mem_keys = set(k for k in memory.data if memory.has(k))
     # приоритет: (1) кто производит целевой ключ — вперёд; (2) меньше зависимостей;
     # (3) источники раньше трансформеров. Так киборг целится в результат, а не гоняет лишнее.
-    order = sorted(candidates, key=lambda o: (
-        0 if deliverable in o.produces else 1,
-        len(o.consumes),
-        0 if o.role == "source" else 1,
-    ))
+    order = sorted(
+        candidates,
+        key=lambda o: (
+            0 if deliverable in o.produces else 1,
+            len(o.consumes),
+            0 if o.role == "source" else 1,
+        ),
+    )
     for o in order:
         if _runnable(o, mem_keys, memory):
             inputs = {c: memory.data[c] for c in o.consumes}
-            return {"action": "call", "organ": o, "inputs": inputs,
-                    "why": f"{o.role}:{o.name} -> {o.produces}"}
+            return {"action": "call", "organ": o, "inputs": inputs, "why": f"{o.role}:{o.name} -> {o.produces}"}
     return {"action": "finish", "organ": None, "inputs": {}, "why": "нет применимого органа"}
 
 

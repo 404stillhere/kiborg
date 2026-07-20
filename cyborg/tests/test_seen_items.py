@@ -4,6 +4,7 @@
 стабилизированы хешем basename. Старые тесты (контракт filter_fresh/mark_seen/count_fresh/load)
 остаются зелёными — формат под капотом, сигнатуры публичных функций не поменялись.
 """
+
 import json
 import os
 import sys
@@ -39,8 +40,7 @@ class TestSeenItems(unittest.TestCase):
     def test_filter_fresh_second_pass_drops_already_seen(self):
         items = [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}]
         seen_items.filter_fresh(items)  # первый прогон — отмечает оба виденными
-        more = [{"title": "A", "source": "hn", "id": 1},   # старый
-                {"title": "C", "source": "hn", "id": 3}]   # новый
+        more = [{"title": "A", "source": "hn", "id": 1}, {"title": "C", "source": "hn", "id": 3}]  # старый  # новый
         fresh = seen_items.filter_fresh(more)
         self.assertEqual([it["title"] for it in fresh], ["C"])
 
@@ -71,13 +71,13 @@ class TestSeenItems(unittest.TestCase):
         # mark=False: только фильтрует, файл не трогает (пометка отложена до успешной генерации)
         items = [{"title": "A", "source": "hn", "id": 1}]
         self.assertEqual(len(seen_items.filter_fresh(items, mark=False)), 1)
-        self.assertNotIn("hn:1", seen_items.load())                 # НЕ отмечено
+        self.assertNotIn("hn:1", seen_items.load())  # НЕ отмечено
         self.assertEqual(len(seen_items.filter_fresh(items, mark=False)), 1)  # всё ещё свежий
 
     def test_mark_seen_persists(self):
         items = [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}]
-        seen_items.filter_fresh(items, mark=False)                  # не метит
-        seen_items.mark_seen(items)                                 # метит явно
+        seen_items.filter_fresh(items, mark=False)  # не метит
+        seen_items.mark_seen(items)  # метит явно
         self.assertIn("hn:1", seen_items.load())
         self.assertIn("hn:2", seen_items.load())
         self.assertEqual(seen_items.filter_fresh(items, mark=False), [])  # теперь всё виденное
@@ -112,8 +112,8 @@ class TestSeenItems(unittest.TestCase):
         # новый прогон mark_seen → _save должен выкинуть древнюю, оставить новую
         seen_items.mark_seen([{"source": "hn", "id": 2}])
         data = seen_items.load()
-        self.assertNotIn("hn:ancient", data)        # просроченная выкинута
-        self.assertIn("hn:2", data)                  # свежая осталась
+        self.assertNotIn("hn:ancient", data)  # просроченная выкинута
+        self.assertIn("hn:2", data)  # свежая осталась
 
     def test_ttl_keeps_fresh(self):
         # запись моложе TTL остаётся
@@ -129,7 +129,7 @@ class TestSeenItems(unittest.TestCase):
         seen_items.MAX_RECORDS = 5
         try:
             items = [{"source": "hn", "id": i, "title": str(i)} for i in range(10)]
-            seen_items.mark_seen(items)              # 10 → должно обрезаться до 5
+            seen_items.mark_seen(items)  # 10 → должно обрезаться до 5
             data = seen_items.load()
             self.assertEqual(len(data), 5)
         finally:
@@ -139,6 +139,7 @@ class TestSeenItems(unittest.TestCase):
         # files:* — id=абсолютный путь. Ключ должен быть ХЕШОМ basename, а не самим путём
         # (перенос проекта не должен инвалидировать все files-ключи разом).
         import hashlib
+
         key = seen_items._item_key({"source": "files", "id": "M:\\projects\\kiborg\\notes.md"})
         expected = "files:" + hashlib.sha1(b"notes.md").hexdigest()[:12]
         self.assertEqual(key, expected)
@@ -153,7 +154,7 @@ class TestSeenItems(unittest.TestCase):
         # инвалидировал ВСЕ files-ключи разом → весь архив снова становился «свежим».
         k1 = seen_items._item_key({"source": "files", "id": "C:\\old\\proj\\notes.md"})
         k2 = seen_items._item_key({"source": "files", "id": "D:\\new\\location\\notes.md"})
-        self.assertEqual(k1, k2)         # один basename → один ключ
+        self.assertEqual(k1, k2)  # один basename → один ключ
         # а вот разные basename — разные ключи (не коллидируют)
         k3 = seen_items._item_key({"source": "files", "id": "C:\\old\\proj\\other.md"})
         self.assertNotEqual(k1, k3)
@@ -176,6 +177,7 @@ class TestSeenItems(unittest.TestCase):
         # формата одновременно (старые с путём + новые с хешем), и дедуп сломается: тот же
         # файл даст два разных ключа. Нормализация единая для list и dict исходников.
         import hashlib
+
         expected = "files:" + hashlib.sha1(b"README.md").hexdigest()[:12]
         # list-форма
         with open(seen_items.PATH, "w", encoding="utf-8") as f:

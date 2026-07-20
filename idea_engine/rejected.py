@@ -7,6 +7,7 @@ data/rejected.json, чтобы киборг УЧИЛСЯ на отказах, а
 Читается генератором ideate («не придумывай похожее») и судьёй rank_ideas («похожее — ниже»)
 через env["rejected"] (список последних заголовков). Совет над готовыми уже не тратится на то,
 что ты забраковал. Только stdlib (панель/оболочка импортят без venv)."""
+
 import datetime
 import json
 import os
@@ -14,8 +15,8 @@ import os
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 PATH = os.path.join(DATA, "rejected.json")
 
-_MAX = 200          # помним последние N отклонённых (файл не растёт бесконечно)
-_CONTEXT_N = 25     # сколько подавать генератору/судье как «не повторяй» (промпт не раздуть)
+_MAX = 200  # помним последние N отклонённых (файл не растёт бесконечно)
+_CONTEXT_N = 25  # сколько подавать генератору/судье как «не повторяй» (промпт не раздуть)
 
 
 def _load():
@@ -55,8 +56,9 @@ def add(title, why=""):
     key = title.lower()
     if any((it.get("title", "").strip().lower() == key) for it in items):
         return
-    items.append({"title": title[:300], "why": (why or "")[:400],
-                  "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    items.append(
+        {"title": title[:300], "why": (why or "")[:400], "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    )
     _save(items)
 
 

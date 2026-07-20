@@ -8,6 +8,7 @@
 Ключ/сеть орган сам НЕ трогает — только через env["llm"].
 Ценник (effort): «легко» / «средне» / «тяжело» — грубая оценка сил (это добавка Б).
 """
+
 import json
 import re
 
@@ -55,12 +56,14 @@ def _stub(items, k):
     out = []
     for idx in range(k):
         it = items[idx % len(items)] if items else {"title": "—"}
-        out.append({
-            "title": f"Идея по мотиву: {it.get('title', '')[:60]}",
-            "why": "Заголовок наводит на смежный инструмент — проверить нишу.",
-            "effort": _EFFORT[idx % 3],
-            "brain": "stub",
-        })
+        out.append(
+            {
+                "title": f"Идея по мотиву: {it.get('title', '')[:60]}",
+                "why": "Заголовок наводит на смежный инструмент — проверить нишу.",
+                "effort": _EFFORT[idx % 3],
+                "brain": "stub",
+            }
+        )
     return out
 
 
@@ -70,7 +73,7 @@ def _parse(raw, k):
     (3) выдрать {...}-блоки регуляркой. Иначе — пусто (вызыватель уйдёт на stub)."""
     raw = (raw or "").strip()
     objs = []
-    try:                                    # 1) массив объектов (частый ответ Gemini)
+    try:  # 1) массив объектов (частый ответ Gemini)
         v = json.loads(raw)
         if isinstance(v, list):
             objs = [o for o in v if isinstance(o, dict)]
@@ -78,12 +81,13 @@ def _parse(raw, k):
             # модель иногда оборачивает список: {"ideas":[...]} / {"result":[...]} — достаём
             # вложенный список идей, а НЕ считаем обёртку одной ПУСТОЙ карточкой (иначе 12
             # реальных идей внутри теряются, а непустой список из пустышки глушит фолбэк на stub)
-            inner = next((val for val in v.values()
-                          if isinstance(val, list) and any(isinstance(x, dict) for x in val)), None)
+            inner = next(
+                (val for val in v.values() if isinstance(val, list) and any(isinstance(x, dict) for x in val)), None
+            )
             objs = [o for o in inner if isinstance(o, dict)] if inner is not None else [v]
     except Exception:
         pass
-    if not objs:                            # 2) JSONL — по компактному объекту в строке
+    if not objs:  # 2) JSONL — по компактному объекту в строке
         for line in raw.splitlines():
             line = line.strip().rstrip(",")
             if line.startswith("{") and line.endswith("}"):
@@ -91,7 +95,7 @@ def _parse(raw, k):
                     objs.append(json.loads(line))
                 except Exception:
                     pass
-    if not objs:                            # 3) последний шанс — плоские {...}-блоки
+    if not objs:  # 3) последний шанс — плоские {...}-блоки
         for m in re.findall(r"\{[^{}]*\}", raw, re.DOTALL):
             try:
                 objs.append(json.loads(m))
@@ -100,12 +104,14 @@ def _parse(raw, k):
     out = []
     for o in objs:
         if isinstance(o, dict):
-            out.append({
-                "title": o.get("title", ""),
-                "why": o.get("why", ""),
-                "effort": o.get("effort", "средне"),
-                "brain": "llm",
-            })
+            out.append(
+                {
+                    "title": o.get("title", ""),
+                    "why": o.get("why", ""),
+                    "effort": o.get("effort", "средне"),
+                    "brain": "llm",
+                }
+            )
     return out[:k]
 
 
@@ -116,15 +122,15 @@ def run(inputs, env):
     k = int(env.get("k", 3))
     llm = env.get("llm")
     if callable(llm):
-        op = env.get("on_progress")          # опц. живой суб-прогресс (один вызов, но ~5с — даём знать)
+        op = env.get("on_progress")  # опц. живой суб-прогресс (один вызов, но ~5с — даём знать)
         if callable(op):
             op("генерирую %d идей" % k)
         prompt = PROMPT_TMPL.format(k=k, items="\n".join("- " + i.get("title", "") for i in items))
         direction = (env.get("direction") or "").strip()
-        if direction:                       # руль темы — впереди основного запроса
+        if direction:  # руль темы — впереди основного запроса
             prompt = _STEER_TMPL.format(direction=direction) + prompt
         rejected = [r for r in (env.get("rejected") or []) if r]
-        if rejected:                        # учёт отклонённого — «не приноси похожее на забракованное»
+        if rejected:  # учёт отклонённого — «не приноси похожее на забракованное»
             prompt = _AVOID_TMPL.format(rejected="\n".join("- " + str(r) for r in rejected)) + prompt
         ideas = _parse(llm(prompt), k)
         if ideas:
@@ -134,5 +140,4 @@ def run(inputs, env):
 
 
 if __name__ == "__main__":
-    print(json.dumps(run({"items": [{"title": "A tiny CRDT in 200 lines"}]}, {"k": 3}),
-                      ensure_ascii=False, indent=2))
+    print(json.dumps(run({"items": [{"title": "A tiny CRDT in 200 lines"}]}, {"k": 3}), ensure_ascii=False, indent=2))

@@ -2,6 +2,7 @@
 при отборе идей. Дефолт, сохранение, чистка до известных, атомарность записи, защита от
 битого файла/типа. Раньше у модуля не было тестов — добавлены при выносе общего хелпера
 _panel_config (дубль load/save скелета feeds/folders/direction/council_config)."""
+
 import json
 import os
 import sys
@@ -36,7 +37,7 @@ class TestCouncilConfig(unittest.TestCase):
     def test_save_persists_to_disk_atomic(self):
         council_config.save(["ask_llm"])
         with open(council_config.PATH, encoding="utf-8") as f:
-            json.load(f)                                       # валидный JSON на диске
+            json.load(f)  # валидный JSON на диске
         self.assertFalse(os.path.exists(council_config.PATH + ".tmp"))  # tmp убран
         self.assertEqual(council_config.load()["enabled"], ["ask_llm"])
 
@@ -46,7 +47,7 @@ class TestCouncilConfig(unittest.TestCase):
         self.assertEqual(council_config.load()["enabled"], ["rank_ideas", "ask_llm"])
 
     def test_non_list_save_becomes_empty(self):
-        council_config.save("rank_ideas")     # не список → пусто (не падаем)
+        council_config.save("rank_ideas")  # не список → пусто (не падаем)
         self.assertEqual(council_config.load()["enabled"], [])
 
     def test_broken_file_falls_back_to_default(self):

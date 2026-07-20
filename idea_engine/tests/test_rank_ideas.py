@@ -1,4 +1,5 @@
 """Тест судьи идей rank_ideas: отбор топ-k по ответу судьи, фолбэк без судьи/на мусоре, границы."""
+
 import os
 import sys
 import unittest
@@ -30,17 +31,17 @@ class TestRankIdeas(unittest.TestCase):
 
     def test_pool_smaller_than_keep(self):
         out = rank_ideas.run({"ideas": POOL[:2]}, {"keep": 3, "llm": lambda p: '{"top":[0]}'})
-        self.assertEqual(len(out["ideas_best"]), 2)     # отбирать не из чего — отдаём все
+        self.assertEqual(len(out["ideas_best"]), 2)  # отбирать не из чего — отдаём все
 
     def test_out_of_range_indices_fallback(self):
         out = rank_ideas.run({"ideas": POOL}, {"keep": 3, "llm": lambda p: '{"top":[99,100]}'})
-        self.assertEqual(len(out["ideas_best"]), 3)     # мусорные индексы -> фолбэк первые 3
+        self.assertEqual(len(out["ideas_best"]), 3)  # мусорные индексы -> фолбэк первые 3
 
     def test_partial_top_fills_to_keep(self):
         # скептик #3: судья дал ОДИН индекс при keep=3 -> добираем до 3, идеи НЕ теряем
         out = rank_ideas.run({"ideas": POOL}, {"keep": 3, "llm": lambda p: '{"top":[4]}'})
         self.assertEqual(len(out["ideas_best"]), 3)
-        self.assertEqual(out["ideas_best"][0]["title"], "Идея 4")   # выбор судьи первым, judged=llm
+        self.assertEqual(out["ideas_best"][0]["title"], "Идея 4")  # выбор судьи первым, judged=llm
         self.assertEqual(out["ideas_best"][0]["judged"], "llm")
         self.assertTrue(all(b["judged"] == "fill" for b in out["ideas_best"][1:]))
 
@@ -58,18 +59,24 @@ class TestRankIdeas(unittest.TestCase):
     def test_direction_steers_rubric(self):
         # направление попадает в рубрику судьи (при прочих равных — тема в приоритете)
         seen = {}
-        rank_ideas.run({"ideas": POOL},
-                       {"keep": 3, "direction": "здоровье",
-                        "llm": lambda p: seen.setdefault("p", p) or '{"top":[0,1,2]}'})
+        rank_ideas.run(
+            {"ideas": POOL},
+            {"keep": 3, "direction": "здоровье", "llm": lambda p: seen.setdefault("p", p) or '{"top":[0,1,2]}'},
+        )
         self.assertIn("здоровье", seen["p"])
         self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
 
     def test_rejected_downranked_in_prompt(self):
         # отклонённые идеи попадают в рубрику судьи как «не бери в топ похожее» (2026-07-18)
         seen = {}
-        rank_ideas.run({"ideas": POOL},
-                       {"keep": 3, "rejected": ["Клон Trello", "Ещё один RSS"],
-                        "llm": lambda p: seen.setdefault("p", p) or '{"top":[0,1,2]}'})
+        rank_ideas.run(
+            {"ideas": POOL},
+            {
+                "keep": 3,
+                "rejected": ["Клон Trello", "Ещё один RSS"],
+                "llm": lambda p: seen.setdefault("p", p) or '{"top":[0,1,2]}',
+            },
+        )
         self.assertIn("ОТКЛОНЁННЫЕ", seen["p"])
         self.assertIn("Клон Trello", seen["p"])
 

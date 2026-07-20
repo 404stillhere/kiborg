@@ -10,6 +10,7 @@
 Прод-state изолирован через monkeypatch deliver._load_ie_run на фейковый модуль с tmp-путями
 (реальный инбокс НЕ трогаем).
 """
+
 import os
 import sys
 import tempfile
@@ -42,14 +43,17 @@ class TestDeliverStubFilter(unittest.TestCase):
 
     def _open_titles(self):
         from store import Store
+
         return [i["title"] for i in Store(self.state, cap=0).open_ideas()]
 
     def test_all_stub_dropped_when_brain_down(self):
         # Ключ есть (llm_mode), НО вся партия — болванки (нет ни одной brain='llm'): мозг не
         # ответил (402/сеть/пустой). Честное зеркало: фальшивые идеи в инбокс НЕ пускаем (раньше
         # клали «лучше пустоты»). Инбокс остаётся пуст, прогон помечается brain_down.
-        ideas = [{"title": "Идея по мотиву: A", "why": "x", "brain": "stub"},
-                 {"title": "Идея по мотиву: B", "why": "y", "brain": "stub"}]
+        ideas = [
+            {"title": "Идея по мотиву: A", "why": "x", "brain": "stub"},
+            {"title": "Идея по мотиву: B", "why": "y", "brain": "stub"},
+        ]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
         self.assertEqual(out["delivered"], 0)
         self.assertEqual(out["dropped_stub"], 2)
@@ -59,18 +63,22 @@ class TestDeliverStubFilter(unittest.TestCase):
     def test_stub_kept_without_key(self):
         # ключа нет (stub-режим) -> болванки ожидаемы, доставляем как есть.
         # заголовки заведомо различны (без пересечения значимых слов) — дедуп не при делах
-        ideas = [{"title": "Трекер сна для разработчика", "why": "x", "brain": "stub"},
-                 {"title": "Генератор коммитов из мемов", "why": "y", "brain": "stub"}]
+        ideas = [
+            {"title": "Трекер сна для разработчика", "why": "x", "brain": "stub"},
+            {"title": "Генератор коммитов из мемов", "why": "y", "brain": "stub"},
+        ]
         out = deliver.run({"ideas_safe": ideas}, {})
         self.assertEqual(out["delivered"], 2)
         self.assertEqual(out["dropped_stub"], 0)
-        self.assertFalse(out["brain_down"])   # нет ключа → это штатный stub-режим, не отказ мозга
+        self.assertFalse(out["brain_down"])  # нет ключа → это штатный stub-режим, не отказ мозга
         self.assertEqual(len(self._open_titles()), 2)
 
     def test_real_ideas_pass_in_llm_mode(self):
         # живые идеи (brain='llm') при живом ключе доставляются
-        ideas = [{"title": "Ночной агент обхода бэклога", "why": "полезно", "brain": "llm"},
-                 {"title": "Панель метрик домашнего сервера", "why": "полезно", "brain": "llm"}]
+        ideas = [
+            {"title": "Ночной агент обхода бэклога", "why": "полезно", "brain": "llm"},
+            {"title": "Панель метрик домашнего сервера", "why": "полезно", "brain": "llm"},
+        ]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
         self.assertEqual(out["delivered"], 2)
         self.assertEqual(out["dropped_stub"], 0)
@@ -79,8 +87,10 @@ class TestDeliverStubFilter(unittest.TestCase):
 
     def test_mixed_llm_mode_keeps_only_real(self):
         # смесь: живая идея проходит, болванка отсеивается (мозг ответил → не brain_down)
-        ideas = [{"title": "Ночной агент обхода бэклога", "why": "полезно", "brain": "llm"},
-                 {"title": "Идея по мотиву: мусор", "why": "z", "brain": "stub"}]
+        ideas = [
+            {"title": "Ночной агент обхода бэклога", "why": "полезно", "brain": "llm"},
+            {"title": "Идея по мотиву: мусор", "why": "z", "brain": "stub"},
+        ]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
         self.assertEqual(out["delivered"], 1)
         self.assertEqual(out["dropped_stub"], 1)
@@ -90,11 +100,13 @@ class TestDeliverStubFilter(unittest.TestCase):
     def test_dropped_dup_counts_rejected_duplicates(self):
         # две идеи-дубликата (Jaccard>=0.6 → store.add_idea отклоняет вторую как дубль).
         # Новое поведение deliver (незакоммиченная правка): счётчик dropped_dup отражает отказы.
-        ideas = [{"title": "Трекер сна для разработчика", "why": "полезно", "brain": "llm"},
-                 {"title": "Трекер сна для разработчика", "why": "полезно", "brain": "llm"}]
+        ideas = [
+            {"title": "Трекер сна для разработчика", "why": "полезно", "brain": "llm"},
+            {"title": "Трекер сна для разработчика", "why": "полезно", "brain": "llm"},
+        ]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
-        self.assertEqual(out["delivered"], 1)        # первая прошла
-        self.assertEqual(out["dropped_dup"], 1)      # вторая — дубль, отклонена
+        self.assertEqual(out["delivered"], 1)  # первая прошла
+        self.assertEqual(out["dropped_dup"], 1)  # вторая — дубль, отклонена
         self.assertEqual(len(self._open_titles()), 1)
 
     def test_has_room_checked_before_add_when_inbox_full(self):
@@ -103,17 +115,23 @@ class TestDeliverStubFilter(unittest.TestCase):
         # (идея даже не доходит до проверки дубля). Симметрия с обратной тягой store.
         # Имитируем полный инбокс через CFG cap=1 и одну уже лежащую идею.
         deliver._load_ie_run = lambda: types.SimpleNamespace(
-            STATE=self.state, INBOX=os.path.join(self.tmpdir, "inbox.md"),
-            CFG={"cap": 1}, _write_inbox=lambda store: None)
+            STATE=self.state,
+            INBOX=os.path.join(self.tmpdir, "inbox.md"),
+            CFG={"cap": 1},
+            _write_inbox=lambda store: None,
+        )
         from store import Store
+
         store = Store(self.state, cap=1)
         store.add_idea({"title": "уже лежит в инбоксе", "why": "x", "kind": "new"})
         store.save()
-        ideas = [{"title": "совсем другая новая идея", "why": "уникально", "brain": "llm"},
-                 {"title": "ещё одна другая идея", "why": "тоже уникально", "brain": "llm"}]
+        ideas = [
+            {"title": "совсем другая новая идея", "why": "уникально", "brain": "llm"},
+            {"title": "ещё одна другая идея", "why": "тоже уникально", "brain": "llm"},
+        ]
         out = deliver.run({"ideas_safe": ideas}, {"content_llm": lambda p: "x"})
-        self.assertEqual(out["delivered"], 0)        # инбокс полон (cap=1, 1 идея) → ничего не добавилось
-        self.assertEqual(out["dropped_dup"], 0)      # идеи не дошли до проверки дубля (has_room break раньше)
+        self.assertEqual(out["delivered"], 0)  # инбокс полон (cap=1, 1 идея) → ничего не добавилось
+        self.assertEqual(out["dropped_dup"], 0)  # идеи не дошли до проверки дубля (has_room break раньше)
 
 
 if __name__ == "__main__":

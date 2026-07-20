@@ -1,4 +1,5 @@
 """Тесты руля направления (cyborg/direction.py): дефолты, сохранение, чистка пресетов, атомарность."""
+
 import json
 import os
 import sys
@@ -22,7 +23,7 @@ class TestDirection(unittest.TestCase):
 
     def test_default_when_no_file(self):
         d = direction.load()
-        self.assertEqual(d["current"], "")                 # пусто = без направления
+        self.assertEqual(d["current"], "")  # пусто = без направления
         self.assertEqual(d["presets"], direction._DEFAULT_PRESETS)
         self.assertEqual(direction.current(), "")
 
@@ -35,7 +36,7 @@ class TestDirection(unittest.TestCase):
     def test_save_persists_to_disk_atomic(self):
         direction.save(current="игры", presets=["игры", "здоровье"])
         with open(direction.PATH, encoding="utf-8") as f:
-            json.load(f)                                   # валидный JSON на диске
+            json.load(f)  # валидный JSON на диске
         self.assertFalse(os.path.exists(direction.PATH + ".tmp"))
         self.assertEqual(direction.load()["current"], "игры")
         self.assertEqual(direction.load()["presets"], ["игры", "здоровье"])
@@ -48,8 +49,8 @@ class TestDirection(unittest.TestCase):
     def test_current_trimmed_and_capped(self):
         direction.save(current="  " + "x" * 300 + "  ")
         cur = direction.current()
-        self.assertEqual(len(cur), direction._MAX_LEN)     # обрезано по потолку
-        self.assertFalse(cur.startswith(" "))              # затримлено
+        self.assertEqual(len(cur), direction._MAX_LEN)  # обрезано по потолку
+        self.assertFalse(cur.startswith(" "))  # затримлено
 
     def test_presets_capped(self):
         direction.save(presets=[f"тема{i}" for i in range(direction._MAX_PRESETS + 20)])
@@ -58,13 +59,13 @@ class TestDirection(unittest.TestCase):
     def test_clear_current_back_to_none(self):
         direction.save(current="бизнес")
         self.assertEqual(direction.current(), "бизнес")
-        direction.save(current="")                         # снять руль
+        direction.save(current="")  # снять руль
         self.assertEqual(direction.current(), "")
 
     def test_broken_file_falls_to_default(self):
         with open(direction.PATH, "w", encoding="utf-8") as f:
             f.write("{битый json")
-        self.assertEqual(direction.current(), "")          # не падаем, дефолт
+        self.assertEqual(direction.current(), "")  # не падаем, дефолт
         self.assertEqual(direction.load()["presets"], direction._DEFAULT_PRESETS)
 
 

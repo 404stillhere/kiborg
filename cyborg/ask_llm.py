@@ -13,6 +13,7 @@ closerouter-цепочку (deepseek→glm5→muse→codex); 2026-07-16 — ги
 Значение ключа НИКОГДА не логируем и не возвращаем — оно уходит только в chain -> organ.js.
 Только stdlib (subprocess/json) + keychain.
 """
+
 import json
 import os
 import subprocess
@@ -70,19 +71,25 @@ def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
     if not chain or not os.path.exists(_ORGAN_JS):
         return ""
     n = max(1, len(chain))
-    per_provider_ms = max(3000, timeout_ms // n)     # медленный провайдер не съедает весь бюджет
-    payload = {"inputs": {"prompt": prompt, "temperature": temperature},
-               "env": {"chain": chain, "timeout_ms": per_provider_ms}}
+    per_provider_ms = max(3000, timeout_ms // n)  # медленный провайдер не съедает весь бюджет
+    payload = {
+        "inputs": {"prompt": prompt, "temperature": temperature},
+        "env": {"chain": chain, "timeout_ms": per_provider_ms},
+    }
     try:
         # Windows bug: subprocess.run(input=...) не посылает EOF в stdin → organ.js
         # висит ждёт end event. Рабочий вариант — Popen + communicate() (явно закрывает stdin).
-        proc = subprocess.Popen([_NODE_EXE, _ORGAN_JS], stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, encoding="utf-8")
-        stdout, stderr = proc.communicate(input=json.dumps(payload),
-                                          timeout=max(5, timeout_ms // 1000 + 5))
+        proc = subprocess.Popen(
+            [_NODE_EXE, _ORGAN_JS],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        stdout, stderr = proc.communicate(input=json.dumps(payload), timeout=max(5, timeout_ms // 1000 + 5))
     except Exception:
-        return ""                                    # node/сеть упали -> "" -> вызыватель на stub
+        return ""  # node/сеть упали -> "" -> вызыватель на stub
     if proc.returncode != 0 and not stdout.strip():
         return ""
     try:
@@ -90,7 +97,7 @@ def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
     except Exception:
         return ""
     if res.get("ok"):
-        last_provider = res.get("provider") or ""   # кто РЕАЛЬНО ответил (muse-spark / deepseek / nemotron)
+        last_provider = res.get("provider") or ""  # кто РЕАЛЬНО ответил (muse-spark / deepseek / nemotron)
         return _strip_fence(res.get("text") or "")
     last_provider = ""
     return ""

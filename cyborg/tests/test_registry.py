@@ -1,4 +1,5 @@
 """Тест каталога: реестр _shared/organs.json грузится и парсится в карточки."""
+
 import os
 import sys
 import unittest
@@ -9,9 +10,9 @@ sys.path.insert(0, BASE)
 import json  # noqa: E402
 import tempfile  # noqa: E402
 
+import wiring  # noqa: E402
 from registry import load_catalog  # noqa: E402
 from wiring import build_organs  # noqa: E402
-import wiring  # noqa: E402
 
 
 class TestRegistry(unittest.TestCase):
@@ -39,6 +40,7 @@ class TestRegistry(unittest.TestCase):
     def test_ideas_pipeline_chain(self):
         import brain
         import router
+
         orgs = build_organs()
         # терминал цели «идеи» доходит до delivered ЧЕРЕЗ судью и scrub
         self.assertEqual(brain.infer_deliverable("приноси свежие идеи", orgs), "delivered")
@@ -68,7 +70,7 @@ class TestFinishCursor(unittest.TestCase):
         try:
             got = [wiring._run_finish({}, {})["nudge"]["folder"] for _ in range(3)]
             self.assertEqual(got, ["proj0", "proj1", "proj2"])  # ротация, не залипание
-            with open(wiring._CURSOR_FILE, encoding="utf-8") as f:   # with — не течёт хэндл
+            with open(wiring._CURSOR_FILE, encoding="utf-8") as f:  # with — не течёт хэндл
                 self.assertEqual(json.load(f)["cursor"], 3)
         finally:
             wiring._CURSOR_FILE, wiring.finish_step = orig_file, orig_fs

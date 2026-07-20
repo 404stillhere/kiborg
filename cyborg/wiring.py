@@ -3,6 +3,7 @@
 это каталог; сюда по одному переносятся реальные исполняемые органы (совет: расти
 группами, а не подключать все 47 сразу).
 """
+
 import json
 import os
 import sys
@@ -13,15 +14,15 @@ if _IDEA not in sys.path:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from organs import collect_source, ideate, finish_step, rank_ideas, readability_gate  # noqa: E402
-from store import state_lock  # noqa: E402  (O_EXCL-замок; тот же примитив, что вокруг state.json)
-from core import Organ  # noqa: E402
+import advisors  # noqa: E402  (три советника: арбитр rank_ideas + интуиция ask_llm + оркестр)
 import deliver  # noqa: E402  (cyborg/deliver.py — sink в инбокс idea_engine)
 import finish_sink  # noqa: E402  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
-import seen_items  # noqa: E402  (фильтр «уже видели» по ID сырых items — только для харвеста)
-from organs_vendored import scrub_secrets  # noqa: E402  (вендорен из реестра, чистый)
 import mind  # noqa: E402  (движок взвешенного совещания — отбор идей советом, не одним судьёй)
-import advisors  # noqa: E402  (три советника: арбитр rank_ideas + интуиция ask_llm + оркестр)
+import seen_items  # noqa: E402  (фильтр «уже видели» по ID сырых items — только для харвеста)
+from core import Organ  # noqa: E402
+from organs import collect_source, finish_step, ideate, rank_ideas, readability_gate  # noqa: E402
+from organs_vendored import scrub_secrets  # noqa: E402  (вендорен из реестра, чистый)
+from store import state_lock  # noqa: E402  (O_EXCL-замок; тот же примитив, что вокруг state.json)
 
 RECON = "M:/projects/panelofprojects/recon.json"
 SKIP_FOLDERS = []  # folder'ы, которые режим B не толкает (пусто = не фильтровать); knob finish_step
@@ -58,7 +59,7 @@ def _run_collect(inputs, env):
         return pf
     e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
     if env.get("sources") is not None:
-        e["sources"] = env["sources"]   # пробрасываем И пустой список: пусто = «нет источников»,
+        e["sources"] = env["sources"]  # пробрасываем И пустой список: пусто = «нет источников»,
         #                                 collect_source честно вернёт пусто+degraded, не дефолт hn (D7)
     if env.get("timeout"):
         e["timeout"] = env["timeout"]
@@ -67,14 +68,21 @@ def _run_collect(inputs, env):
     # telegram: креды/каналы. files: files_paths (папки-источник) — БЕЗ него _files даёт «no folders
     # configured», весь прогон уходит в 4 захардкоженных заголовка и degraded=True, а папка юзера НЕ
     # читается (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
-    for k in ("telegram_channels", "telegram_api_id", "telegram_api_hash", "telegram_session",
-              "telegram_python", "telegram_timeout", "files_paths"):
+    for k in (
+        "telegram_channels",
+        "telegram_api_id",
+        "telegram_api_hash",
+        "telegram_session",
+        "telegram_python",
+        "telegram_timeout",
+        "files_paths",
+    ):
         if env.get(k) is not None:
             e[k] = env[k]
     # Глаза ТОЛЬКО смотрят — приносят всё, что увидели, без фильтра «уже видели». Помнить,
     # что уже обдумывали, — работа Мозга (см. _run_ideate): фильтр переехал туда 2026-07-13,
     # чтобы метафора не врала (смотреть ≠ помнить).
-    out = _collect_locked(inputs, e)   # под замком tg-сессии, если телеграм в игре
+    out = _collect_locked(inputs, e)  # под замком tg-сессии, если телеграм в игре
     # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести секрет в
     # ЗАГОЛОВКЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ из gitignored
     # gemini.md). Заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. scrub downstream
@@ -112,9 +120,9 @@ def _run_ideate(inputs, env):
     if llm:
         e["llm"] = llm
     if env.get("direction"):
-        e["direction"] = env["direction"]   # руль темы долетает до генератора
+        e["direction"] = env["direction"]  # руль темы долетает до генератора
     if env.get("on_progress"):
-        e["on_progress"] = env["on_progress"]   # живой суб-прогресс долетает до органа (иначе молчит)
+        e["on_progress"] = env["on_progress"]  # живой суб-прогресс долетает до органа (иначе молчит)
     out = ideate.run(inp, e)
     # Метим сырьё виденным ТОЛЬКО ПОСЛЕ генерации и лишь если она удалась. При живом ключе
     # (llm_mode) осечка парса / обрыв даёт brain='stub' — НЕ метим, чтобы посты не сгорели зря:
@@ -134,6 +142,7 @@ def _run_ideate(inputs, env):
     if callable(llm):
         try:
             import ask_llm as _ask
+
             prov = _ask.last_provider
         except Exception:
             prov = ""
@@ -158,8 +167,7 @@ class _IntuitionNoCap(advisors.AskLlmAdvisor):
 def _council_no_cap(context=None):
     """Тот же совет (advisors.build_council), но голос интуиции — БЕЗ потолка (_IntuitionNoCap).
     Арбитр и оркестр берём как есть из их модуля; подменяем только ask_llm."""
-    return [_IntuitionNoCap() if getattr(a, "name", "") == "ask_llm" else a
-            for a in advisors.build_council(context)]
+    return [_IntuitionNoCap() if getattr(a, "name", "") == "ask_llm" else a for a in advisors.build_council(context)]
 
 
 def _rank_by_council(inputs, env, keep):
@@ -178,7 +186,7 @@ def _rank_by_council(inputs, env, keep):
     None только если воздержались ВСЕ (degraded) -> вызыватель идёт на плоский rank_ideas."""
     ideas = list((inputs or {}).get("ideas") or [])
     if len(ideas) <= keep:
-        return {"ideas_best": ideas}                # отбирать не из чего — отдаём как есть
+        return {"ideas_best": ideas}  # отбирать не из чего — отдаём как есть
     # варианты для совета: копия идей с явным id=индекс, чтобы вернуть ИСХОДНЫЕ дикты по id
     options, orig = [], {}
     for i, d in enumerate(ideas):
@@ -191,17 +199,16 @@ def _rank_by_council(inputs, env, keep):
     # кладём в cfg здесь — keychain/advisors их принимают, но сами не трогаются.
     orch = env.get("orchestra")
     if isinstance(orch, dict) and orch.get("models"):
-        orch = {**orch, "max_workers": len(orch["models"]),
-                "timeout_sec": int(env.get("orchestra_timeout_sec", 45))}
+        orch = {**orch, "max_workers": len(orch["models"]), "timeout_sec": int(env.get("orchestra_timeout_sec", 45))}
     context = {
-        "content_llm": _content_llm(env),           # оживляет арбитра живой моделью (иначе фолбэк-порядок)
-        "llm_chain": env.get("llm_chain"),          # оживляет интуицию (цепочка провайдеров с ключами)
-        "orchestra": orch,                          # оркестр: голосует всегда (параллельно, короткий бюджет)
+        "content_llm": _content_llm(env),  # оживляет арбитра живой моделью (иначе фолбэк-порядок)
+        "llm_chain": env.get("llm_chain"),  # оживляет интуицию (цепочка провайдеров с ключами)
+        "orchestra": orch,  # оркестр: голосует всегда (параллельно, короткий бюджет)
         "llm_timeout_ms": env.get("llm_timeout_ms", 45000),
-        "direction": env.get("direction"),          # руль темы: арбитр читает из ctx, интуиция/оркестр — из вопроса
+        "direction": env.get("direction"),  # руль темы: арбитр читает из ctx, интуиция/оркестр — из вопроса
     }
     question = "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость."
-    if env.get("direction"):                        # направление в вопрос → его видят интуиция и оркестр
+    if env.get("direction"):  # направление в вопрос → его видят интуиция и оркестр
         question += f" Приоритет — идеи в направлении «{env['direction']}»."
     # живой суб-прогресс: отбор советом — САМЫЙ медленный шаг (рецензенты × идеи, минуты), а
     # внутренний цикл в mind.deliberate (заморожен) отсюда не видно — даём хотя бы одну строку
@@ -215,14 +222,14 @@ def _rank_by_council(inputs, env, keep):
     # ровно та «пропущу совет, раз уверен» логика, которую юзер не хотел.
     verdict = mind.deliberate(question, options, _council_no_cap(context), context)
     live = verdict.get("live") or []
-    if verdict.get("degraded") or not live:          # никто не проголосовал -> плоский откат на судью
+    if verdict.get("degraded") or not live:  # никто не проголосовал -> плоский откат на судью
         return None
     # Арбитр внутри совета (mind.deliberate) УЖЕ отработал живой моделью (его опрашивают первым). Поэтому и
     # когда голос один (интуиция/оркестр промолчали), берём готовый результат ОТСЮДА, а не зовём
     # rank_ideas.run повторно — иначе второй платный вызов той же модели (нашёл скептик 2026-07-13).
     scores = verdict.get("scores") or {}
     ranked = sorted(orig, key=lambda oid: (-float(scores.get(oid, 0.0)), oid))  # по баллу, стабильно
-    solo = len(live) < 2                             # по факту судил один арбитр (честная пометка)
+    solo = len(live) < 2  # по факту судил один арбитр (честная пометка)
     tag = "solo" if solo else "council"
     best = []
     for oid in ranked[:keep]:
@@ -233,11 +240,12 @@ def _rank_by_council(inputs, env, keep):
         card = dict(o, judged=tag)
         sc = scores.get(oid)
         if sc is not None:
-            card["score"] = round(float(sc) * 10, 1)   # балл совета 0..1 → 0-10 для бейджа «оценка совета» (D6)
+            card["score"] = round(float(sc) * 10, 1)  # балл совета 0..1 → 0-10 для бейджа «оценка совета» (D6)
         best.append(card)
-    return {"ideas_best": best,
-            "council": {"live": live, "solo": solo, "woken": ("orchestra" in live),
-                        "why": verdict.get("why")}}
+    return {
+        "ideas_best": best,
+        "council": {"live": live, "solo": solo, "woken": ("orchestra" in live), "why": verdict.get("why")},
+    }
 
 
 def _run_readability(inputs, env):
@@ -257,10 +265,11 @@ def _run_readability(inputs, env):
         # (тест/stub) — score_llm нет, оценка падает на llm, поведение байт-в-байт как раньше.
         # Переписывание остаётся на llm (temp 0.9 — там живость нужна).
         import ask_llm  # локально: используется только тут, top-level dep не плодим
+
         if llm is ask_llm.ask:
             e["score_llm"] = lambda p: ask_llm.ask(p, temperature=0.2)
     if env.get("on_progress"):
-        e["on_progress"] = env["on_progress"]   # живой суб-прогресс долетает до органа (иначе молчит)
+        e["on_progress"] = env["on_progress"]  # живой суб-прогресс долетает до органа (иначе молчит)
     return readability_gate.run(inputs, e)
 
 
@@ -271,14 +280,12 @@ def _run_rank(inputs, env):
     if llm:
         e["llm"] = llm
     if env.get("direction"):
-        e["direction"] = env["direction"]   # судья-фолбэк тоже учитывает направление
-    
+        e["direction"] = env["direction"]  # судья-фолбэк тоже учитывает направление
+
     # Если все идеи - это болванки (LLM не работает / баланс 0 / оффлайн), то опрашивать совет
     # (оркестр/интуицию) бессмысленно и долго. Сразу переходим на быстрый оффлайн-отбор.
     ideas = (inputs or {}).get("ideas") or []
-    all_stubs = len(ideas) > 0 and all(
-        isinstance(i, dict) and i.get("brain") == "stub" for i in ideas
-    )
+    all_stubs = len(ideas) > 0 and all(isinstance(i, dict) and i.get("brain") == "stub" for i in ideas)
 
     # СОВЕТ в живом цикле (гейт снят юзером 2026-07-13, ход Г): идеи судит взвешенный совет,
     # если есть 2-й живой голос (в env принесли цепочку интуиции / оркестр). Иначе — прежний
@@ -289,9 +296,10 @@ def _run_rank(inputs, env):
             if out is not None:
                 return out
         except Exception:
-            pass                                     # совет никогда не роняет отбор идей
+            pass  # совет никогда не роняет отбор идей
 
     import council_config
+
     if not council_config.is_enabled("rank_ideas"):
         e.pop("llm", None)  # Если арбитр выключен явно, фолбэк строго оффлайн
 
@@ -346,8 +354,8 @@ def _run_finish_sink(inputs, env):
     inp = inputs or {}
     nudge = inp.get("nudge")
     if isinstance(nudge, dict) and nudge:
-        inp = {**inp, "nudge": _liver_clean(nudge)}   # Печень чистит нудж
-    return finish_sink.run(inp, env)                   # Рука кладёт уже вычищенное
+        inp = {**inp, "nudge": _liver_clean(nudge)}  # Печень чистит нудж
+    return finish_sink.run(inp, env)  # Рука кладёт уже вычищенное
 
 
 def _run_scrub(inputs, env):
@@ -374,56 +382,80 @@ def build_organs():
         Organ(
             name="collect_source",
             purpose="Тянет свежие внешние items (новости/сигналы) — сырьё для идей.",
-            run=_run_collect, role="source", produces=["items"], consumes=[],
+            run=_run_collect,
+            role="source",
+            produces=["items"],
+            consumes=[],
             tags=["собрать", "новости", "свежие", "источник", "идеи", "сигналы", "сырьё"],
             needs={"network": True},
         ),
         Organ(
             name="ideate",
             purpose="Из items делает МНОГО идей-кандидатов с ценником (судья отберёт лучшие).",
-            run=_run_ideate, role="transform", produces=["ideas"], consumes=["items"],
+            run=_run_ideate,
+            role="transform",
+            produces=["ideas"],
+            consumes=["items"],
             tags=["идея", "идеи", "идей", "придумать", "предложить"],
             needs={"key": "LLM_KEY", "stub_ok": True},
         ),
         Organ(
             name="rank_ideas",
             purpose="Судья/совет: из пула идей оставляет топ-5 по рубрике (оригинальность/польза/выполнимость).",
-            run=_run_rank, role="transform", produces=["ideas_best"], consumes=["ideas"],
+            run=_run_rank,
+            role="transform",
+            produces=["ideas_best"],
+            consumes=["ideas"],
             tags=["идея", "идеи", "отобрать", "лучшие", "оценить", "судья", "ранжировать"],
             needs={"key": "LLM_KEY", "stub_ok": True},
         ),
         Organ(
             name="finish_step",
             purpose="Режим 'доделать': достаёт следующий шаг по существующим проектам.",
-            run=_run_finish, role="source", produces=["nudge"], consumes=[],
+            run=_run_finish,
+            role="source",
+            produces=["nudge"],
+            consumes=[],
             tags=["доделать", "существующие", "проекты", "шаг", "финиш", "довести"],
             needs={},
         ),
         Organ(
             name="readability_gate",
             purpose="Редактор читаемости: карточку с мутным описанием (балл<7) переписывает самонесущей, идею не теряя.",
-            run=_run_readability, role="transform", produces=["ideas_polished"], consumes=["ideas_best"],
+            run=_run_readability,
+            role="transform",
+            produces=["ideas_polished"],
+            consumes=["ideas_best"],
             tags=["читаемость", "понятно", "описание", "идеи", "редактор", "ясно"],
             needs={"key": "LLM_KEY", "stub_ok": True},
         ),
         Organ(
             name="scrub_secrets",
             purpose="Защитный проход: вычищает креды (sk-/ghp-/AIza/KEY=…) из текста идей перед доставкой.",
-            run=_run_scrub, role="transform", produces=["ideas_safe"], consumes=["ideas_polished"],
+            run=_run_scrub,
+            role="transform",
+            produces=["ideas_safe"],
+            consumes=["ideas_polished"],
             tags=["безопасно", "секрет", "очистить", "идеи", "защита"],
             needs={},
         ),
         Organ(
             name="deliver",
             purpose="Доставляет идеи в инбокс (cap=0 — без потолка, inbox.md; при живом ключе фильтрует stub-болванки).",
-            run=_run_deliver, role="sink", produces=["delivered"], consumes=["ideas_safe"],
+            run=_run_deliver,
+            role="sink",
+            produces=["delivered"],
+            consumes=["ideas_safe"],
             tags=["доставить", "идеи", "инбокс", "прислать", "приноси", "свежие"],
             needs={},
         ),
         Organ(
             name="finish_sink",
             purpose="Доводит подсказку «доделай» до инбокса (через deliver), вычистив секреты из recon.",
-            run=_run_finish_sink, role="sink", produces=["delivered"], consumes=["nudge"],
+            run=_run_finish_sink,
+            role="sink",
+            produces=["delivered"],
+            consumes=["nudge"],
             tags=["доделать", "довести", "шаг", "инбокс", "проекты"],
             needs={},
         ),

@@ -18,6 +18,7 @@
 (даже без правок), иначе конвейер встанет на следующем звене (scrub его потребляет).
 Ключ/сеть орган сам НЕ трогает — только через env["llm"]/env["score_llm"].
 """
+
 import json
 import re
 
@@ -26,7 +27,7 @@ SCORE_TMPL = (
     "Оцени КАЖДОЕ описание: читается ли оно С НУЛЯ, без внешнего контекста.\n"
     "Критерии: самонесущесть (не ссылается на то, чего в карточке нет), сначала суть —\n"
     "потом термины, ясный субъект (кто действует и с кем), пример конкретнее поясняемого слова.\n"
-    "Верни ОДНУ строку JSON и ничего больше: {{\"scores\":[b0,b1,...]}} — балл 0-10 каждой\n"
+    'Верни ОДНУ строку JSON и ничего больше: {{"scores":[b0,b1,...]}} — балл 0-10 каждой\n'
     "карточке ПО ПОРЯДКУ (10 = кристально ясно с нуля).\n"
     "Карточки:\n{items}\n"
 )
@@ -39,15 +40,16 @@ REWRITE_TMPL = (
     "предложения, по-русски. Саму идею не меняй — только сделай описание понятным.\n"
     "Заголовок: {title}\n"
     "Старое описание: {why}\n"
-    "Верни ОДНУ строку JSON и ничего больше: {{\"why\":\"...\"}}\n"
+    'Верни ОДНУ строку JSON и ничего больше: {{"why":"..."}}\n'
 )
 
 
 def _score(llm, ideas):
     """Балл читаемости каждой карточке (по порядку). None -> не смогли распарсить (наверху
     passthrough без правок). Терпимо к формату: цельный JSON / выдрать scores:[...] регуляркой."""
-    items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')}"
-                      for i, d in enumerate(ideas) if isinstance(d, dict))
+    items = "\n".join(
+        f"{i}. {d.get('title', '')} — {d.get('why', '')}" for i, d in enumerate(ideas) if isinstance(d, dict)
+    )
     raw = (llm(SCORE_TMPL.format(n=len(ideas), items=items)) or "").strip()
     arr = None
     for cand in [raw] + raw.splitlines():
@@ -61,7 +63,7 @@ def _score(llm, ideas):
                 break
         except Exception:
             continue
-    if arr is None:                              # последний шанс — числа из scores:[...]
+    if arr is None:  # последний шанс — числа из scores:[...]
         m = re.search(r'"scores"\s*:\s*\[([0-9.,\s]+)\]', raw)
         if m:
             arr = [float(x) for x in re.findall(r"[0-9.]+", m.group(1))]
@@ -99,11 +101,9 @@ def run(inputs, env):
     ideas = list(inp.get("ideas_best") or inp.get("ideas") or [])
     min_score = float(env.get("min_score", 7))
     llm = env.get("llm")
-    all_stubs = len(ideas) > 0 and all(
-        isinstance(i, dict) and i.get("brain") == "stub" for i in ideas
-    )
+    all_stubs = len(ideas) > 0 and all(isinstance(i, dict) and i.get("brain") == "stub" for i in ideas)
     if not callable(llm) or not ideas or all_stubs:
-        return {"ideas_polished": ideas}       # без модели/идей/при болванках — конвейер продолжается как есть
+        return {"ideas_polished": ideas}  # без модели/идей/при болванках — конвейер продолжается как есть
     # ОЦЕНКУ балла судим ВЫДЕЛЕННЫМ низкотемпературным вызовом (score_llm), если дали: temp
     # генератора (0.9) заставляла рассуждающую модель изредка не отдавать чистый JSON scores →
     # карточка проходила без правки. Переписывание остаётся на llm (там нужна живость). Нет
@@ -117,7 +117,7 @@ def run(inputs, env):
         op("читаемость: оцениваю %d карточек" % len(ideas))
     scores = _score(judge, ideas)
     if scores is None:
-        scores = _score(judge, ideas)          # один повтор: судья изредка шумит на первом заходе
+        scores = _score(judge, ideas)  # один повтор: судья изредка шумит на первом заходе
     out = []
     for i, idea in enumerate(ideas):
         if not isinstance(idea, dict):
@@ -148,19 +148,22 @@ def run(inputs, env):
                     if old_s is not None and new_s is not None and new_s > old_s:
                         card["why"] = new_why
                         card["read_fixed"] = True
-                        card["read_score"] = round(new_s, 1)   # балл финального текста (в паре)
+                        card["read_score"] = round(new_s, 1)  # балл финального текста (в паре)
         out.append(card)
     return {"ideas_polished": out}
 
 
 if __name__ == "__main__":
     NEW = "Ошейник для собаки с микрофоном: распознаёт лай и шлёт хозяину, что это было."
+
     def fake(p):
         # батч [c0,c1]: c0 мутная (3) -> перепишем; пара [old,new]: new (9) > old (3) -> правку берём
         if '"scores"' in p:
             return '{"scores":[3,9]}'
         return '{"why":"%s"}' % NEW
-    demo = [{"title": "BarkTalk", "why": "На базе идеи говорящего ошейника — ключевые звуки (щенка в пути)"},
-            {"title": "PayWhenEarn", "why": "Платишь только когда заработал — простая понятная схема без аванса"}]
-    print(json.dumps(run({"ideas_best": demo}, {"llm": fake, "min_score": 7}),
-                      ensure_ascii=False, indent=2))
+
+    demo = [
+        {"title": "BarkTalk", "why": "На базе идеи говорящего ошейника — ключевые звуки (щенка в пути)"},
+        {"title": "PayWhenEarn", "why": "Платишь только когда заработал — простая понятная схема без аванса"},
+    ]
+    print(json.dumps(run({"ideas_best": demo}, {"llm": fake, "min_score": 7}), ensure_ascii=False, indent=2))

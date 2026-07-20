@@ -6,6 +6,7 @@
 Пишем во временные папки через монкипатч глобалей serve.* — реальные файлы пульта не трогаем.
 Только stdlib. Запуск: cd panel && python -m unittest discover -s tests -p "test_*.py"
 """
+
 import json
 import os
 import sys
@@ -32,27 +33,30 @@ class TestReadRuns(unittest.TestCase):
         p = os.path.join(self.tmp, "data", "runs.md")
         with open(p, "w", encoding="utf-8") as f:
             f.write("# журнал\n")
-            f.write("- [2026-07-11 11:52:34] «приноси свежие идеи» → "
-                    "collect_source -> ideate -> deliver | delivered=3\n")
+            f.write(
+                "- [2026-07-11 11:52:34] «приноси свежие идеи» → " "collect_source -> ideate -> deliver | delivered=3\n"
+            )
         runs = serve._read_runs()
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0]["goal"], "приноси свежие идеи")
         self.assertEqual(runs[0]["chain"], ["collect_source", "ideate", "deliver"])
         self.assertEqual(runs[0]["deliverable"], "delivered")
         self.assertEqual(runs[0]["value"], "3")
-        self.assertIsNone(runs[0]["degraded"])        # без хвоста ⚠ = None
-        self.assertIsNone(runs[0]["council"])         # без хвоста совет = None
+        self.assertIsNone(runs[0]["degraded"])  # без хвоста ⚠ = None
+        self.assertIsNone(runs[0]["council"])  # без хвоста совет = None
 
     def test_parses_degraded_tail(self):
         # незакоммиченная правка: _read_runs парсит хвост « | ⚠ <flag>» в поле degraded
         # (то, что harvest._log пишет через _degrade_note → пульт показывает деградацию).
         p = os.path.join(self.tmp, "data", "runs.md")
         with open(p, "w", encoding="utf-8") as f:
-            f.write("- [2026-07-11 11:52:34] «приноси свежие идеи» → "
-                    "collect_source -> deliver | delivered=1 | ⚠ stub-отсеяно=2 · дубликатов=1\n")
+            f.write(
+                "- [2026-07-11 11:52:34] «приноси свежие идеи» → "
+                "collect_source -> deliver | delivered=1 | ⚠ stub-отсеяно=2 · дубликатов=1\n"
+            )
         runs = serve._read_runs()
         self.assertEqual(len(runs), 1)
-        self.assertEqual(runs[0]["deliverable"], "delivered")   # ⚠ отрезан, key=val цел
+        self.assertEqual(runs[0]["deliverable"], "delivered")  # ⚠ отрезан, key=val цел
         self.assertEqual(runs[0]["value"], "1")
         self.assertEqual(runs[0]["degraded"], "stub-отсеяно=2 · дубликатов=1")
 
@@ -61,8 +65,10 @@ class TestReadRuns(unittest.TestCase):
         # потом ⚠. Парсер должен корректно разделить оба, не склеив совет в degraded.
         p = os.path.join(self.tmp, "data", "runs.md")
         with open(p, "w", encoding="utf-8") as f:
-            f.write("- [2026-07-11 11:52:34] «приноси свежие идеи» → ideate | ideas=2 "
-                    "| совет: оркестр ПРОСНУЛСЯ | ⚠ источник в фолбэке\n")
+            f.write(
+                "- [2026-07-11 11:52:34] «приноси свежие идеи» → ideate | ideas=2 "
+                "| совет: оркестр ПРОСНУЛСЯ | ⚠ источник в фолбэке\n"
+            )
         runs = serve._read_runs()
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0]["value"], "2")
@@ -85,9 +91,14 @@ class TestReadSourceStatus(unittest.TestCase):
 
     def test_reads_status(self):
         p = os.path.join(self.tmp, "data", "source_status.json")
-        payload = {"checked_at": "2026-07-12 20:01:58", "degraded": False,
-                   "sources": {"hn": {"items": 6, "ok": True, "error": None},
-                               "reddit": {"items": 0, "ok": False, "error": "reddit: 403"}}}
+        payload = {
+            "checked_at": "2026-07-12 20:01:58",
+            "degraded": False,
+            "sources": {
+                "hn": {"items": 6, "ok": True, "error": None},
+                "reddit": {"items": 0, "ok": False, "error": "reddit: 403"},
+            },
+        }
         with open(p, "w", encoding="utf-8") as f:
             json.dump(payload, f)
         r = serve._read_source_status()
@@ -193,9 +204,9 @@ class TestAutoConfig(unittest.TestCase):
 
     def test_save_clamps_interval_high_and_low(self):
         serve._save_auto(True, 9999)
-        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)   # верх -> 240
+        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)  # верх -> 240
         serve._save_auto(True, 1)
-        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MIN)   # низ -> 5
+        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MIN)  # низ -> 5
 
     def test_load_defaults_when_file_missing(self):
         self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})  # нет файла -> off/30
@@ -208,11 +219,11 @@ class TestAutoConfig(unittest.TestCase):
     def test_load_clamps_stored_out_of_range(self):
         with open(self.f, "w", encoding="utf-8") as fh:
             json.dump({"on": True, "interval_min": 9999}, fh)
-        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)     # clamp и на чтении
+        self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)  # clamp и на чтении
 
     def test_save_is_atomic_no_tmp_leftover(self):
         serve._save_auto(False, 45)
-        self.assertFalse(os.path.exists(self.f + ".tmp"))    # os.replace убрал tmp
+        self.assertFalse(os.path.exists(self.f + ".tmp"))  # os.replace убрал tmp
         self.assertTrue(os.path.exists(self.f))
 
 
@@ -228,16 +239,18 @@ class TestAutoTick(unittest.TestCase):
 
     def tearDown(self):
         run, auto, load, start = self._orig
-        serve.RUN.clear(); serve.RUN.update(run)
-        serve._AUTO.clear(); serve._AUTO.update(auto)
+        serve.RUN.clear()
+        serve.RUN.update(run)
+        serve._AUTO.clear()
+        serve._AUTO.update(auto)
         serve._load_auto = load
         serve._start_proc = start
 
     def test_fires_when_on_due_and_idle(self):
         serve._load_auto = lambda: {"on": True, "interval_min": 30}
-        serve._AUTO["last"] = 0.0                       # давно → пора
+        serve._AUTO["last"] = 0.0  # давно → пора
         serve.RUN["running"] = False
-        self.assertTrue(serve._auto_tick())             # запустил
+        self.assertTrue(serve._auto_tick())  # запустил
         self.assertEqual(len(self.started), 1)
 
     def test_skips_when_off(self):
@@ -249,7 +262,7 @@ class TestAutoTick(unittest.TestCase):
 
     def test_skips_when_not_due(self):
         serve._load_auto = lambda: {"on": True, "interval_min": 30}
-        serve._AUTO["last"] = serve.time.time()         # только что → ещё не пора
+        serve._AUTO["last"] = serve.time.time()  # только что → ещё не пора
         serve.RUN["running"] = False
         self.assertFalse(serve._auto_tick())
         self.assertEqual(self.started, [])
@@ -257,7 +270,7 @@ class TestAutoTick(unittest.TestCase):
     def test_skips_when_busy(self):
         serve._load_auto = lambda: {"on": True, "interval_min": 30}
         serve._AUTO["last"] = 0.0
-        serve.RUN["running"] = True                     # прогон идёт → второй не запускаем
+        serve.RUN["running"] = True  # прогон идёт → второй не запускаем
         self.assertFalse(serve._auto_tick())
         self.assertEqual(self.started, [])
 
@@ -278,29 +291,35 @@ class TestReadLab(unittest.TestCase):
 
     def test_missing_file_absent_not_crash(self):
         # текущее РЕАЛЬНОЕ состояние: .feature-lab снесён → файла нет → витрина пуста, без краха
-        self.assertEqual(serve._read_lab(),
-                         {"exists": False, "locked": False, "features": [], "needs_manual": 0})
+        self.assertEqual(serve._read_lab(), {"exists": False, "locked": False, "features": [], "needs_manual": 0})
 
     def test_corrupt_json_safe(self):
         with open(self.f, "w", encoding="utf-8") as fh:
             fh.write("{битый json")
-        self.assertFalse(serve._read_lab()["exists"])        # битый роутер не роняет /api/state
+        self.assertFalse(serve._read_lab()["exists"])  # битый роутер не роняет /api/state
 
     def test_ready_unreviewed_is_locked(self):
         with open(self.f, "w", encoding="utf-8") as fh:
-            json.dump({"features": [{"slug": "f1", "title": "T", "status": "ready",
-                                     "reviewed": False, "enabled": False, "why": "w"}]}, fh)
+            json.dump(
+                {
+                    "features": [
+                        {"slug": "f1", "title": "T", "status": "ready", "reviewed": False, "enabled": False, "why": "w"}
+                    ]
+                },
+                fh,
+            )
         lab = serve._read_lab()
         self.assertTrue(lab["exists"])
-        self.assertTrue(lab["locked"])                       # готовая непроверенная фича = замок петли
+        self.assertTrue(lab["locked"])  # готовая непроверенная фича = замок петли
         self.assertEqual(lab["features"][0]["slug"], "f1")
 
     def test_reviewed_not_locked(self):
         with open(self.f, "w", encoding="utf-8") as fh:
-            json.dump({"features": [{"slug": "f1", "status": "ready", "reviewed": True}],
-                       "needs_manual": ["x", "y"]}, fh)
+            json.dump(
+                {"features": [{"slug": "f1", "status": "ready", "reviewed": True}], "needs_manual": ["x", "y"]}, fh
+            )
         lab = serve._read_lab()
-        self.assertFalse(lab["locked"])                      # проверена → замка нет
+        self.assertFalse(lab["locked"])  # проверена → замка нет
         self.assertEqual(lab["needs_manual"], 2)
 
 
@@ -316,7 +335,9 @@ class TestKeyState(unittest.TestCase):
 
     def test_both_arms_present(self):
         serve.keychain.build_chain = lambda *a, **k: [
-            {"id": "gemini", "model": "x"}, {"id": "muse-spark", "model": "y"}]
+            {"id": "gemini", "model": "x"},
+            {"id": "muse-spark", "model": "y"},
+        ]
         st = serve._key_state()
         self.assertTrue(st["present"])
         self.assertEqual(st["model"], "gemini→muse-spark")
@@ -332,15 +353,16 @@ class TestKeyState(unittest.TestCase):
     def test_no_keys_absent(self):
         serve.keychain.build_chain = lambda *a, **k: []
         st = serve._key_state()
-        self.assertFalse(st["present"])            # ключей нет → шапка покажет «нет ключа»
+        self.assertFalse(st["present"])  # ключей нет → шапка покажет «нет ключа»
 
     def test_id_only_no_secret_leak(self):
         # печатаем ТОЛЬКО id плеча, не model/apiKey/baseUrl (защита от утечки ключа в шапку)
         serve.keychain.build_chain = lambda *a, **k: [
-            {"id": "gemini", "model": "gemini-2.5-flash-lite", "apiKey": "SECRET", "baseUrl": "u"}]
+            {"id": "gemini", "model": "gemini-2.5-flash-lite", "apiKey": "SECRET", "baseUrl": "u"}
+        ]
         st = serve._key_state()
         self.assertNotIn("SECRET", st["model"])
-        self.assertNotIn("gemini-2.5-flash-lite", st["model"])   # model-строка не в бейдже
+        self.assertNotIn("gemini-2.5-flash-lite", st["model"])  # model-строка не в бейдже
         self.assertEqual(st["model"], "gemini")
 
 
