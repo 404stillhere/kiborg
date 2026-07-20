@@ -1,5 +1,6 @@
 """Тест парсера ideate: терпим к формату модели (массив Gemini / JSONL / мусор),
 падение на stub при непарсибельном, ценник по умолчанию."""
+
 import os
 import sys
 import unittest
@@ -25,12 +26,12 @@ ARRAY = """[
   }
 ]"""
 
-JSONL = ('{"title":"Идея A","why":"раз","effort":"легко"}\n'
-         '{"title":"Идея B","why":"два","effort":"тяжело"}')
+JSONL = '{"title":"Идея A","why":"раз","effort":"легко"}\n' '{"title":"Идея B","why":"два","effort":"тяжело"}'
 
 # модель обернула список в объект — частый ответ рассуждающих моделей на JSON-схему
-WRAPPED = ('{"ideas":[{"title":"Идея A","why":"раз","effort":"легко"},'
-           '{"title":"Идея B","why":"два","effort":"средне"}]}')
+WRAPPED = (
+    '{"ideas":[{"title":"Идея A","why":"раз","effort":"легко"},' '{"title":"Идея B","why":"два","effort":"средне"}]}'
+)
 
 
 class TestIdeateParse(unittest.TestCase):
@@ -38,7 +39,7 @@ class TestIdeateParse(unittest.TestCase):
         out = ideate.run({"items": ITEMS}, {"k": 3, "llm": lambda p: ARRAY})
         ideas = out["ideas"]
         self.assertEqual(len(ideas), 2)
-        self.assertEqual(ideas[0]["brain"], "llm")          # не свалились на stub
+        self.assertEqual(ideas[0]["brain"], "llm")  # не свалились на stub
         self.assertEqual(ideas[0]["title"], "CRDT-песочница")
         self.assertEqual(ideas[1]["effort"], "легко")
 
@@ -53,7 +54,7 @@ class TestIdeateParse(unittest.TestCase):
         out = ideate.run({"items": ITEMS}, {"k": 3, "llm": lambda p: WRAPPED})
         self.assertEqual([i["title"] for i in out["ideas"]], ["Идея A", "Идея B"])
         self.assertTrue(all(i["brain"] == "llm" for i in out["ideas"]))
-        self.assertTrue(all(i["title"] for i in out["ideas"]))   # карточки не пустые
+        self.assertTrue(all(i["title"] for i in out["ideas"]))  # карточки не пустые
 
     def test_respects_k_limit(self):
         out = ideate.run({"items": ITEMS}, {"k": 1, "llm": lambda p: ARRAY})
@@ -71,8 +72,9 @@ class TestIdeateParse(unittest.TestCase):
     def test_direction_steers_prompt(self):
         # руль темы попадает в запрос модели (генератор гнёт идеи в направление)
         seen = {}
-        ideate.run({"items": ITEMS},
-                   {"k": 2, "direction": "железки", "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        ideate.run(
+            {"items": ITEMS}, {"k": 2, "direction": "железки", "llm": lambda p: seen.setdefault("p", p) or ARRAY}
+        )
         self.assertIn("железки", seen["p"])
         self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
 
@@ -91,17 +93,23 @@ class TestIdeateParse(unittest.TestCase):
     def test_on_progress_optional_no_llm(self):
         # без llm (stub) колбэк не зовётся и ничего не ломается; не-callable — тоже безопасно
         msgs = []
-        ideate.run({"items": ITEMS}, {"k": 2, "on_progress": msgs.append})   # stub-путь
+        ideate.run({"items": ITEMS}, {"k": 2, "on_progress": msgs.append})  # stub-путь
         self.assertEqual(msgs, [])
-        self.assertEqual(len(ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: ARRAY,
-                                                           "on_progress": "nope"})["ideas"]), 2)
+        self.assertEqual(
+            len(ideate.run({"items": ITEMS}, {"k": 2, "llm": lambda p: ARRAY, "on_progress": "nope"})["ideas"]), 2
+        )
 
     def test_rejected_avoided_in_prompt(self):
         # отклонённые идеи попадают в запрос как «не приноси похожее» (учёт на отказах 2026-07-18)
         seen = {}
-        ideate.run({"items": ITEMS},
-                   {"k": 2, "rejected": ["Ещё один todo-лист", "Клон Notion"],
-                    "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        ideate.run(
+            {"items": ITEMS},
+            {
+                "k": 2,
+                "rejected": ["Ещё один todo-лист", "Клон Notion"],
+                "llm": lambda p: seen.setdefault("p", p) or ARRAY,
+            },
+        )
         self.assertIn("ОТКЛОНЁННЫЕ", seen["p"])
         self.assertIn("Ещё один todo-лист", seen["p"])
         self.assertIn("Клон Notion", seen["p"])

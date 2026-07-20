@@ -5,6 +5,7 @@
 /api/council (рубильники совета) — под фичи направление/папки/тумблеры-лент/совет + общие гейты
 do_POST: Content-Type (415), битый JSON (400), тип тела (400). folders/direction/feeds/council
 пишут в temp (реальные data/*.json не трогаем)."""
+
 import json
 import os
 import shutil
@@ -34,14 +35,18 @@ class TestServeRoutes(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
-        cls.srv.server_close()        # закрыть слушающий сокет (shutdown лишь останавливает serve_forever)
+        cls.srv.server_close()  # закрыть слушающий сокет (shutdown лишь останавливает serve_forever)
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="serve_routes_")
         # все пишущие роуты уводим в temp — реальные конфиги/раскладку/авто не трогаем
-        self._saved = {"fp": serve.folders.PATH, "dp": serve.direction.PATH,
-                       "auto": serve.AUTO_FILE, "feeds": serve.feeds.PATH,
-                       "cc": serve.council_config.PATH}
+        self._saved = {
+            "fp": serve.folders.PATH,
+            "dp": serve.direction.PATH,
+            "auto": serve.AUTO_FILE,
+            "feeds": serve.feeds.PATH,
+            "cc": serve.council_config.PATH,
+        }
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
         serve.AUTO_FILE = os.path.join(self.tmp, "auto.json")
@@ -57,8 +62,9 @@ class TestServeRoutes(unittest.TestCase):
 
     def _post(self, path, body=None, ctype="application/json", raw=None):
         data = raw if raw is not None else json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=data,
-                                     headers={"Content-Type": ctype}, method="POST")
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}", data=data, headers={"Content-Type": ctype}, method="POST"
+        )
         try:
             with urllib.request.urlopen(req, timeout=5) as r:
                 return r.status, json.loads(r.read().decode("utf-8"))
@@ -76,7 +82,7 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/folders", {"paths": ["M:/x", "M:\\x", "C:/y/"]})
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
-        self.assertEqual(body["paths"], ["M:/x", "C:/y"])   # дедуп (M:\x==M:/x) + снят хвостовой /
+        self.assertEqual(body["paths"], ["M:/x", "C:/y"])  # дедуп (M:\x==M:/x) + снят хвостовой /
 
     def test_folders_non_list_rejected(self):
         code, body = self._post("/api/folders", {"paths": "не список"})
@@ -92,7 +98,7 @@ class TestServeRoutes(unittest.TestCase):
             code, body = self._post("/api/folders", {"paths": [d]})
             self.assertEqual(code, 200)
             self.assertIn("probe", body)
-            saved = body["paths"][0]                          # сервер нормализует путь — берём его
+            saved = body["paths"][0]  # сервер нормализует путь — берём его
             self.assertTrue(body["probe"][saved]["exists"])
             self.assertGreaterEqual(body["probe"][saved]["files"], 1)
         finally:
@@ -103,7 +109,7 @@ class TestServeRoutes(unittest.TestCase):
         try:
             with open(os.path.join(d, "b.md"), "w", encoding="utf-8") as f:
                 f.write("# b\n")
-            self._post("/api/folders", {"paths": [d]})       # сохранили в temp folders.json
+            self._post("/api/folders", {"paths": [d]})  # сохранили в temp folders.json
             code, body = self._get("/api/folders/probe")
             self.assertEqual(code, 200)
             self.assertIn("probe", body)
@@ -114,12 +120,12 @@ class TestServeRoutes(unittest.TestCase):
     def test_folders_toggle_off_excluded_from_paths(self):
         # новый формат с тумблерами (2026-07-18): выключенная папка остаётся в списке, но НЕ в paths
         # (прогон читает только включённые). folders — полный список для пульта, paths — для прогона.
-        code, body = self._post("/api/folders",
-                                {"folders": [{"path": "M:/on", "on": True},
-                                             {"path": "M:/off", "on": False}]})
+        code, body = self._post(
+            "/api/folders", {"folders": [{"path": "M:/on", "on": True}, {"path": "M:/off", "on": False}]}
+        )
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
-        self.assertEqual(body["paths"], ["M:/on"])                     # прогон видит только включённые
+        self.assertEqual(body["paths"], ["M:/on"])  # прогон видит только включённые
         self.assertEqual([f["path"] for f in body["folders"]], ["M:/on", "M:/off"])
         self.assertEqual([f["on"] for f in body["folders"]], [True, False])
 
@@ -150,11 +156,11 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/feeds", {"enabled": ["telegram", "hn", "telegram", "myspace"]})
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
-        self.assertEqual(body["enabled"], ["hn", "telegram"])   # канон-порядок ALL_FEEDS, дедуп, мусор снят
+        self.assertEqual(body["enabled"], ["hn", "telegram"])  # канон-порядок ALL_FEEDS, дедуп, мусор снят
         self.assertEqual(body["all"], serve.feeds.ALL_FEEDS)
 
     def test_feeds_empty_all_off(self):
-        code, body = self._post("/api/feeds", {"enabled": []})   # все ленты выключены — законно
+        code, body = self._post("/api/feeds", {"enabled": []})  # все ленты выключены — законно
         self.assertEqual(code, 200)
         self.assertEqual(body["enabled"], [])
 
@@ -190,11 +196,12 @@ class TestServeRoutes(unittest.TestCase):
     def test_council_valid_canonicalizes(self):
         # рубильники совета: произвольный порядок + дубль + неизвестное → канон-порядок ALL_ADVISORS,
         # только известные. /api/council был единственным ПИШУЩИМ POST-роутом без route-теста (фабрика б-3)
-        code, body = self._post("/api/council",
-                                {"enabled": ["orchestra", "ask_llm", "bogus", "rank_ideas", "orchestra"]})
+        code, body = self._post(
+            "/api/council", {"enabled": ["orchestra", "ask_llm", "bogus", "rank_ideas", "orchestra"]}
+        )
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
-        self.assertEqual(body["enabled"], ["rank_ideas", "ask_llm", "orchestra"])   # порядок ALL_ADVISORS
+        self.assertEqual(body["enabled"], ["rank_ideas", "ask_llm", "orchestra"])  # порядок ALL_ADVISORS
         self.assertEqual(body["all"], serve.council_config.ALL_ADVISORS)
 
     def test_council_empty_all_off(self):
@@ -223,7 +230,7 @@ class TestServeRoutes(unittest.TestCase):
         self.assertEqual(code, 404)
 
     def test_idea_bad_id_rejected(self):
-        code, body = self._post("/api/idea", {"status": "take"})     # без id → не доходит до подпроцесса
+        code, body = self._post("/api/idea", {"status": "take"})  # без id → не доходит до подпроцесса
         self.assertEqual(code, 400)
         self.assertFalse(body["ok"])
 
@@ -231,7 +238,7 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/auto", {"on": True, "interval_min": 9999})
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
-        self.assertEqual(body["interval_min"], serve._AUTO_MAX)      # 9999 обрезан до потолка
+        self.assertEqual(body["interval_min"], serve._AUTO_MAX)  # 9999 обрезан до потолка
         self.assertTrue(body["on"])
 
     def test_auto_bad_interval_rejected(self):
@@ -250,7 +257,8 @@ class TestServeRoutes(unittest.TestCase):
             f"http://127.0.0.1:{self.port}/api/feeds",
             data=json.dumps({"enabled": []}).encode("utf-8"),
             headers={"Content-Type": "application/json", "Origin": "http://evil.example.com"},
-            method="POST")
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(req, timeout=5) as r:
                 code, resp = r.status, json.loads(r.read().decode("utf-8"))
@@ -260,7 +268,7 @@ class TestServeRoutes(unittest.TestCase):
         self.assertFalse(resp["ok"])
 
     def test_stop_nothing_to_stop(self):
-        code, body = self._post("/api/stop", {})                     # прогон не идёт → нечего останавливать
+        code, body = self._post("/api/stop", {})  # прогон не идёт → нечего останавливать
         self.assertEqual(code, 200)
         self.assertFalse(body["ok"])
 
@@ -275,13 +283,13 @@ class TestServeRoutes(unittest.TestCase):
             serve._start_run = orig
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
-        self.assertEqual(got["goal"], "принеси идеи вторая строка")   # \n схлопнут, обрезано до 200
+        self.assertEqual(got["goal"], "принеси идеи вторая строка")  # \n схлопнут, обрезано до 200
 
     def test_run_empty_goal_rejected(self):
         orig = serve._start_run
         serve._start_run = lambda goal: True
         try:
-            code, body = self._post("/api/run", {"goal": "   "})      # пусто после strip → 400
+            code, body = self._post("/api/run", {"goal": "   "})  # пусто после strip → 400
         finally:
             serve._start_run = orig
         self.assertEqual(code, 400)
@@ -310,9 +318,11 @@ class TestServeRoutes(unittest.TestCase):
         # /api/state и /api/folders/probe (try/except). Раньше /api/run был единственный GET без
         # error-ветки → необработанный трейсбек в лог, пульту пустой 500.
         orig_run = serve.RUN
+
         class _Boom(dict):
             def __getitem__(self, k):
                 raise RuntimeError("RUN порчен")
+
         serve.RUN = _Boom()
         try:
             code, body = self._get("/api/run")

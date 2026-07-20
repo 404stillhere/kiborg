@@ -1,4 +1,5 @@
 """Тест вендоренного органа scrub_secrets и его адаптера в обвязке."""
+
 import os
 import sys
 import tempfile
@@ -7,9 +8,9 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
-from organs_vendored import scrub_secrets  # noqa: E402
-import wiring  # noqa: E402
 import run  # noqa: E402  (проверяем, что _log_run вычищает лог)
+import wiring  # noqa: E402
+from organs_vendored import scrub_secrets  # noqa: E402
 
 
 class TestScrub(unittest.TestCase):
@@ -23,11 +24,16 @@ class TestScrub(unittest.TestCase):
         self.assertEqual(scrub_secrets.scrub_text(clean), clean)
 
     def test_scrub_organ_cleans_ideas(self):
-        out = wiring._run_scrub({"ideas": [
-            {"title": "ok", "why": "ключ AKIA1234567890ABCDEF внутри текста"},
-            {"title": "clean", "why": "всё нормально"},
-        ]}, {})
-        self.assertEqual(out["redacted"], 1)                 # ровно одну идею почистили
+        out = wiring._run_scrub(
+            {
+                "ideas": [
+                    {"title": "ok", "why": "ключ AKIA1234567890ABCDEF внутри текста"},
+                    {"title": "clean", "why": "всё нормально"},
+                ]
+            },
+            {},
+        )
+        self.assertEqual(out["redacted"], 1)  # ровно одну идею почистили
         self.assertNotIn("AKIA1234567890ABCDEF", str(out["ideas_safe"]))
         self.assertIn("[REDACTED]", str(out["ideas_safe"]))
 
@@ -55,9 +61,11 @@ class TestScrub(unittest.TestCase):
 
     def test_scrub_jwt(self):
         # JWT (три base64url-сегмента) — session/id-токен, прежде проходил насквозь. ФЕЙКОВЫЙ.
-        jwt = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-               "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ."
-               "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVFAKEsig")
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVFAKEsig"
+        )
         s = scrub_secrets.scrub_text("токен " + jwt + " хвост")
         self.assertNotIn("SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJVFAKEsig", s)
         self.assertIn("[REDACTED]", s)
@@ -67,7 +75,7 @@ class TestScrub(unittest.TestCase):
         s = scrub_secrets.scrub_text("db: mongodb://admin:s3cretP4ssword@db.internal:27017/app")
         self.assertNotIn("s3cretP4ssword", s)
         self.assertIn("[REDACTED]", s)
-        self.assertIn("@db.internal", s)                     # хост не потерян
+        self.assertIn("@db.internal", s)  # хост не потерян
 
     def test_scrub_slack_discord_webhooks(self):
         slack = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
@@ -88,8 +96,12 @@ class TestScrub(unittest.TestCase):
         orig = run.DATA
         run.DATA = tmp
         try:
-            out = {"goal": "доделай проект", "deliverable": "nudge", "trace": [{"organ": "finish_step"}],
-                   "result": {"why": "ротировать sk-ant-api03-DEADBEEF0000000000000000secret"}}
+            out = {
+                "goal": "доделай проект",
+                "deliverable": "nudge",
+                "trace": [{"organ": "finish_step"}],
+                "result": {"why": "ротировать sk-ant-api03-DEADBEEF0000000000000000secret"},
+            }
             run._log_run(out)
             with open(os.path.join(tmp, "runs.md"), encoding="utf-8") as f:
                 body = f.read()

@@ -12,37 +12,38 @@
 .console) показывал строки по мере появления. Запуск: кнопкой «👁 Наблюдать» в пульте
 (/api/observe) или из CLI: python observe_sources.py
 """
+
 import os
 import sys
 import time
 
-_HERE = os.path.dirname(os.path.abspath(__file__))          # .../kiborg/cyborg
-_KIBORG = os.path.dirname(_HERE)                             # .../kiborg
-sys.path.insert(0, _HERE)                                    # cyborg (harvest, seen_items)
-sys.path.insert(0, os.path.join(_KIBORG, "idea_engine"))    # organs.collect_source
+_HERE = os.path.dirname(os.path.abspath(__file__))  # .../kiborg/cyborg
+_KIBORG = os.path.dirname(_HERE)  # .../kiborg
+sys.path.insert(0, _HERE)  # cyborg (harvest, seen_items)
+sys.path.insert(0, os.path.join(_KIBORG, "idea_engine"))  # organs.collect_source
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
 
-from organs import collect_source  # noqa: E402
 import harvest  # noqa: E402
 import seen_items  # noqa: E402
+from organs import collect_source  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402  (заголовок файла может нести секрет — чистим до показа)
 
 # как называть источник человеку + чем «заходит» туда киборг
 WHERE = {
-    "hn":          ("Hacker News",           "открываю топ-ленту"),
-    "reddit":      ("Reddit r/SideProject",  "стучусь в паблик"),
-    "lobsters":    ("Lobsters",              "открываю горячее"),
-    "gh_trending": ("GitHub Trending",       "смотрю, что в тренде"),
-    "telegram":    ("Telegram",              "захожу в паблик"),
-    "files":       ("Папки-источник",        "открываю файлы в папках"),
+    "hn": ("Hacker News", "открываю топ-ленту"),
+    "reddit": ("Reddit r/SideProject", "стучусь в паблик"),
+    "lobsters": ("Lobsters", "открываю горячее"),
+    "gh_trending": ("GitHub Trending", "смотрю, что в тренде"),
+    "telegram": ("Telegram", "захожу в паблик"),
+    "files": ("Папки-источник", "открываю файлы в папках"),
 }
 ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "files"]
 
-_ITEM_PAUSE = 0.28   # пауза между постами — чтобы в пульте строки шли живым потоком, не пачкой
+_ITEM_PAUSE = 0.28  # пауза между постами — чтобы в пульте строки шли живым потоком, не пачкой
 _STEP_PAUSE = 0.35
 
 

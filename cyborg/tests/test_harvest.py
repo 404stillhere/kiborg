@@ -4,6 +4,7 @@
   1. Отпечаток заголовков: порядок НЕ важен, изменение состава — важно.
   2. Персист сигнатуры: _save_sig -> _last_sig возвращает то же (атомарно, во временную папку).
 """
+
 import contextlib
 import os
 import sys
@@ -25,6 +26,7 @@ def _patched_source(run=None, feeds=("hn", "reddit"), folders=()):
     feeds на telegram без восстановления → _collect_locked брал реальный замок). feeds по умолчанию
     НЕ-telegram (["hn","reddit"]), чтобы гейт-проба не тянула tg-сессию."""
     from organs import collect_source
+
     of, od, oc = harvest.feeds.enabled, harvest.folders.current, collect_source.run
     harvest.feeds.enabled = lambda: list(feeds)
     harvest.folders.current = lambda: list(folders)
@@ -40,9 +42,9 @@ class TestHarvestGate(unittest.TestCase):
     def test_titles_sig_order_independent_change_sensitive(self):
         a = harvest._titles_sig(["Идея А", "Идея Б", "Идея В"])
         b = harvest._titles_sig(["Идея В", "Идея А", "Идея Б"])  # тот же набор, другой порядок
-        self.assertEqual(a, b)                                   # порядок не важен
+        self.assertEqual(a, b)  # порядок не важен
         c = harvest._titles_sig(["Идея А", "Идея Б", "Идея Г"])  # состав изменился
-        self.assertNotEqual(a, c)                                # изменение поймано
+        self.assertNotEqual(a, c)  # изменение поймано
 
     def test_source_env_carries_direction(self):
         # активное направление подкладывается в env ОБЕИХ кнопок (через _source_env)
@@ -57,7 +59,7 @@ class TestHarvestGate(unittest.TestCase):
         orig = harvest.direction.current
         harvest.direction.current = lambda: ""
         try:
-            self.assertNotIn("direction", harvest._source_env())   # пусто -> ключа нет
+            self.assertNotIn("direction", harvest._source_env())  # пусто -> ключа нет
         finally:
             harvest.direction.current = orig
 
@@ -78,8 +80,8 @@ class TestHarvestGate(unittest.TestCase):
         harvest.folders.current = lambda: []
         try:
             env = harvest._source_env()
-            self.assertNotIn("files_paths", env)               # пусто -> источник выключен
-            self.assertNotIn("files", env["sources"])          # и не значится активным
+            self.assertNotIn("files_paths", env)  # пусто -> источник выключен
+            self.assertNotIn("files", env["sources"])  # и не значится активным
         finally:
             harvest.folders.current = orig
 
@@ -91,12 +93,12 @@ class TestHarvestGate(unittest.TestCase):
         os_sess = harvest._KIBORG_TG_SESSION
         tmp = tempfile.NamedTemporaryFile(suffix=".session", delete=False)
         tmp.close()
-        harvest._KIBORG_TG_SESSION = tmp.name                     # сессия «существует»
-        harvest._load_darbot_tg_creds = lambda: ("1", "h")        # креды доступны
+        harvest._KIBORG_TG_SESSION = tmp.name  # сессия «существует»
+        harvest._load_darbot_tg_creds = lambda: ("1", "h")  # креды доступны
         harvest.folders.current = lambda: []
         try:
             harvest.feeds.enabled = lambda: ["telegram"]
-            self.assertTrue(harvest._source_env().get("telegram_session"))    # ON → креды в env
+            self.assertTrue(harvest._source_env().get("telegram_session"))  # ON → креды в env
             harvest.feeds.enabled = lambda: ["hn"]
             self.assertIsNone(harvest._source_env().get("telegram_session"))  # OFF → нет (замок не берётся)
         finally:
@@ -108,11 +110,11 @@ class TestHarvestGate(unittest.TestCase):
         # атомарная запись (переехала из stash в harvest): пишет содержимое, не оставляет .tmp,
         # перезапись поверх работает. Ею harvest пишет статус источников и отпечаток.
         tmp = tempfile.mkdtemp(prefix="harvest_aw_")
-        path = os.path.join(tmp, "sub", "f.json")   # несуществующая подпапка — создаётся
+        path = os.path.join(tmp, "sub", "f.json")  # несуществующая подпапка — создаётся
         harvest._atomic_write(path, '{"a":1}')
-        with open(path, encoding="utf-8") as f:      # with — не течёт хэндл (Windows: temp удалится)
+        with open(path, encoding="utf-8") as f:  # with — не течёт хэндл (Windows: temp удалится)
             self.assertEqual(f.read(), '{"a":1}')
-        harvest._atomic_write(path, '{"a":2}')      # перезапись поверх
+        harvest._atomic_write(path, '{"a":2}')  # перезапись поверх
         with open(path, encoding="utf-8") as f:
             self.assertEqual(f.read(), '{"a":2}')
         self.assertFalse(os.path.exists(path + ".tmp"))
@@ -122,7 +124,7 @@ class TestHarvestGate(unittest.TestCase):
         orig = harvest.STATE_FILE
         harvest.STATE_FILE = os.path.join(tmp, "harvest_state.json")
         try:
-            self.assertIsNone(harvest._last_sig())      # пусто -> None
+            self.assertIsNone(harvest._last_sig())  # пусто -> None
             harvest._save_sig("deadbeef")
             self.assertEqual(harvest._last_sig(), "deadbeef")
             self.assertFalse(os.path.exists(harvest.STATE_FILE + ".tmp"))  # атомарно, без хвоста
@@ -141,7 +143,7 @@ class TestHarvestGate(unittest.TestCase):
         # и не хардкодит имена дважды (проверяет ВЫВОД проводки, а не константу).
         with _patched_source(feeds=["telegram", "hn"]):
             env = harvest._harvest_env()
-            self.assertEqual(env["sources"], ["telegram", "hn"])   # ровно включённые ленты (папок нет)
+            self.assertEqual(env["sources"], ["telegram", "hn"])  # ровно включённые ленты (папок нет)
             self.assertEqual(env["sources"], harvest._active_sources())
 
     def test_harvest_env_requests_seen_items_filter(self):
@@ -192,8 +194,10 @@ class TestHarvestGate(unittest.TestCase):
         seen_items.PATH = os.path.join(tmp, "seen_items.json")
 
         def fake_run(inputs, env):
-            return {"items": [{"title": "A", "source": "hn", "id": 1},
-                              {"title": "B", "source": "hn", "id": 2}], "degraded": False}
+            return {
+                "items": [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}],
+                "degraded": False,
+            }
 
         try:
             with _patched_source(fake_run):
@@ -210,7 +214,7 @@ class TestHarvestGate(unittest.TestCase):
         # Источники — активные (_active_sources), мокаем на 2 известных ленты: одна успешна,
         # вторая падает. Детерминировано, не зависит от живого data/*.json.
         with _patched_source(feeds=["telegram", "hn"]):
-            sources = harvest._active_sources()                     # ["telegram", "hn"]
+            sources = harvest._active_sources()  # ["telegram", "hn"]
             ok_source = sources[0]
             rest = sources[1:]
             failed_source = rest[0] if rest else None
@@ -220,7 +224,7 @@ class TestHarvestGate(unittest.TestCase):
             out = {"items": items, "degraded": False, "partial_errors": partial_errors}
             st = harvest._status_from_out(out)
 
-            self.assertEqual(set(st["sources"]), set(sources))      # все активные источники представлены
+            self.assertEqual(set(st["sources"]), set(sources))  # все активные источники представлены
             ok_entry = st["sources"][ok_source]
             self.assertEqual(ok_entry["items"], 2)
             self.assertTrue(ok_entry["ok"])
@@ -228,9 +232,9 @@ class TestHarvestGate(unittest.TestCase):
             self.assertEqual(ok_entry["beta"], ok_source not in harvest.USER_VERIFIED_SOURCES)
 
             if failed_source:
-                self.assertFalse(st["sources"][failed_source]["ok"])   # в partial_errors -> упал
+                self.assertFalse(st["sources"][failed_source]["ok"])  # в partial_errors -> упал
                 self.assertIn("403", st["sources"][failed_source]["error"])
-        for silent in rest[1:]:                                      # не дал items -> ok=False
+        for silent in rest[1:]:  # не дал items -> ok=False
             self.assertFalse(st["sources"][silent]["ok"])
         self.assertFalse(st["degraded"])
 
@@ -249,9 +253,9 @@ class TestHarvestGate(unittest.TestCase):
         try:
             harvest._save_sig("SAME")
             self.assertFalse(harvest._should_run("SAME", force=False))  # не менялась, автоцикл → пропуск
-            self.assertTrue(harvest._should_run("SAME", force=True))    # ручной клик → всё равно гоним
-            self.assertTrue(harvest._should_run("DIFF", force=False))   # лента изменилась → гоним
-            self.assertTrue(harvest._should_run(None, force=False))     # отпечаток не снят → гоним
+            self.assertTrue(harvest._should_run("SAME", force=True))  # ручной клик → всё равно гоним
+            self.assertTrue(harvest._should_run("DIFF", force=False))  # лента изменилась → гоним
+            self.assertTrue(harvest._should_run(None, force=False))  # отпечаток не снят → гоним
         finally:
             harvest.STATE_FILE = orig
 
@@ -263,8 +267,8 @@ class TestHarvestGate(unittest.TestCase):
         try:
             harvest._save_sig("OLD")
             self.assertFalse(harvest._should_run("NEW", force=False, fresh_n=0))
-            self.assertTrue(harvest._should_run("NEW", force=False, fresh_n=1))   # есть 1 свежий -> гоним
-            self.assertTrue(harvest._should_run("NEW", force=True, fresh_n=0))    # force всё равно гонит
+            self.assertTrue(harvest._should_run("NEW", force=False, fresh_n=1))  # есть 1 свежий -> гоним
+            self.assertTrue(harvest._should_run("NEW", force=True, fresh_n=0))  # force всё равно гонит
         finally:
             harvest.STATE_FILE = orig
 
@@ -292,7 +296,7 @@ class TestDegradeNote(unittest.TestCase):
         # «секретов-вырезано=N» в флагах прогона, иначе счётчик redacted молча теряется.
         # Не деградация выдачи — но surface обязателен (в источник просочился секрет).
         self.assertEqual(harvest._degrade_note({"redacted": 2}), "секретов-вырезано=2")
-        self.assertEqual(harvest._degrade_note({"redacted": 0}), "")   # чисто → нет флага
+        self.assertEqual(harvest._degrade_note({"redacted": 0}), "")  # чисто → нет флага
 
     def test_both_flags(self):
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2})
@@ -300,26 +304,25 @@ class TestDegradeNote(unittest.TestCase):
         self.assertIn("stub-отсеяно=2", note)
 
     def test_all_three_flags(self):
-        # все три сигнала деградации в одной строке, разделены · (provider не передан → нет фолбэк-флага)
+        # все три сигнала деградации в одной строке, разделены · (provider не передан → нет флага модели)
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2, "dropped_dup": 1})
         self.assertEqual(note, "источник в фолбэке · stub-отсеяно=2 · дубликатов=1")
 
-    def test_paid_fallback_provider_flagged(self):
-        # гибрид (2026-07-16): muse-spark = ПЛАТНЫЙ фолбэк closerouter (gemini провисла на TLS) →
-        # светим «фолбэк=muse-spark», иначе автосбор молча жжёт баланс. Это budget-деградация.
-        note = harvest._degrade_note({"provider": "muse-spark"})
-        self.assertEqual(note, "фолбэк=muse-spark")
+    def test_provider_flagged_always(self):
+        # реш. юзера 2026-07-21: провайдер генератора светится ВСЕГДА (id модели, что ответила),
+        # без деления на «бесплатно/платно» — вся цепочка на closerouter, делить не на что.
+        # Раньше (гибрид gemini→muse) gemini-подписку прятали, флажили только платный muse-фолбэк;
+        # теперь тег «модель=…» показывает, какое плечо цепочки ответило (muse-spark=первичная,
+        # deepseek/nemotron=фолбэк). Полезно для диагностики, не бюджет-деградация.
+        self.assertEqual(harvest._degrade_note({"provider": "muse-spark"}), "модель=muse-spark")
+        self.assertEqual(harvest._degrade_note({"provider": "deepseek"}), "модель=deepseek")
+        self.assertEqual(harvest._degrade_note({"provider": "nemotron"}), "модель=nemotron")
+        self.assertEqual(harvest._degrade_note({}), "")  # нет provider — нет флага
 
-    def test_free_provider_not_flagged(self):
-        # gemini = подписка = БЕСПЛАТНО — фолбэк-флагом НЕ помечаем (это штатный путь, не деградация).
-        # Иначе каждый здоровый прогон светился бы «фолбэк=gemini» и затирал реальные сигналы.
-        self.assertEqual(harvest._degrade_note({"provider": "gemini"}), "")
-        self.assertEqual(harvest._degrade_note({}), "")          # нет provider — нет флага
-
-    def test_paid_fallback_with_other_flags(self):
-        # фолбэк встаёт в общую строку деградации рядом с источником/дубликатами
-        note = harvest._degrade_note({"degraded": True, "provider": "muse-spark", "dropped_dup": 1})
-        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · фолбэк=muse-spark")
+    def test_provider_with_other_flags(self):
+        # модель встаёт в общую строку деградации рядом с источником/дубликатами
+        note = harvest._degrade_note({"degraded": True, "provider": "deepseek", "dropped_dup": 1})
+        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · модель=deepseek")
 
 
 if __name__ == "__main__":

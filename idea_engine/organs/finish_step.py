@@ -5,6 +5,7 @@
 сам глобально никуда не лезет. Выбирает недоделанный проект и достаёт его next_step.
 Ротация — по env["cursor"], чтобы не долбить один и тот же проект каждый раз.
 """
+
 import json
 
 
@@ -56,5 +57,6 @@ def run(inputs, env):
 
 if __name__ == "__main__":
     import sys
+
     p = sys.argv[1] if len(sys.argv) > 1 else "M:/projects/panelofprojects/recon.json"
     print(json.dumps(run({}, {"recon_path": p}), ensure_ascii=False, indent=2))

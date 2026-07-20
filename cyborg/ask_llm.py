@@ -1,18 +1,19 @@
 """ask_llm — речевой центр генератора идей. Идёт по ТОЙ ЖЕ цепочке, что интуиция мозга —
-её держит keychain (_SPEC). Цепочка ГИБРИДНАЯ (2026-07-16): gemini-2.5-flash-lite на нативном
-ключе Google-подписки (первичная, дёшево) → muse-spark через closerouter (фолбэк). Две модели
-на РАЗНЫХ ключах/эндпоинтах — НЕ «один ключ closerouter».
+её держит keychain (_SPEC): цепочка closerouter (muse-spark → deepseek-v4-pro → nemotron-3-ultra),
+реш. юзера 2026-07-20. Все три модели на одном ключе CLOSEROUTER_API_KEY (build_chain берёт
+keys[key] per-entry — один ключ на несколько моделей поддержан).
 
 История: сперва отдельный провод к Gemini (ключ gemini.md); 2026-07-13 сведён с интуицией на
-closerouter-цепочку (deepseek→glm5→muse→codex); 2026-07-16 та цепочка жгла бюджет на таймаутах
-мёртвых моделей — заменена на гибрид выше (см. keychain._SPEC). Транспорт — DarBench/organ.js
-(node), тот же, что у интуиции.
+closerouter-цепочку (deepseek→glm5→muse→codex); 2026-07-16 — гибрид gemini→muse-spark; gemini
+оказался geoblocked с сети юзера → 2026-07-20 заменён на 3-модельную цепочку closerouter
+(см. keychain._SPEC). Транспорт — DarBench/organ.js (node), тот же, что у интуиции.
 
 Контракт для органов НЕ изменился: env['llm'] = callable(prompt:str) -> str. При любой
 ошибке (нет ключа / сеть / пустой ответ) -> "" -> вызыватель (ideate) честно падает на stub.
 Значение ключа НИКОГДА не логируем и не возвращаем — оно уходит только в chain -> organ.js.
 Только stdlib (subprocess/json) + keychain.
 """
+
 import json
 import os
 import subprocess
@@ -25,18 +26,19 @@ _TIMEOUT_MS = int(os.environ.get("KIBORG_ASK_LLM_TIMEOUT_MS", "120000"))
 
 # Ярлык для пульта/логов (serve.py, harvest.py, run.py читают ask_llm._MODEL). Реальная
 # модель — первая живая в цепочке; тут статичное человекочитаемое имя провайдера.
-# Гибрид (2026-07-16): первичная gemini-2.5-flash-lite через нативный ключ подписки, фолбэк —
-# muse-spark через closerouter (см. keychain._SPEC).
-_MODEL = "gemini→muse (hybrid)"
+# 2026-07-20: интуиция — цепочка closerouter (muse-spark → deepseek-v4-pro → nemotron-3-ultra).
+_MODEL = "muse→deepseek→nemotron (closerouter)"
 
-# Какой провайдер РЕАЛЬНО ответил в последнем ask() — id из organ.js result.provider (gemini /
-# muse-spark). Диагностика фолбэка гибрида: gemini=подписка(бесплатно), muse-spark=closerouter(платно).
-# "" до первого вызова / при сбое. Ставит _run_chain; читают harvest/panel (опц., для логов).
+# Какой провайдер РЕАЛЬНО ответил в последнем ask() — id из organ.js result.provider
+# (muse-spark / deepseek / nemotron). Диагностика: показывает, какая модель в цепочке реально
+# сработала (фолбэк ли, или первичная). "" до первого вызова / при сбое. Ставит _run_chain;
+# читают harvest/panel (опц., для логов).
 last_provider = ""
 
 
 def _chain():
-    """Цепочка интуиции из keychain (гибрид gemini→muse-spark, см. keychain._SPEC). Пусто -> []."""
+    """Цепочка интуиции из keychain (muse→deepseek→nemotron на closerouter, см. keychain._SPEC).
+    Пусто -> []."""
     return keychain.build_chain()
 
 
@@ -60,28 +62,34 @@ def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
     генерация; СУДЕЙСКИЕ вызовы (оценка читаемости) передают низкую (~0.2), чтобы балл всегда
     парсился (на 0.9 рассуждающая модель изредка не отдаёт чистый JSON — та же болячка судьи).
 
-    Побочно: ставит модульный last_provider — id провайдера, чей ответ РЕАЛНО взят (из organ.js
-    result.provider). Гибрид (gemini→muse-spark) делает это диагностически критичным: gemini =
-    подписка (бесплатно), muse-spark = closerouter-фолбэк (платно). Без признака фолбэк-урожай
-    молча жжёт closerouter-баланс на автосборе. last_provider опционально читают harvest/panel
-    для логов; контракт callable(prompt)->str НЕ меняется (атрибут, не return)."""
+    Побочно: ставит модульный last_provider — id провайдера, чей ответ РЕАЛЬНО взят (из organ.js
+    result.provider). Цепочка 3-model closerouter делает это диагностически полезным: видно, какая
+    из muse-spark/deepseek/nemotron реально ответила (muse-spark — первичная, остальные — фолбэк при
+    её отлёте). last_provider опционально читают harvest/panel для логов; контракт callable(prompt)
+    ->str НЕ меняется (атрибут, не return)."""
     global last_provider
     if not chain or not os.path.exists(_ORGAN_JS):
         return ""
     n = max(1, len(chain))
-    per_provider_ms = max(3000, timeout_ms // n)     # медленный провайдер не съедает весь бюджет
-    payload = {"inputs": {"prompt": prompt, "temperature": temperature},
-               "env": {"chain": chain, "timeout_ms": per_provider_ms}}
+    per_provider_ms = max(3000, timeout_ms // n)  # медленный провайдер не съедает весь бюджет
+    payload = {
+        "inputs": {"prompt": prompt, "temperature": temperature},
+        "env": {"chain": chain, "timeout_ms": per_provider_ms},
+    }
     try:
         # Windows bug: subprocess.run(input=...) не посылает EOF в stdin → organ.js
         # висит ждёт end event. Рабочий вариант — Popen + communicate() (явно закрывает stdin).
-        proc = subprocess.Popen([_NODE_EXE, _ORGAN_JS], stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, encoding="utf-8")
-        stdout, stderr = proc.communicate(input=json.dumps(payload),
-                                          timeout=max(5, timeout_ms // 1000 + 5))
+        proc = subprocess.Popen(
+            [_NODE_EXE, _ORGAN_JS],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        stdout, stderr = proc.communicate(input=json.dumps(payload), timeout=max(5, timeout_ms // 1000 + 5))
     except Exception:
-        return ""                                    # node/сеть упали -> "" -> вызыватель на stub
+        return ""  # node/сеть упали -> "" -> вызыватель на stub
     if proc.returncode != 0 and not stdout.strip():
         return ""
     try:
@@ -89,7 +97,7 @@ def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
     except Exception:
         return ""
     if res.get("ok"):
-        last_provider = res.get("provider") or ""   # кто РЕАЛЬНО ответил (gemini / muse-spark / ...)
+        last_provider = res.get("provider") or ""  # кто РЕАЛЬНО ответил (muse-spark / deepseek / nemotron)
         return _strip_fence(res.get("text") or "")
     last_provider = ""
     return ""

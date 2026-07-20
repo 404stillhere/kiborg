@@ -1,0 +1,7 @@
+# Зависимости для разработки и CI (runtime — чистый Python stdlib, без внешних пакетов).
+# Пины с floors: воспроизводимо + обновления безопасности внутри мажора проходят.
+# CI (`.github/workflows/ci.yml`) ставит отсюда, локально — `pip install -r requirements.txt`.
+
+pytest>=8,<10      # прогон тестов (run_tests.py вызывает pytest по пакетам)
+ruff>=0.6,<0.8     # линтер (стиль: ruff check .)
+black>=24.0,<26.0  # форматтер (black --check . / black .)

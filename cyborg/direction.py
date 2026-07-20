@@ -6,6 +6,7 @@
 current="" (пусто) = БЕЗ направления — генерим как раньше, из того что в лентах.
 Юзер выбирает пресет ИЛИ вписывает своё (панель); руль долетает до ideate/rank через env.
 Только stdlib (panel/serve.py импортит этот модуль, а он без venv)."""
+
 import os
 
 import _panel_config
@@ -15,8 +16,8 @@ PATH = os.path.join(DATA, "direction.json")
 
 # стартовый набор — юзер правит на панели (это лишь дефолт, когда файла ещё нет)
 _DEFAULT_PRESETS = ["дев-тулзы", "железки", "для родителей", "игры", "здоровье", "бизнес"]
-_MAX_LEN = 120        # руль — короткая тема, не полотно
-_MAX_PRESETS = 40     # список кнопок; больше — мусор
+_MAX_LEN = 120  # руль — короткая тема, не полотно
+_MAX_PRESETS = 40  # список кнопок; больше — мусор
 
 
 def _clean(s):
@@ -27,7 +28,7 @@ def _clean_presets(seq):
     out, seen = [], set()
     for p in seq:
         c = _clean(p)
-        if c and c.lower() not in seen:      # без пустых и без дублей (регистронезависимо)
+        if c and c.lower() not in seen:  # без пустых и без дублей (регистронезависимо)
             seen.add(c.lower())
             out.append(c)
         if len(out) >= _MAX_PRESETS:

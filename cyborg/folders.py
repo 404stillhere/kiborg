@@ -11,6 +11,7 @@
 
 Обратная совместимость: старый формат {"paths": [...]} читается как список ВКЛючённых папок.
 Только stdlib (panel/serve.py импортит его, а он без venv)."""
+
 import os
 
 import _panel_config
@@ -18,8 +19,8 @@ import _panel_config
 DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "folders.json")
 
-_MAX_PATHS = 40      # папок немного; больше — мусор/раздувание
-_MAX_LEN = 400       # путь бывает длинным, но не полотно
+_MAX_PATHS = 40  # папок немного; больше — мусор/раздувание
+_MAX_LEN = 400  # путь бывает длинным, но не полотно
 
 
 def _clean_path(p):
@@ -28,7 +29,7 @@ def _clean_path(p):
     if not isinstance(p, str):
         return None
     c = p.strip().strip('"').strip("'").replace("\\", "/")[:_MAX_LEN].rstrip("/")
-    if c.endswith(":"):              # «M:» (из «M:/») — вернуть корень диска «M:/»
+    if c.endswith(":"):  # «M:» (из «M:/») — вернуть корень диска «M:/»
         c += "/"
     return c or None
 
@@ -65,7 +66,7 @@ def _read():
     items = d.get("folders")
     if isinstance(items, list):
         return _clean(items)
-    legacy = d.get("paths")           # обратная совместимость: старый плоский список = все вкл
+    legacy = d.get("paths")  # обратная совместимость: старый плоский список = все вкл
     if isinstance(legacy, list):
         return _clean(legacy)
     return []

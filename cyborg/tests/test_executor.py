@@ -4,6 +4,7 @@ Executor — тонкий, но КРИТИЧНЫЙ слой: он решает, 
 (прод-органы автономно НЕ трогаем; орган без нужного ключа не зовём). Падение органа
 ловится в {'error'} для перепланирования, не роняет киборга. Раньше был без теста.
 """
+
 import os
 import sys
 import unittest
@@ -64,6 +65,7 @@ class TestExecutor(unittest.TestCase):
     def test_organ_exception_caught_as_error_not_crash(self):
         def boom(i, e):
             raise ValueError("сломалось")
+
         out = executor.execute(_Organ(run_fn=boom), {}, {})
         self.assertIn("error", out)
         self.assertIn("ValueError", out["error"])
@@ -79,6 +81,7 @@ class TestExecutor(unittest.TestCase):
         def capture(inputs, env):
             seen["inputs"], seen["env"] = inputs, env
             return {"done": True}
+
         executor.execute(_Organ(run_fn=capture), {"a": 1}, {"b": 2})
         self.assertEqual(seen["inputs"], {"a": 1})
         self.assertEqual(seen["env"], {"b": 2})

@@ -3,6 +3,7 @@ prompt->text по цепочке интуиции (closerouter), снятие ``
 сбое/без ключа, и что wiring._run_ideate подхватывает 'content_llm' (идеи через живую
 модель, brain='llm'). Генератор и интуиция теперь на ОДНОЙ цепочке (2026-07-13).
 """
+
 import json
 import os
 import sys
@@ -19,6 +20,7 @@ class _Proc:
     """Фейк подпроцесса для мока subprocess.Popen. Код ask_llm._run_chain вызывает
     Popen(...).communicate(input=..., timeout=...) и читает proc.returncode/stdout/stderr.
     rc=0+stdout -> успех; rc!=0+пусто -> ""; возбуждение в communicate -> "" (сбой)."""
+
     def __init__(self, stdout="", rc=0, stderr=""):
         self.stdout = stdout
         self.stderr = stderr
@@ -36,7 +38,7 @@ class TestAskLlm(unittest.TestCase):
         self._orig_popen = ask_llm.subprocess.Popen
         self._orig_chain = ask_llm.keychain.build_chain
         self._orig_exists = ask_llm.os.path.exists
-        ask_llm.os.path.exists = lambda p: True         # organ.js «на месте» — сеть всё равно мок
+        ask_llm.os.path.exists = lambda p: True  # organ.js «на месте» — сеть всё равно мок
 
     def tearDown(self):
         ask_llm.subprocess.Popen = self._orig_popen
@@ -62,16 +64,16 @@ class TestAskLlm(unittest.TestCase):
         self._mock_run(stdout=json.dumps({"ok": True, "text": '```json\n{"title":"X"}\n```'}))
         out = ask_llm.ask("prompt")
         self.assertIn('"title":"X"', out)
-        self.assertNotIn("```", out)                    # заборчик снят
+        self.assertNotIn("```", out)  # заборчик снят
 
     def test_ask_empty_without_chain(self):
-        self._chain([])                                 # ключей нет -> цепочка пуста
-        self.assertEqual(ask_llm.ask("prompt"), "")     # даже подпроцесс не зовём
+        self._chain([])  # ключей нет -> цепочка пуста
+        self.assertEqual(ask_llm.ask("prompt"), "")  # даже подпроцесс не зовём
 
     def test_ask_empty_on_subprocess_error(self):
         self._chain()
         self._mock_run(exc=RuntimeError("node boom"))
-        self.assertEqual(ask_llm.ask("prompt"), "")     # сбой -> "" -> вызыватель на stub
+        self.assertEqual(ask_llm.ask("prompt"), "")  # сбой -> "" -> вызыватель на stub
 
     def test_ask_empty_when_not_ok(self):
         self._chain()
@@ -79,26 +81,26 @@ class TestAskLlm(unittest.TestCase):
         self.assertEqual(ask_llm.ask("prompt"), "")
 
     def test_last_provider_set_on_success(self):
-        # organ.js возвращает provider (кто РЕАЛЬНО ответил) — гибрид делает это критичным для
-        # учёта фолбэка (gemini=бесплатно, muse-spark=платно). ask() ставит last_provider, не ломая
-        # контракт callable(prompt)->str.
+        # organ.js возвращает provider (кто РЕАЛЬНО ответил) — цепочка closerouter делает это
+        # диагностически полезным (muse-spark=первичная, deepseek/nemotron=фолбэк). ask() ставит
+        # last_provider, не ломая контракт callable(prompt)->str.
         self._chain()
         self._mock_run(stdout=json.dumps({"ok": True, "text": '{"title":"X"}', "provider": "muse-spark"}))
         ask_llm.ask("prompt")
-        self.assertEqual(ask_llm.last_provider, "muse-spark")   # фолбэк сработал — видно
+        self.assertEqual(ask_llm.last_provider, "muse-spark")  # первичная ответила — видно
 
     def test_last_provider_cleared_on_failure(self):
         # при сбое (not ok / пусто / exception) last_provider сбрасывается — не врёт «ответил прошлый»
         self._chain()
-        self._mock_run(stdout=json.dumps({"ok": True, "text": '{"t":1}', "provider": "gemini"}))
+        self._mock_run(stdout=json.dumps({"ok": True, "text": '{"t":1}', "provider": "deepseek"}))
         ask_llm.ask("prompt")
-        self.assertEqual(ask_llm.last_provider, "gemini")
+        self.assertEqual(ask_llm.last_provider, "deepseek")
         self._mock_run(stdout=json.dumps({"ok": False, "error": "boom"}))  # след. вызов упал
         ask_llm.ask("prompt")
-        self.assertEqual(ask_llm.last_provider, "")              # сброс, а не зависший «gemini»
+        self.assertEqual(ask_llm.last_provider, "")  # сброс, а не зависший «deepseek»
 
     def test_last_provider_empty_without_chain(self):
-        self._chain([])                                          # нет ключей — спросить некого
+        self._chain([])  # нет ключей — спросить некого
         ask_llm.ask("prompt")
         self.assertEqual(ask_llm.last_provider, "")
 
@@ -109,13 +111,14 @@ class TestAskLlm(unittest.TestCase):
         self.assertTrue(ask_llm.available())
 
     def test_ideate_uses_content_llm(self):
-        canned = ('Идеи:\n{"title":"Идея A","why":"потому","effort":"средне"}\n'
-                  '{"title":"Идея B","why":"да","effort":"легко"}')
-        out = wiring._run_ideate({"items": [{"title": "hn заголовок"}]},
-                                 {"content_llm": lambda p: canned})
+        canned = (
+            'Идеи:\n{"title":"Идея A","why":"потому","effort":"средне"}\n'
+            '{"title":"Идея B","why":"да","effort":"легко"}'
+        )
+        out = wiring._run_ideate({"items": [{"title": "hn заголовок"}]}, {"content_llm": lambda p: canned})
         ideas = out["ideas"]
         self.assertTrue(ideas)
-        self.assertEqual(ideas[0]["brain"], "llm")      # не stub
+        self.assertEqual(ideas[0]["brain"], "llm")  # не stub
         self.assertEqual(ideas[0]["title"], "Идея A")
 
 

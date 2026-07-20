@@ -13,14 +13,15 @@ CLI:
   python run.py status <id> <take|later|trash>
   python run.py show
 """
+
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from store import Store, state_lock  # noqa: E402
-from organs import collect_source, ideate, finish_step  # noqa: E402
 import rejected  # noqa: E402  (мусор = отклонена: суть уходит сюда, учит генератор/судью)
+from organs import collect_source, finish_step, ideate  # noqa: E402
+from store import Store, state_lock  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
@@ -29,12 +30,12 @@ INBOX = os.path.join(DATA, "inbox.md")
 NOTIFY = os.path.join(DATA, "notify.md")
 
 CFG = {
-    "cap": 0,              # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
-    "n": 8,                # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
+    "cap": 0,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
+    "n": 8,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
     "source": "hn",
-    "k": 3,                # сколько идей за раз
+    "k": 3,  # сколько идей за раз
     "recon_path": "M:/projects/panelofprojects/recon.json",
-    "skip_folders": [],    # folder'ы режима B, которые не толкать (пусто = не фильтровать); knob finish_step
+    "skip_folders": [],  # folder'ы режима B, которые не толкать (пусто = не фильтровать); knob finish_step
 }
 
 
@@ -62,11 +63,16 @@ def tick(store, seed_path=None):
                 brains.add(idea.get("brain", "?"))
             if not store.has_room():
                 break
-        info = {"mode": "A", "added": added, "brain": ",".join(sorted(brains)) or "-",
-                "degraded": raw.get("degraded", False)}
+        info = {
+            "mode": "A",
+            "added": added,
+            "brain": ",".join(sorted(brains)) or "-",
+            "degraded": raw.get("degraded", False),
+        }
     else:
-        out = finish_step.run({}, {"recon_path": CFG["recon_path"], "cursor": store.data["cursor"],
-                                   "skip_folders": CFG["skip_folders"]})
+        out = finish_step.run(
+            {}, {"recon_path": CFG["recon_path"], "cursor": store.data["cursor"], "skip_folders": CFG["skip_folders"]}
+        )
         if out.get("nudge"):
             store.set_finish(out["nudge"], out.get("next_cursor", store.data["cursor"]))
         info = {"mode": "B", "nudge": bool(out.get("nudge")), "pool": out.get("pool")}
@@ -92,7 +98,9 @@ def _write_inbox(store):
         lines.append(f"- **#{i['id']}** [{i.get('effort', '?')}] {i.get('title', '')}")
         if i.get("why"):
             lines.append(f"    - {i['why']}")
-        lines.append(f"    - _мозг: {i.get('brain', '?')} · разобрать: `python run.py status {i['id']} take|later|trash`_")
+        lines.append(
+            f"    - _мозг: {i.get('brain', '?')} · разобрать: `python run.py status {i['id']} take|later|trash`_"
+        )
     lines.append("")
     lines.append("## Дорожка B — доделать существующее (когда идеи заполнены)")
     fin = d.get("finish")
@@ -127,7 +135,7 @@ def _cli(argv):
         seed = None
         if "--seed" in argv:
             seed = argv[argv.index("--seed") + 1]
-        with state_lock(STATE):        # замок вокруг load→save (другой процесс не затрёт state.json)
+        with state_lock(STATE):  # замок вокруг load→save (другой процесс не затрёт state.json)
             store = Store(STATE, cap=CFG["cap"])
             info = tick(store, seed_path=seed)
         print("TICK", info)
@@ -137,7 +145,7 @@ def _cli(argv):
         if st not in ("take", "later", "trash"):
             print("статус должен быть take|later|trash")
             return
-        with state_lock(STATE):        # триаж пульта: замок вокруг load→set_status→save
+        with state_lock(STATE):  # триаж пульта: замок вокруг load→set_status→save
             store = Store(STATE, cap=CFG["cap"])
             ok = store.set_status(idea_id, st)
             if ok and st == "trash":

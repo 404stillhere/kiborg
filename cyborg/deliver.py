@@ -7,11 +7,15 @@ store.py цела для тестов, но при cap=0 не срабатыва
 
 Переиспользует store.Store и _write_inbox из idea_engine — НЕ дублирует их заново.
 """
+
 import importlib.util
 import os
 import sys
 
-_IDEA = "M:/projects/kiborg/idea_engine"
+# idea_engine/ — родственный пакет (store.Store, run._write_inbox). Раньше был захардкожен
+# абсолютным Windows-путём (M:/projects/kiborg/idea_engine) — ломал CI на Linux. Относительно
+# __file__: cyborg/../idea_engine. Прод-машину не ломаем: на ней этот путь resolving'ся в тот же файл.
+_IDEA = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "idea_engine"))
 if _IDEA not in sys.path:
     sys.path.insert(0, _IDEA)
 
@@ -60,21 +64,25 @@ def run(inputs, env):
             if not isinstance(idea, dict):
                 continue
             if llm_mode and idea.get("brain") == "stub":
-                dropped_stub += 1       # болванка при живом ключе = шум, в инбокс не пускаем
+                dropped_stub += 1  # болванка при живом ключе = шум, в инбокс не пускаем
                 continue
             idea.setdefault("kind", "new")
             idea.setdefault("source", "cyborg")
             if not store.has_room():
                 break
-            if store.add_idea(idea):    # обратная тяга: не влезет сверх потолка
+            if store.add_idea(idea):  # обратная тяга: не влезет сверх потолка
                 added += 1
             else:
-                dropped_dup += 1        # идея отклонена как дубликат
+                dropped_dup += 1  # идея отклонена как дубликат
         store.save()
         ie._write_inbox(store)
-    return {"delivered": added, "inbox": ie.INBOX,
-            "dropped_stub": dropped_stub, "dropped_dup": dropped_dup,
-            "brain_down": brain_down}
+    return {
+        "delivered": added,
+        "inbox": ie.INBOX,
+        "dropped_stub": dropped_stub,
+        "dropped_dup": dropped_dup,
+        "brain_down": brain_down,
+    }
 
 
 if __name__ == "__main__":

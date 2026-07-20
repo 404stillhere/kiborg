@@ -10,6 +10,7 @@
 scrub на стабах (без сети/ключа). `deliver`/`finish_sink` (пишут в живой инбокс) НЕ гоняем —
 их вход `ideas_safe`/`nudge` проверяется статически в (1).
 """
+
 import os
 import sys
 import unittest
@@ -34,10 +35,9 @@ class TestPipelineKeysChain(unittest.TestCase):
         for name in IDEA_PATH:
             o = self.organs[name]
             for c in o.consumes:
-                self.assertIn(c, available,
-                              f"{name} потребляет '{c}', которого выше по цепи никто не произвёл")
+                self.assertIn(c, available, f"{name} потребляет '{c}', которого выше по цепи никто не произвёл")
             available.update(o.produces)
-        self.assertIn("delivered", available)          # терминал цепи достигнут
+        self.assertIn("delivered", available)  # терминал цепи достигнут
 
     def test_exact_junction_keys_regression(self):
         # прямые ассерты на стыки — ловят переименование ключа в одной стадии
@@ -65,12 +65,14 @@ class TestPipelineDataFlow(unittest.TestCase):
         self.organs = {o.name: o for o in build_organs()}
 
     def test_idea_survives_real_transforms_offline(self):
-        blob = {"items": [
-            {"title": "Локальный CRDT-движок синхронизации в 200 строк", "url": "", "id": "1", "source": "hn"},
-            {"title": "Как гонять агентов без присмотра всю ночь", "url": "", "id": "2", "source": "hn"},
-        ]}
+        blob = {
+            "items": [
+                {"title": "Локальный CRDT-движок синхронизации в 200 строк", "url": "", "id": "1", "source": "hn"},
+                {"title": "Как гонять агентов без присмотра всю ночь", "url": "", "id": "2", "source": "hn"},
+            ]
+        }
         for name in ["ideate", "rank_ideas", "readability_gate", "scrub_secrets"]:
-            out = self.organs[name].run(dict(blob), {})   # env без llm -> стаб/passthrough, РЕАЛЬНЫЕ _run_*
+            out = self.organs[name].run(dict(blob), {})  # env без llm -> стаб/passthrough, РЕАЛЬНЫЕ _run_*
             self.assertIsInstance(out, dict, f"{name} вернул не dict")
             blob.update(out)
         # ключ каждой стадии появился (сквозная стыковка на живых данных)

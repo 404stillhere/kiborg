@@ -10,6 +10,7 @@
 
 Только stdlib (panel/serve.py импортит его без venv).
 """
+
 import os
 
 import _panel_config

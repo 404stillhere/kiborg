@@ -1,17 +1,18 @@
 """Оболочка-оркестратор киборга (бета). Агентный цикл по вердикту совета 5 моделей:
 
-  цель → РОУТЕР отбирает подмножество органов (не все разом) → МОЗГ выбирает
-  следующий орган → ИСПОЛНИТЕЛЬ безопасно вызывает → результат в ПАМЯТЬ (env.memory) →
-  повтор → результат. Ошибки/гейты не роняют цикл (перепланирование через memory.blocked).
+цель → РОУТЕР отбирает подмножество органов (не все разом) → МОЗГ выбирает
+следующий орган → ИСПОЛНИТЕЛЬ безопасно вызывает → результат в ПАМЯТЬ (env.memory) →
+повтор → результат. Ошибки/гейты не роняют цикл (перепланирование через memory.blocked).
 """
+
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import router as router_mod  # noqa: E402
 import brain as brain_mod  # noqa: E402
 import executor as executor_mod  # noqa: E402
+import router as router_mod  # noqa: E402
 from core import Memory  # noqa: E402
 
 
@@ -38,7 +39,7 @@ class Cyborg:
                 try:
                     on_step(step, phase, name, why)
                 except Exception:
-                    pass   # прогресс — удобство; сбой колбэка не роняет прогон
+                    pass  # прогресс — удобство; сбой колбэка не роняет прогон
 
         for step in range(self.max_steps):
             candidates = router_mod.route(goal, self.organs, self.k)
@@ -48,7 +49,7 @@ class Cyborg:
                 trace.append({"step": step, "action": "finish", "why": decision["why"]})
                 break
             organ = decision["organ"]
-            _emit(step, "start", organ.name, decision["why"])   # «сейчас работаю над …»
+            _emit(step, "start", organ.name, decision["why"])  # «сейчас работаю над …»
             result = executor_mod.execute(organ, decision["inputs"], env, self.safe_mode)
             note = mem.observe(organ.name, result)
             # страховка от холостого спина: орган отработал, но НИ ОДНОГО своего produces-ключа
@@ -56,9 +57,16 @@ class Cyborg:
             if not note.get("error") and not note.get("skipped"):
                 if organ.produces and not (set(organ.produces) & set(note.get("keys") or [])):
                     mem.blocked.add(organ.name)
-            trace.append({"step": step, "organ": organ.name, "why": decision["why"],
-                          "got": note.get("keys"), "error": note.get("error"),
-                          "skipped": note.get("skipped")})
+            trace.append(
+                {
+                    "step": step,
+                    "organ": organ.name,
+                    "why": decision["why"],
+                    "got": note.get("keys"),
+                    "error": note.get("error"),
+                    "skipped": note.get("skipped"),
+                }
+            )
             _emit(step, "done", organ.name, note.get("error") or note.get("skipped") or "")
         return {
             "goal": goal,
@@ -82,7 +90,7 @@ class Cyborg:
             # мозг был недоступен: ключ есть, но модель не ответила (вся партия — болванки),
             # deliver их в инбокс не пустил. Панель/лог честно скажут «мозг недоступен — идей нет».
             "brain_down": bool(mem.data.get("brain_down")),
-            # кто РЕАЛЬНО ответил в генераторе (gemini=подписка/бесплатно, muse-spark=closerouter/платно).
-            # Гибрид: платный фолбэк светится в логе/пульте, иначе молча жжёт closerouter-баланс.
+            # кто РЕАЛЬНО ответил в генераторе (muse-spark/deepseek/nemotron — цепочка closerouter).
+            # Светим в логе/пульте, какое плечо сработало: muse-spark=первичная, остальное=фолбэк.
             "provider": mem.data.get("provider") or "",
         }

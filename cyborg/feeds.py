@@ -10,6 +10,7 @@ harvest.SOURCES: только telegram, лично курированный юз
 валиден (юзер выключил все ленты; идеи тогда только из папок, если заданы).
 
 Юзер щёлкает тумблеры в пульте. Только stdlib (panel/serve.py импортит его без venv)."""
+
 import os
 
 import _panel_config
@@ -20,7 +21,7 @@ PATH = os.path.join(DATA, "feeds.json")
 # Порядок = порядок показа тумблеров в пульте. Совпадает с collect_source._SOURCES
 # минус 'files' (у папок свой блок). Меняется вместе с составом источников органа.
 ALL_FEEDS = ["hn", "reddit", "lobsters", "gh_trending", "telegram"]
-DEFAULT_FEEDS = ["telegram"]   # дефолт при отсутствии файла = прежний harvest.SOURCES
+DEFAULT_FEEDS = ["telegram"]  # дефолт при отсутствии файла = прежний harvest.SOURCES
 
 
 def _clean(seq):
@@ -37,7 +38,7 @@ def load():
     enabled = DEFAULT_FEEDS. Пустой сохранённый список остаётся пустым (это выбор юзера)."""
     d = _panel_config.load_obj(PATH)
     enabled = _clean(d.get("enabled"))
-    if enabled is None:                       # ключа нет / битый тип → дефолт (не пусто)
+    if enabled is None:  # ключа нет / битый тип → дефолт (не пусто)
         enabled = list(DEFAULT_FEEDS)
     return {"all": list(ALL_FEEDS), "enabled": enabled}
 
