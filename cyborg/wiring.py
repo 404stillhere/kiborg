@@ -8,7 +8,10 @@ import json
 import os
 import sys
 
-_IDEA = "M:/projects/kiborg/idea_engine"
+# idea_engine/ — родственный пакет (органы collect_source/ideate/rank_ideas/...).
+# Раньше был захардкожен абсолютным Windows-путём (M:/projects/kiborg/idea_engine) —
+# ломал CI на Linux. Делаем относительным от __file__: cyborg/../idea_engine.
+_IDEA = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "idea_engine"))
 if _IDEA not in sys.path:
     sys.path.insert(0, _IDEA)
 

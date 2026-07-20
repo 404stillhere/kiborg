@@ -12,7 +12,10 @@ import importlib.util
 import os
 import sys
 
-_IDEA = "M:/projects/kiborg/idea_engine"
+# idea_engine/ — родственный пакет (store.Store, run._write_inbox). Раньше был захардкожен
+# абсолютным Windows-путём (M:/projects/kiborg/idea_engine) — ломал CI на Linux. Относительно
+# __file__: cyborg/../idea_engine. Прод-машину не ломаем: на ней этот путь resolving'ся в тот же файл.
+_IDEA = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "idea_engine"))
 if _IDEA not in sys.path:
     sys.path.insert(0, _IDEA)
 

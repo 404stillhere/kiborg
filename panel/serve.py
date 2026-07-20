@@ -29,12 +29,16 @@ try:  # консоль Windows бывает cp1251
 except Exception:
     pass
 
-ROOT = "M:/projects/kiborg"
-CYBORG = ROOT + "/cyborg"
-IDEA = ROOT + "/idea_engine"
-REGISTRY = "M:/projects/_shared/organs.json"
-LAB_ROUTER = ROOT + "/.feature-lab/router.json"
+# ROOT — относительный от __file__: panel/../ = корень проекта. Раньше был захардкожен
+# абсолютным Windows-путём (M:/projects/kiborg) — ломал CI на Linux. HERE вычисляем первым,
+# от него танцуем ROOT/CYBORG/IDEA. REGISTRY и LAB_ROUTER остаются абсолютными — это ВНЕШНИЕ
+# пути (не в репо), на CI их нет и не нужно (тесты мокают/не трогают).
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, ".."))
+CYBORG = os.path.join(ROOT, "cyborg")
+IDEA = os.path.join(ROOT, "idea_engine")
+REGISTRY = "M:/projects/_shared/organs.json"  # внешний — только на прод-машине юзера
+LAB_ROUTER = os.path.join(ROOT, ".feature-lab", "router.json")
 PORT = 8737
 
 if CYBORG not in sys.path:
