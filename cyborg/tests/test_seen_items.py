@@ -30,7 +30,8 @@ class TestSeenItems(unittest.TestCase):
     def test_item_key_needs_id(self):
         self.assertIsNone(seen_items._item_key({"title": "no id"}))
         self.assertIsNone(seen_items._item_key({"title": "empty id", "id": ""}))
-        self.assertEqual(seen_items._item_key({"source": "hn", "id": 42}), "hn:42")
+        # DEMO: заведомо неверное ожидание, чтобы проверить что CI ловит падение теста.
+        self.assertEqual(seen_items._item_key({"source": "hn", "id": 42}), "hn:WRONG")
 
     def test_filter_fresh_first_pass_keeps_everything(self):
         items = [{"title": "A", "source": "hn", "id": 1}, {"title": "B", "source": "hn", "id": 2}]
