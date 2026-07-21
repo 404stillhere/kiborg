@@ -140,6 +140,10 @@ def main(n=50):
 
         goal = "стресс-тест"
         env = harvest._source_env()  # env без LLM (available=False)
+        # ИЗОЛЯЦИЯ ОТ TELEGRAM: убираем telegram_session из env, иначе _collect_locked
+        # будет пытаться взять state_lock на РЕАЛЬНЫЙ .session файл (и реально ждать 130s
+        # при stale lock). Для stress-теста collect_source.run замокан — lock не нужен.
+        env.pop("telegram_session", None)
 
         for i in range(n):
             start = time.perf_counter()
