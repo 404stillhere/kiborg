@@ -62,13 +62,21 @@
 - `CHANGELOG.md` — этот файл (публичный релиз-лог, в отличие от gitignored `.brain/changelog.md`).
 - Тег `v1.0.0` будет проставлен после merge PR в master.
 
+### Sprint tasks P1–P3 (найдено stress-тестом N=50)
+
+После stress-теста обнаружился bottleneck: зависший lock-файл после краша процесса заставлял каждый следующий прогон ждать 130 секунд. Все три задачи-последствия решены до релиза:
+
+- **P1 — Stale lock cleanup:** `_remove_stale_lock()` в `cyborg/wiring_collect.py` — перед захватом `state_lock` проверяет mtime lock-файла; старше `STALE_LOCK_MAX_AGE_MINUTES` (30) → сносится как труп. Свежий (живой конкурент) не трогается. Frozen `store.state_lock` не тронут, имя lock-файла дублировано (`path + ".lock"`).
+- **P2 — state_lock таймауты в /api/health:** модуль `cyborg/lock_monitor.py` — лёгкий in-memory счётчик (list[float] под `threading.Lock`, без файла). `record_timeout()` зовётся из `_collect_locked` при warn'е, `recent_timeouts(60)` читается из `/api/health` → поле `locks.recent_timeouts`. Per-process, lazy cleanup устаревших.
+- **P3 — Авто-восстановление state.json:** модуль `cyborg/recover_state.py` с `auto_recover_state_if_needed()`. Вызывается из `harvest_runner.main()` в начале (после `ensure_data_dirs`, до `backup_state`). Если state.json повреждён/отсутствует и есть валидный бэкап — восстанавливает, шлёт CRITICAL-алерт через `alerts.maybe_alert`, прогон продолжается. Повреждённый файл сохраняется как `state.json.corrupted-<TS>` для разбора. `restore_backup.py` расширен флагом `--auto` для неинтерактивного запуска из cron/скриптов.
+
 ### Критерии приёмки
 
 - ✅ Админ по `deployment/README.md` настраивает автозапуск harvest каждые 30 мин на своей ОС.
 - ✅ `RUNBOOK.md` даёт чёткий ответ на любой типовой инцидент.
 - ✅ `/api/health` возвращает структурированный JSON.
 - ✅ Graceful shutdown не оставляет orphaned процессов.
-- ✅ Все 473+ тестов зелёные (cyborg 287 + idea_engine 121 + panel 65 + новые 3).
+- ✅ Все 522 теста зелёные (cyborg 331 + idea_engine 121 + panel 70).
 - ✅ ruff/black чистые.
 
 ### Сознательные остатки
@@ -76,7 +84,7 @@
 - **filelock НЕ внедрён** — frozen core (`store.state_lock`) использует O_EXCL+polling, stdlib-only.
 - **Python-traceback алертинг НЕ реализован** — только семантика (`brain_down`, `dropped_stub`), по решению Phase 2.
 - **Rename ENV ALERT_* → TELEGRAM_ALERT_* НЕ сделан** — Phase 2 shipped `KIBORG_ALERT_*`, код источник истины.
-- **Stресс-тест пройден на N=50** (2026-07-21): 120ms/итерация, 2.8MB peak memory, 0 ошибок в runs.md. Найден bottleneck — stale state_lock (+130s/итерация, задача P1 на следующий спринт).
+- **Stресс-тест пройден на N=50** (2026-07-21): 120ms/итерация, 2.8MB peak memory, 0 ошибок в runs.md. Найденный bottleneck (stale state_lock +130s/итерация) — закрыт задачами P1–P3 (см. выше).
 
 ### Миграция с v0.x
 
