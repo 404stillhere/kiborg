@@ -756,7 +756,8 @@ class TestCollectLockedTgSession(unittest.TestCase):
         import sys
         import contextlib
 
-        orig_lock = _ie_store.state_lock
+        orig_store_lock = _ie_store.state_lock
+        orig_wiring_lock = wiring.state_lock
         timeout_emulated = {}
 
         @contextlib.contextmanager
@@ -765,7 +766,9 @@ class TestCollectLockedTgSession(unittest.TestCase):
             timeout_emulated["entered"] = True
             yield False  # ← timeout, лок не захвачен
 
+        # Мокаем и в store, и в wiring (wiring_collect использует wiring.state_lock)
         _ie_store.state_lock = fake_lock
+        wiring.state_lock = fake_lock
         try:
             captured = io.StringIO()
             orig_stdout = sys.stdout
@@ -782,7 +785,8 @@ class TestCollectLockedTgSession(unittest.TestCase):
             self.assertIn("прошли без лока", output)
             self.assertIn(self.sess, output)  # путь к sess есть в warning
         finally:
-            _ie_store.state_lock = orig_lock
+            _ie_store.state_lock = orig_store_lock
+            wiring.state_lock = orig_wiring_lock
 
 
 
