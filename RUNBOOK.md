@@ -65,13 +65,18 @@ curl http://127.0.0.1:8737/api/health
       }
     }
   },
-  "last_run": {"rc": null, "running": false}
+  "last_run": {"rc": null, "running": false},
+  "locks": {"recent_timeouts": 0, "window_minutes": 60}
 }
 ```
 
 - `ok` → `true` если всё здорово, `false` если есть проблема
 - `llm.available` → `true` если есть хотя бы один рабочий LLM ключ
 - `state_json.ok` → `true` если `state.json` читается и валиден
+- `locks.recent_timeouts` → сколько таймаутов `state_lock` было за последний час
+  (`window_minutes`). После внедрения stale-lock-cleanup это РЕДКОСТЬ — `>0` значит,
+  что живой конкурент реально держал лок дольше `TG_LOCK_TIMEOUT` (130с). Прогон при
+  этом ПРОШЁЛ (без лока), на `ok` НЕ влияет — это диагностическая метрика, не сбой.
 - `sources.down` → список источников с ошибками (например, `["telegram"]` при timeout)
 - `last_run.running` → `true` если сейчас идёт прогон (пульс в пульте), `false` если idle
 - `last_run.rc` → exit code последнего прогона (если был)
@@ -273,16 +278,22 @@ State_lock имеет `timeout=130.0` (config.TG_LOCK_TIMEOUT) — каждая 
 
 ## Задачи на следующий спринт (найдено stress-тестом)
 
-### 🔴 P1 — Stale lock cleanup
+### ✅ P1 — Stale lock cleanup (РЕШЕНО 2026-07-21, коммит `2e9cf6a`)
 - **Проблема:** краш процесса во время telegram-сессии оставляет `.lock` файл навсегда.
 - **Где:** `cyborg/data/kiborg_tg.session.lock`, `idea_engine/data/state.json.lock`.
-- **Решение:** добавить фоновую очистку stale locks (например, проверка mtime > N минут в `harvest_runner.main()` перед прогоном) ИЛИ добавить мониторинг в `/api/health` (секция `locks.stale`).
-- **Frozen constraint:** НЕ меняем `store.state_lock` (frozen core) — только внешняя проверка mtime + удаление старых.
+- **Решение:** `_remove_stale_lock()` в `cyborg/wiring_collect.py` — перед захватом `state_lock`
+  проверяет mtime lock-файла; старше `STALE_LOCK_MAX_AGE_MINUTES` (30) → сносится как труп.
+  Свежий (живой конкурент) не трогается. Порог в `config.py`, mutable-алиас
+  `wiring._STALE_LOCK_MAX_AGE` для тестов.
+- **Frozen constraint соблюдён:** `store.state_lock` не тронут, lock-имя дублировано (`path + ".lock"`).
 
-### 🟡 P2 — state_lock timeout в /api/health
-- **Проблема:** warning `[warn] state_lock timeout` виден только в stdout, в health не попадает.
-- **Решение:** счётчик recent timeouts (например, за последний час) → поле `locks.recent_timeouts` в `/api/health`.
-- **Как:** счётчик в `bootstrap_paths` или отдельный модуль, инкремент при warning.
+### ✅ P2 — state_lock timeout в /api/health (РЕШЕНО 2026-07-21)
+- **Проблема:** warning `[warn] state_lock timeout` виден только в stdout, в health не попадал.
+- **Решение:** модуль `cyborg/lock_monitor.py` — лёгкий in-memory счётчик (list[float] под
+  `threading.Lock`, без файла). `record_timeout()` зовётся из `_collect_locked` рядом с warn,
+  `recent_timeouts(minutes=60)` читается из `/api/health` → поле `locks.recent_timeouts`.
+- **Per-process:** счётчик живёт в ОП процесса `panel/serve.py` (не persisted; эпемерный
+  сигнал «этот час было шумно на локах»). Lazy cleanup устаревших при вызове `recent_timeouts`.
 
 ### 🟡 P3 — Auto-recovery в restore_backup
 - **Проблема:** при повреждении state.json нужен ручной запуск `restore_backup.py`.

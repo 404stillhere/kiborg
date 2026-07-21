@@ -310,3 +310,27 @@ def run(inputs: dict, env: dict) -> dict:
 
 Органы пишутся «по одному» (см. docstring `cyborg/wiring.py`): реестр `_shared/organs.json`
 содержит 89 карточек-кандидатов, но реально исполняется 8. Расти группами, не подключай все сразу.
+
+---
+
+## Связанный слой: `/api/health` (пульт)
+
+`/api/health` — не орган, а HTTP-эндпоинт `panel/serve.py:_health()`, но он отражает
+здоровье нервов вокруг органов. Контракт JSON:
+
+| Поле | Тип | Назначение |
+|---|---|---|
+| `ok` | bool | `true` только когда LLM + state.json + sources все здоровы |
+| `llm.available` | bool | есть ли живая цепочка LLM-ключей (через `ask_llm.available()`) |
+| `state_json.ok` / `.error` | bool / str\|null | парсится ли `idea_engine/data/state.json` |
+| `sources.down` | `[str]` | имена источников с `error` в `source_status.json` |
+| `sources.status` | object\|null | per-source статус из `cyborg/data/source_status.json` |
+| `last_run.rc` / `.running` | int\|null / bool | код возврата и статус последнего прогона |
+| `locks.recent_timeouts` | int | сколько таймаутов `state_lock` за `window_minutes` (per-process) |
+| `locks.window_minutes` | int | окно учёта таймаутов (=60) |
+
+`locks.recent_timeouts` заполняется из `cyborg/lock_monitor.py`:
+`_collect_locked` при warn'е `[warn] state_lock timeout` зовёт `lock_monitor.record_timeout()`,
+`_health()` читает `lock_monitor.recent_timeouts(60)`. После stale-lock-cleanup это
+редкое событие (значит, живой конкурент реально держал лок > `TG_LOCK_TIMEOUT`=130с).
+На `ok` НЕ влияет — прогон прошёл без лока, это диагностическая метрика.

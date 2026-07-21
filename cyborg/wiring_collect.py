@@ -63,6 +63,11 @@ def _collect_locked(inputs, env):
                     f"[warn] state_lock timeout ({wiring._TG_LOCK_TIMEOUT}s) на {sess} — "
                     f"прошли без лока (возможна гонка write)"
                 )
+                # Зафиксировать для пульта: /api/health покажет recent_timeouts за час.
+                # Живой конкурент держал лок >130с — администратор должен это видеть.
+                import lock_monitor  # noqa: E402  (ленивый: serve.py и wiring оба на path)
+
+                lock_monitor.record_timeout()
             return wiring.collect_source.run(inputs, env)
     return wiring.collect_source.run(inputs, env)
 

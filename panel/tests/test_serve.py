@@ -396,10 +396,11 @@ class TestHealth(unittest.TestCase):
     """Healthcheck /api/health — ok=True только когда ВСЁ здорово: LLM, state.json, источники."""
 
     def setUp(self):
-        # Патчим ВСЕ три компонента, чтобы каждый тест явно готовил свой сценарий.
+        # Патчим ВСЕ компоненты, чтобы каждый тест явно готовил свой сценарий.
         self._orig_avail = serve.ask_llm.available
         self._orig_state = serve.config.IE_STATE_JSON
         self._orig_cyborg = serve.CYBORG  # _read_source_status читает {CYBORG}/data/source_status.json
+        self._orig_recent = serve.lock_monitor.recent_timeouts
         self.tmp = tempfile.mkdtemp(prefix="serve_h_")
         serve.CYBORG = self.tmp
         os.makedirs(os.path.join(self.tmp, "data"), exist_ok=True)
@@ -409,11 +410,14 @@ class TestHealth(unittest.TestCase):
             json.dump({"ideas": [], "seen": []}, f)
         serve.config.IE_STATE_JSON = self._state_path
         serve.ask_llm.available = lambda: True
+        # По умолчанию таймаутов state_lock не было — пульт должен показывать 0.
+        serve.lock_monitor.recent_timeouts = lambda minutes=60: 0
 
     def tearDown(self):
         serve.ask_llm.available = self._orig_avail
         serve.config.IE_STATE_JSON = self._orig_state
         serve.CYBORG = self._orig_cyborg
+        serve.lock_monitor.recent_timeouts = self._orig_recent
 
     def _write_source_status(self, sources_dict):
         """Положить source_status.json в {CYBORG}/data/ для теста источников."""
@@ -461,6 +465,29 @@ class TestHealth(unittest.TestCase):
         h = serve._health()
         self.assertTrue(h["ok"])
         self.assertEqual(h["sources"]["down"], [])
+
+    def test_locks_field_present_with_zero_timeouts(self):
+        # По умолчанию (нет таймаутов) — locks.recent_timeouts=0, окно 60 мин.
+        h = serve._health()
+        self.assertIn("locks", h)
+        self.assertEqual(h["locks"]["recent_timeouts"], 0)
+        self.assertEqual(h["locks"]["window_minutes"], 60)
+
+    def test_locks_field_reflects_recent_timeouts(self):
+        # Если lock_monitor говорит «3 таймаута за час» — /api/health это отражает.
+        # После stale-lock-cleanup это РЕДКОСТЬ (значит живой конкурент держал лок >130с).
+        serve.lock_monitor.recent_timeouts = lambda minutes=60: 3
+        h = serve._health()
+        self.assertEqual(h["locks"]["recent_timeouts"], 3)
+        self.assertEqual(h["locks"]["window_minutes"], 60)
+
+    def test_locks_does_not_affect_ok_flag(self):
+        # Таймауты — диагностическая метрика, не приговор здоровью: даже при высоком
+        # значении ok=True (если LLM/state/sources в порядке). Прогон ПРОШЁЛ, просто без лока.
+        serve.lock_monitor.recent_timeouts = lambda minutes=60: 99
+        h = serve._health()
+        self.assertTrue(h["ok"])
+        self.assertEqual(h["locks"]["recent_timeouts"], 99)
 
 
 if __name__ == "__main__":

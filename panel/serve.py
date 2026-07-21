@@ -67,6 +67,7 @@ import direction  # noqa: E402  (руль темы: чтение/запись cy
 import feeds  # noqa: E402  (ленты-источник: какие ленты включены, тумблеры пульта, cyborg/data/feeds.json)
 import folders  # noqa: E402  (папки-источник: чтение/запись cyborg/data/folders.json)
 import keychain  # noqa: E402  (живой состав цепочки для шапки: id'ы плеч, БЕЗ значений ключей)
+import lock_monitor  # noqa: E402  (счётчик таймаутов state_lock за час — в /api/health)
 
 # ВАЖНО: порядок критичен. wiring при импорте кладёт idea_engine/ в sys.path, поэтому
 # rejected (живёт в idea_engine/) и collect_source (organs/ — тоже idea_engine/) импортируем
@@ -331,12 +332,16 @@ def _health():
             if isinstance(st, dict) and st.get("error"):
                 src_down.append(name)
     ok = bool(llm_ok and state_err is None and not src_down)
+    # Таймауты state_lock за последний час (после stale-lock-cleanup это РЕДКОСТЬ —
+    # значит живой конкурент реально держал лок >130с). Счётчик per-process in-memory.
+    recent = lock_monitor.recent_timeouts(60)
     return {
         "ok": ok,
         "llm": {"available": llm_ok},
         "state_json": {"ok": state_err is None, "error": state_err},
         "sources": {"down": src_down, "status": sources},
         "last_run": {"rc": RUN.get("rc"), "running": RUN.get("running")},
+        "locks": {"recent_timeouts": recent, "window_minutes": 60},
     }
 
 
