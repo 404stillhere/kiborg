@@ -143,7 +143,7 @@ def main(n=50):
 
         for i in range(n):
             start = time.perf_counter()
-            out = cy.run(goal, env=env)  # конвейер: collect→ideate→rank→scrub→deliver
+            cy.run(goal, env=env)  # конвейер: collect→ideate→rank→scrub→deliver
             elapsed_ms = (time.perf_counter() - start) * 1000
             times.append(elapsed_ms)
 

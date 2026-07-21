@@ -751,10 +751,11 @@ class TestCollectLockedTgSession(unittest.TestCase):
     def test_timeout_logs_warning(self):
         """При timeout state_lock печатает warning в stdout."""
         # Мокаем state_lock так, чтобы он сразу выдал timeout (yield False)
-        import store as _ie_store
+        import contextlib
         import io
         import sys
-        import contextlib
+
+        import store as _ie_store
 
         orig_store_lock = _ie_store.state_lock
         orig_wiring_lock = wiring.state_lock
