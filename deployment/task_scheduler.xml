@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Date>{{REGISTRATION_DATE}}</Date>
+    <Author>{{AUTHOR}}</Author>
+    <Version>1.0</Version>
+    <Description>Запускает kiborg harvest каждые 30 минут. Замените пути и интерпретатор под вашу машину.</Description>
+  </RegistrationInfo>
+
+  <Triggers>
+    <!-- Триггер: каждые 30 минут, начиная с {{START_TIME}} -->
+    <CalendarTrigger>
+      <StartBoundary>{{START_TIME}}</StartBoundary>
+      <ExecutionTimeLimit>PT2H</ExecutionTimeLimit>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+    <!-- Повторение каждые 30 минут -->
+    <Repetition>
+      <Interval>PT30M</Interval>
+      <StopAtDurationEnd>false</StopAtDurationEnd>
+    </Repetition>
+  </Triggers>
+
+  <Principals>
+    <Principal id="Author">
+      <UserId>{{USER_ID}}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>false</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <DisallowStartOnRemoteSession>false</DisallowStartOnRemoteSession>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+
+  <Actions Context="Author">
+    <!-- Exec: запускаем pythonw.exe (no console) с аргументом "1" (один прогон) -->
+    <Exec>
+      <Command>{{PYTHON_PATH}}</Command>
+      <Arguments>{{PROJECT_PATH}}\cyborg\harvest.py 1</Arguments>
+      <WorkingDirectory>{{PROJECT_PATH}}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+
+<!--
+=== ИНСТРУКЦИЯ по импорту ===
+
+1. Замените placeholder'ы ({{...}}) на реальные значения вашей машины:
+
+   {{PROJECT_PATH}}    — путь к проекту, например: M:\projects\kiborg
+   {{PYTHON_PATH}}     — путь к pythonw.exe, например: C:\Python312\pythonw.exe
+                         (pythonw.exe = без консоли, логи пишутся в cyborg/data/cron_*.log)
+   {{USER_ID}}         — ваш SID (опционально, для authentication). Можно опустить.
+   {{START_TIME}}      — время первого запуска, например: 2026-07-21T08:00:00
+   {{REGISTRATION_DATE}} — дата создания, например: 2026-07-21T08:00:00
+   {{AUTHOR}}          — ваше имя/ник, например: Administrator
+
+2. Импортируйте задачу через планировщик:
+   - Win+R → taskschd.msc → Enter
+   - Action → Import Task → выберите этот файл
+   - Проверьте вкладку "Actions" и "Triggers"
+   - Нажмите OK
+
+3. Для ручного запуска (проверка):
+   - Найдите задачу "Kiborg Auto Harvest" в списке
+   - Правый клик → Run
+
+4. Логи:
+   - cyborg/data/cron_<timestamp>.log — stdout/stderr каждого прогона
+   - cyborg/data/runs.md — краткая сводка прогонов (сама панель их тоже читает)
+   - Панель health: http://127.0.0.1:8737/api/health
+
+5. Для удаления задачи:
+   - Правый клик → Delete (или Disable для временного отключения)
+
+=== Примечания ===
+
+- pythonw.exe (а не python.exe) — без консольного окна, логи только в файлы.
+- Интервал 30 минут — в XML это <Interval>PT30M</Interval>.
+- <ExecutionTimeLimit>PT0S</ExecutionTimeLimit> — без лимита времени (прогон может быть длинным).
+- <AllowHardTerminate>false</AllowHardTerminate> — не убивать процесс принудительно.
+-->
