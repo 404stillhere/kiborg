@@ -3,6 +3,8 @@
 Запуск:
   python cyborg/restore_backup.py              — интерактив: показать список, спросить номер
   python cyborg/restore_backup.py --list       — только напечатать список бэкапов
+  python cyborg/restore_backup.py --auto       — авто-восстановление ЕСЛИ state.json повреждён
+                                                 (no-op если он валиден). Неинтерактивно, для cron/скриптов.
   python cyborg/restore_backup.py 2026-07-21_054700
                                                — восстановить указанный (без подтверждения)
 
@@ -11,6 +13,10 @@
      если восстановили не то, можно откатить).
   2. Копирует state.json и seen_items.json из выбранного бэкапа в их реальные пути
      (config.IE_STATE_JSON, seen_items.PATH).
+
+--auto ОТЛИЧАЕТСЯ от восстановления по имени: оно срабатывает ТОЛЬКО при повреждении
+state.json (битый JSON или отсутствие файла). Использует ту же логику, что harvest_runner.main()
+в начале прогона — удобно прогнать вручную из cron'а или скрипта без интерактива.
 
 ВАЖНО: восстановить НУЖНО оба файла вместе (seen_items и state.json согласованы — seen_items
 запоминает posts, которые уже ушли в идеи через ideate). Восстановить один без другого = риск
@@ -34,6 +40,7 @@ import bootstrap_paths  # noqa: E402
 bootstrap_paths.ensure_project_paths()
 
 import config  # noqa: E402
+import recover_state  # noqa: E402
 import seen_items  # noqa: E402
 
 
@@ -152,6 +159,24 @@ def main(argv):
         return 0
     if argv[0] in ("-l", "--list", "list"):
         _print_list()
+        return 0
+    if argv[0] == "--auto":
+        # Неинтерактивное авто-восстановление: ТОЛЬКО если state.json повреждён/отсутствует.
+        # Та же логика, что harvest_runner.main() в начале прогона — удобно для cron/скриптов.
+        # Возвращает 0 даже при «нет бэкапа» (это не ошибка утилиты, а состояние проекта).
+        result = recover_state.auto_recover_state_if_needed(
+            config.IE_STATE_JSON, config.BACKUPS_DIR, config.MAX_BACKUPS
+        )
+        if result["recovered"]:
+            print(f"OK: state.json восстановлен из бэкапа {result['backup_ts']}")
+            return 0
+        if result["error"]:
+            # state.json повреждён, но восстановить не удалось — это реальная проблема,
+            # ненулевой код возврата для cron-скриптов, которые могут поймать и алертнуть.
+            print(f"WARN: восстановление не выполнено — {result['error']}")
+            return 1
+        # state.json валиден — ничего делать было не нужно.
+        print("OK: state.json валиден, восстановление не требуется")
         return 0
     if argv[0] in ("-h", "--help", "help"):
         print(__doc__)

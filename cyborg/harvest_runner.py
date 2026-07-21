@@ -16,6 +16,22 @@ def main(argv):
     # создать data dirs на свежем клоне (до всего остального)
     bootstrap_paths.ensure_data_dirs()
 
+    # АВТО-ВОССТАНОВЛЕНИЕ state.json при повреждении (ДО backup_state, ДО органов).
+    # Если state.json битый/отсутствует и есть валидный бэкап — восстанавливаем, шлём
+    # CRITICAL-алерт, прогон продолжается как ни в чём не бывало. frozen store.py не трогаем
+    # (проверка ВНЕ органов); повреждённый файл сохраняется как state.json.corrupted-<TS>.
+    import alerts
+    import config
+    import recover_state
+
+    recovery = recover_state.auto_recover_state_if_needed(config.IE_STATE_JSON, config.BACKUPS_DIR, config.MAX_BACKUPS)
+    if recovery["recovered"]:
+        alerts.maybe_alert(
+            "CRITICAL",
+            f"state.json был повреждён, автоматически восстановлен из бэкапа {recovery['backup_ts']}. "
+            f"Повреждённый файл сохранён как state.json.corrupted-<TS> для разбора.",
+        )
+
     force = "--force" in argv or "force" in argv  # ручной клик из пульта перебивает гейт
     nums = [a for a in argv if a.isdigit()]
     n = int(nums[0]) if nums else 1
