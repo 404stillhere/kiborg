@@ -325,5 +325,38 @@ class TestDegradeNote(unittest.TestCase):
         self.assertEqual(note, "источник в фолбэке · дубликатов=1 · модель=deepseek")
 
 
+class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
+    """KeyboardInterrupt в цикле harvest_runner.main обрабатывается корректно."""
+
+    def test_keyboard_interrupt_exits_cleanly(self):
+        """Ctrl+C (KeyboardInterrupt) в цикле прогона → возврат из main без traceback."""
+        import harvest_runner
+
+        # Мокаем Cyborg так, чтобы на 2-м прогоне поднял KeyboardInterrupt
+        calls = []
+
+        class FakeCyborg:
+            def run(self, goal, env=None, on_step=None, on_progress=None):
+                calls.append(len(calls))
+                if len(calls) == 2:
+                    raise KeyboardInterrupt()
+                return {"result": 1, "dropped_stub": 0, "trace": []}
+
+        # Подменяем Cyborg через мок (через patch-паттерн из test_wiring)
+        orig_cyborg = harvest_runner.harvest.Cyborg
+        harvest_runner.harvest.Cyborg = lambda *a, **kw: FakeCyborg()
+
+        try:
+            # main(argv) должен выйти без exception
+            harvest_runner.main(["2"])  # 2 прогона, но 2-й прервётся
+        except KeyboardInterrupt:
+            self.fail("KeyboardInterrupt должен быть перехвачен внутри main")
+        finally:
+            harvest_runner.harvest.Cyborg = orig_cyborg
+
+        # Первый прогон прошёл, второй — прерван (вызов run был 2 раза)
+        self.assertEqual(len(calls), 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

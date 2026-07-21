@@ -15,9 +15,11 @@
 # (wiring при импорте кладёт idea_engine/ в sys.path, поэтому rejected/organs идут ПОСЛЕ него).
 # См. подробный комментарий у блока import wiring ниже. Не переупорядочивать.
 
+import atexit
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -612,10 +614,23 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     threading.Thread(target=_auto_loop, daemon=True).start()  # фон-рубильник (по умолчанию выключен)
     print(f"Пульт киборга: http://127.0.0.1:{PORT}  (Ctrl+C — стоп)")
+
+    # graceful shutdown: по SIGTERM/SIGINT — остановить run-процесс и сервер
+    def _shutdown(signum, frame):
+        print(f"[panel] получен signal {signum} — корректная остановка")
+        _stop_run()
+        srv.shutdown()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+    atexit.register(_stop_run)  # страховка на случай неожиданного выхода
+
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass  # уже обработано в _shutdown
+    finally:
+        _stop_run()
 
 
 if __name__ == "__main__":

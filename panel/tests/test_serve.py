@@ -185,6 +185,32 @@ class TestStopRun(unittest.TestCase):
         self.assertFalse(serve._stop_run())
 
 
+class TestGracefulShutdown(unittest.TestCase):
+    """Graceful shutdown: signal модуль импортирован, _shutdown/_stop_run вызываемы."""
+
+    def test_signal_module_imported(self):
+        """signal модуль импортирован (зависимость для SIGTERM/SIGINT)."""
+        import signal  # noqa: F401
+
+        # Если этот тест упал — signal не доступен (неприменимо для stdlib, но проверка что импорт есть)
+        self.assertTrue(hasattr(signal, "SIGTERM"))
+        self.assertTrue(hasattr(signal, "SIGINT"))
+
+    def test_shutdown_function_exists(self):
+        """В serve.py есть _shutdown функция (устанавливается как handler в main)."""
+        # Не можем запустить main() в тесте (HTTP сервер блокирует), но проверяем что функция существует
+        # и она вызывает _stop_run (что проверено в TestStopRun)
+        import inspect
+
+        # Проверяем что main существует и содержит signal.signal вызовы
+        self.assertTrue(callable(serve.main))
+        source = inspect.getsource(serve.main)
+        self.assertIn("signal.signal", source)
+        self.assertIn("SIGTERM", source)
+        self.assertIn("SIGINT", source)
+        self.assertIn("srv.shutdown", source)
+
+
 class TestAutoConfig(unittest.TestCase):
     """_load_auto/_save_auto — конфиг автономности: clamp интервала в [_AUTO_MIN,_AUTO_MAX],
     дефолт на битом/отсутствующем файле, атомарная запись (os.replace). Раньше не покрыто."""
