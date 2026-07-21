@@ -14,8 +14,6 @@ class TestBootstrapPaths(unittest.TestCase):
 
     def test_ensure_project_paths_idempotent(self):
         """Двойной вызов ensure_project_paths не падает и не дублирует пути."""
-        # Сохраняем исходную длину sys.path
-        original_len = len(sys.path)
         # Первый вызов
         bootstrap_paths.ensure_project_paths()
         after_first_len = len(sys.path)

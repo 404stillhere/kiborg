@@ -789,7 +789,6 @@ class TestCollectLockedTgSession(unittest.TestCase):
             wiring.state_lock = orig_wiring_lock
 
 
-
 class TestRunIdeateProviderSurfaces(unittest.TestCase):
     """_run_ideate пробрасывает ask_llm.last_provider в out органа (звено конвейера provider
     цепочки closerouter). Только при callable llm; без этого звена id ответившей модели

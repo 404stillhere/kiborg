@@ -61,6 +61,7 @@ def ensure_data_dirs():
     if _DIRS_DONE:
         return
     import config  # noqa: E402  # isort: skip
+
     for d in (config.CYBORG_DATA_DIR, config.IDEA_ENGINE_DATA_DIR, config.BACKUPS_DIR):
         os.makedirs(d, exist_ok=True)
     _DIRS_DONE = True

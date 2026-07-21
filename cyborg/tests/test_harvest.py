@@ -330,8 +330,8 @@ class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
 
     def test_keyboard_interrupt_exits_cleanly(self):
         """Ctrl+C (KeyboardInterrupt) в цикле прогона → возврат из main без traceback."""
-        import harvest_runner
         import harvest
+        import harvest_runner
 
         # Мокаем build_organs так, чтобы на 2-м прогоне поднял KeyboardInterrupt
         calls = []
