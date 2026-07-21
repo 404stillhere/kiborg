@@ -231,8 +231,13 @@ python serve.py &
 - Память стабильна (без утечек)
 - Ошибок в `runs.md`: 0
 
-**(Заполняется после Коммита 6 Phase 3)**
-- Стресс-тест: 50 прогонов, среднее X ms, память стабильна, ошибок в runs.md — 0
+**(Заполняется после первого запуска `stress/stress_test_harvest.py 50`)**
+- TODO: Запустить `python stress/stress_test_harvest.py 50` и вставить сюда результат
+
+**Команда для запуска:**
+```bash
+python stress/stress_test_harvest.py 50
+```
 
 ---
 
