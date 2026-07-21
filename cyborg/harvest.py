@@ -38,7 +38,15 @@ rank -> scrub -> deliver в инбокс). Разница только в пов
 import os
 import sys
 
+# path-bootstrap: добавляет cyborg/ и idea_engine/ в sys.path идемпотентно.
+# Вынесено в общий модуль bootstrap_paths.py — ТЕПЕРЬ `import harvest` (и `python harvest.py`)
+# работают АВТОНОМНО, без предварительного `import wiring` (раньше падали на `import rejected`,
+# который живёт в idea_engine/, а idea_engine/ в path клал только wiring). Подробности — в
+# bootstrap_paths.py. Сначала добавляем свой каталог (чтобы `import bootstrap_paths` резолвился).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bootstrap_paths  # noqa: E402
+
+bootstrap_paths.ensure_project_paths()
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
