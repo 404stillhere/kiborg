@@ -15,9 +15,11 @@
 # (wiring при импорте кладёт idea_engine/ в sys.path, поэтому rejected/organs идут ПОСЛЕ него).
 # См. подробный комментарий у блока import wiring ниже. Не переупорядочивать.
 
+import atexit
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -42,6 +44,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "cyborg")))
 import bootstrap_paths  # noqa: E402
 
 bootstrap_paths.ensure_project_paths()
+bootstrap_paths.ensure_data_dirs()  # создать data dirs на свежем клоне (serve пишет в auto.json)
 
 # Константы из единого config.py (источник истины). CYBORG/AUTO_FILE/LAB_ROUTER — мутабельные
 # алиасы: live-код serve.py читает их БЭАР-НЕЙМ (module globals), патчи в тестах
@@ -64,6 +67,7 @@ import direction  # noqa: E402  (руль темы: чтение/запись cy
 import feeds  # noqa: E402  (ленты-источник: какие ленты включены, тумблеры пульта, cyborg/data/feeds.json)
 import folders  # noqa: E402  (папки-источник: чтение/запись cyborg/data/folders.json)
 import keychain  # noqa: E402  (живой состав цепочки для шапки: id'ы плеч, БЕЗ значений ключей)
+import lock_monitor  # noqa: E402  (счётчик таймаутов state_lock за час — в /api/health)
 
 # ВАЖНО: порядок критичен. wiring при импорте кладёт idea_engine/ в sys.path, поэтому
 # rejected (живёт в idea_engine/) и collect_source (organs/ — тоже idea_engine/) импортируем
@@ -328,12 +332,16 @@ def _health():
             if isinstance(st, dict) and st.get("error"):
                 src_down.append(name)
     ok = bool(llm_ok and state_err is None and not src_down)
+    # Таймауты state_lock за последний час (после stale-lock-cleanup это РЕДКОСТЬ —
+    # значит живой конкурент реально держал лок >130с). Счётчик per-process in-memory.
+    recent = lock_monitor.recent_timeouts(60)
     return {
         "ok": ok,
         "llm": {"available": llm_ok},
         "state_json": {"ok": state_err is None, "error": state_err},
         "sources": {"down": src_down, "status": sources},
         "last_run": {"rc": RUN.get("rc"), "running": RUN.get("running")},
+        "locks": {"recent_timeouts": recent, "window_minutes": 60},
     }
 
 
@@ -611,10 +619,23 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     threading.Thread(target=_auto_loop, daemon=True).start()  # фон-рубильник (по умолчанию выключен)
     print(f"Пульт киборга: http://127.0.0.1:{PORT}  (Ctrl+C — стоп)")
+
+    # graceful shutdown: по SIGTERM/SIGINT — остановить run-процесс и сервер
+    def _shutdown(signum, frame):
+        print(f"[panel] получен signal {signum} — корректная остановка")
+        _stop_run()
+        srv.shutdown()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+    atexit.register(_stop_run)  # страховка на случай неожиданного выхода
+
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass  # уже обработано в _shutdown
+    finally:
+        _stop_run()
 
 
 if __name__ == "__main__":

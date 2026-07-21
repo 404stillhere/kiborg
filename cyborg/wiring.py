@@ -73,6 +73,10 @@ SKIP_FOLDERS = config.SKIP_FOLDERS
 # не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался. Нет телеграма
 # (нет telegram_session) → без замка, как раньше.
 _TG_LOCK_TIMEOUT = config.TG_LOCK_TIMEOUT  # mutable для тестов (test_wiring ставит 0.2)
+# Порог протухания lock-файла tg-сессии (СЕКУНДЫ; config хранит в минутах для читаемости).
+# _collect_locked перед захватом зовёт _remove_stale_lock(sess, ...): lock старше порога
+# (зависший после краша) сносится, не тратя TG_LOCK_TIMEOUT на ожидание. Mutable для тестов.
+_STALE_LOCK_MAX_AGE = config.STALE_LOCK_MAX_AGE_MINUTES * 60
 # Курсор ротации finish_step — куда писать/откуда читать next_cursor. Mutable для test_registry.
 _CURSOR_FILE = config.CURSOR_FILE
 
@@ -80,7 +84,7 @@ _CURSOR_FILE = config.CURSOR_FILE
 # (run.py, harvest.py, panel/serve.py, ВСЕ тесты). E402 — импорты после sys.path-хака выше;
 # F401 — символы реэкспортируются, но в ЭТОМ модуле напрямую не используются.
 from wiring_builder import build_organs  # noqa: E402,F401
-from wiring_collect import _collect_locked, _run_collect  # noqa: E402,F401
+from wiring_collect import _collect_locked, _remove_stale_lock, _run_collect  # noqa: E402,F401
 from wiring_council import (  # noqa: E402,F401
     _council_no_cap,
     _IntuitionNoCap,

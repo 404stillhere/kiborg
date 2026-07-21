@@ -61,6 +61,50 @@ M:/projects/darbot/venv/Scripts/python.exe run_tests.py
 - **Ядро планировщика:** `cyborg/brain.py`, `cyborg/core.py`.
 - Правки самого `collect_source.py` и роутера — гейт человека (ядро сбора/маршрутизации).
 
+## Переменные окружения
+
+Основные env-переменные, влияющие на работу kiborg:
+
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `KIBORG_LLM_KEYS` | Путь к файлу с LLM ключами | `./llm_keys.env` |
+| `KIBORG_SLEEP_ORCHESTRA` | Если задано — совет/судья спят (только интуиция) | не задано |
+| `KIBORG_ALERT_TOKEN` | Токен Telegram-бота для алертинга (Phase 2) | не задано |
+| `KIBORG_ALERT_CHAT_ID` | Chat ID для отправки алертов (Phase 2) | не задано |
+| `PYTHONUNBUFFERED` | Рекомендуется `1` для корректного логирования в файлы | не задано |
+
+### LLM ключи
+
+Файл `llm_keys.env` содержит API ключи для провайдеров (шаблон: `deployment/llm_keys.env.example`). Ключи нужны для:
+
+- **Интуиция** (ask_llm): `CLOSEROUTER_API_KEY` — closerouter.dev
+- **Совет/судья** (advisors): `SAMBANOVA_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, и др.
+
+**Без ключей:** kibорг переходит в stub-режим (идеи генерируются детерминированными заглушками, без LLM вызовов). Полезно для тестирования.
+
+**Заполнение ключей:**
+
+```bash
+# Скопировать шаблон
+cp deployment/llm_keys.env.example llm_keys.env
+
+# Редактировать
+nano llm_keys.env  # вставить реальные ключи
+```
+
+⚠️ **ВАЖНО:** `llm_keys.env` в `.gitignore` — никогда не коммитить реальные ключи.
+
+### Алертинг (Phase 2)
+
+При критических сбоях (`brain_down`, `dropped_stub>0`) kibорг может отправлять алерты в Telegram. Для этого задайте:
+
+```bash
+export KIBORG_ALERT_TOKEN="123456:ABC-DEF"
+export KIBORG_ALERT_CHAT_ID="987654321"
+```
+
+Без этих переменных алерты печатаются в stdout с префиксом `[ALERT]`.
+
 ## Где что искать
 
 - Детали пакетов — их `README.md` (`cyborg/`, `idea_engine/`).

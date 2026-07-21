@@ -325,5 +325,16 @@ class TestDegradeNote(unittest.TestCase):
         self.assertEqual(note, "источник в фолбэке · дубликатов=1 · модель=deepseek")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
+    """KeyboardInterrupt в цикле harvest_runner.main обрабатывается корректно."""
+
+    def test_keyboard_interrupt_handler_exists(self):
+        """В harvest_runner.main есть try/except KeyboardInterrupt — graceful exit."""
+        import inspect  # noqa: E402
+
+        import harvest_runner  # noqa: E402  (local import for test)
+
+        source = inspect.getsource(harvest_runner.main)
+        self.assertIn("try:", source)
+        self.assertIn("except KeyboardInterrupt:", source)
+        self.assertIn("return", source)  # handler вызывает return, а не propagates

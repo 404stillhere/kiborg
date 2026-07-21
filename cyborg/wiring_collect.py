@@ -6,14 +6,68 @@
 долетал до живого кода (test_wiring проверяет именно это).
 """
 
+import os
+import time
+
+
+def _remove_stale_lock(session_path, max_age_seconds):
+    """Снести lock-файл tg-сессии, если он «зависший» (старше max_age_seconds).
+
+    После аварийного падения процесса (kill -9 / OOM / power loss) lock-файл
+    `<session_path>.lock` остаётся на диске. Каждый следующий прогон честно ждёт
+    полный TG_LOCK_TIMEOUT (130с), прежде чем state_lock решит «прошли без лока».
+    Если lock старше порога — он гарантированно чужой труп (живой прогон телеграма
+    укладывается в фетч ~90с << порога 30мин), и мы его сносим ПЕРЕД попыткой захвата.
+
+    Имя lock-файла формирует ТА ЖЕ логика, что и frozen store.state_lock: `path + ".lock"`.
+    Логику дублируем (НЕ импортируем из store.py), потому что store.py — frozen core
+    и публично не раскрывает схему имен.
+
+    Свежий lock (живой конкурент) НЕ трогаем: mtime < порога → нормальная конкуренция,
+    state_lock честно подождёт освобождения. Файла нет → ничего не делаем.
+    Возвращает True, если удалили протухший lock (для тестов/логов).
+    """
+    if not session_path:
+        return False
+    lock_path = session_path + ".lock"
+    try:
+        st = os.stat(lock_path)
+    except OSError:
+        return False  # файла нет — нормально, нечего сносить
+    age = time.time() - st.st_mtime
+    if age < max_age_seconds:
+        return False  # свежий —可能是 живой конкурент, не лезем
+    try:
+        os.remove(lock_path)
+    except OSError:
+        return False  # уже ушёл (гонка с другим чистильщиком / нет прав) — не наша проблема
+    print(
+        f"[stale-lock] удалён зависший lock {lock_path} "
+        f"(age: {int(age // 60)} мин > {int(max_age_seconds // 60)} мин порога)"
+    )
+    return True
+
 
 def _collect_locked(inputs, env):
-    """collect_source.run под замком tg-сессии, когда телеграм в игре (иначе — как есть)."""
+    """collect_source.run под замком tg-сесии, когда телеграм в игре (иначе — как есть)."""
     import wiring
 
     sess = (env or {}).get("telegram_session")
     if sess:
-        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=0.2):
+        # Сначала снесём зависший lock (если крашнулся прошлый процесс и оставил труп).
+        # Без этого — ждём 130с таймаута; с этим — сразу O_EXCL-захват. Свежий lock не трогаем.
+        _remove_stale_lock(sess, wiring._STALE_LOCK_MAX_AGE)
+        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=0.2) as held:
+            if not held:
+                print(
+                    f"[warn] state_lock timeout ({wiring._TG_LOCK_TIMEOUT}s) на {sess} — "
+                    f"прошли без лока (возможна гонка write)"
+                )
+                # Зафиксировать для пульта: /api/health покажет recent_timeouts за час.
+                # Живой конкурент держал лок >130с — администратор должен это видеть.
+                import lock_monitor  # noqa: E402  (ленивый: serve.py и wiring оба на path)
+
+                lock_monitor.record_timeout()
             return wiring.collect_source.run(inputs, env)
     return wiring.collect_source.run(inputs, env)
 

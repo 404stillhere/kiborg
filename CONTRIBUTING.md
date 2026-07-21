@@ -188,6 +188,14 @@ fix(harvest): гонка в Y
 **Секреты:** `cyborg/llm_keys.env` (ключи LLM-цепочки/совета) — в `.gitignore`, значения
 не логируются и не коммитятся. Никогда не коммитьте `.feature-lab/`, `.brain/`, `handoffs/`.
 
+Для новых контрибьюторов — скопируйте шаблон и вставьте свои ключи:
+```bash
+cp deployment/llm_keys.env.example llm_keys.env
+nano llm_keys.env  # заменить YOUR_KEY_HERE на реальные ключи
+```
+
+⚠️ **ВАЖНО:** `llm_keys.env` в `.gitignore` — никогда не коммитить реальные ключи.
+
 ---
 
 ## Архитектура — где что искать
