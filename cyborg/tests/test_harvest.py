@@ -332,7 +332,7 @@ class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
         """Ctrl+C (KeyboardInterrupt) в цикле прогона → возврат из main без traceback."""
         import harvest_runner
 
-        # Мокаем Cyborg так, чтобы на 2-м прогоне поднял KeyboardInterrupt
+        # Мокаем build_organs так, чтобы на 2-м прогоне поднял KeyboardInterrupt
         calls = []
 
         class FakeCyborg:
@@ -342,9 +342,9 @@ class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
                     raise KeyboardInterrupt()
                 return {"result": 1, "dropped_stub": 0, "trace": []}
 
-        # Подменяем Cyborg через мок (через patch-паттерн из test_wiring)
-        orig_cyborg = harvest_runner.harvest.Cyborg
-        harvest_runner.harvest.Cyborg = lambda *a, **kw: FakeCyborg()
+        # Подменяем build_organs (мокаем до создания Cyborg)
+        orig_build = harvest_runner.harvest.build_organs
+        harvest_runner.harvest.build_organs = lambda: FakeCyborg()
 
         try:
             # main(argv) должен выйти без exception
@@ -352,7 +352,7 @@ class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
         except KeyboardInterrupt:
             self.fail("KeyboardInterrupt должен быть перехвачен внутри main")
         finally:
-            harvest_runner.harvest.Cyborg = orig_cyborg
+            harvest_runner.harvest.build_organs = orig_build
 
         # Первый прогон прошёл, второй — прерван (вызов run был 2 раза)
         self.assertEqual(len(calls), 2)

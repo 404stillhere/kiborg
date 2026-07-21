@@ -27,8 +27,6 @@ class TestBootstrapPaths(unittest.TestCase):
         self.assertEqual(after_first_len, after_second_len)
         # Но после первого вызова путь должен был добавиться (если его не было)
         # Проверим, что cyborg/ и idea_engine/ теперь в sys.path
-        import sys
-
         here = os.path.dirname(os.path.abspath(__file__))  # .../kiborg/cyborg/tests
         cyborg = os.path.dirname(here)  # .../kiborg/cyborg
         idea = os.path.abspath(os.path.join(cyborg, "..", "idea_engine"))  # .../kiborg/idea_engine

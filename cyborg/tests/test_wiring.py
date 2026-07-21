@@ -754,18 +754,16 @@ class TestCollectLockedTgSession(unittest.TestCase):
         import store as _ie_store
         import io
         import sys
+        import contextlib
 
         orig_lock = _ie_store.state_lock
         timeout_emulated = {}
 
+        @contextlib.contextmanager
         def fake_lock(path, timeout=None, poll=None):
             """Контекст-менеджер, который сразу выдаёт timeout."""
-            def ctxenter():
-                timeout_emulated["entered"] = True
-                return False  # ← timeout, лок не захвачен
-            def ctxexit(exc_type, exc_val, exc_tb):
-                pass
-            return type("FakeCtx", (), {"__enter__": ctxenter, "__exit__": ctxexit})()
+            timeout_emulated["entered"] = True
+            yield False  # ← timeout, лок не захвачен
 
         _ie_store.state_lock = fake_lock
         try:
