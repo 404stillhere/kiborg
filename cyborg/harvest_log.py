@@ -59,6 +59,7 @@ def _degrade_note(out):
 def _log(goal, out):
     import os
 
+    import alerts
     import harvest
 
     os.makedirs(harvest.DATA, exist_ok=True)
@@ -76,3 +77,10 @@ def _log(goal, out):
     line += "\n"
     with open(os.path.join(harvest.DATA, "runs.md"), "a", encoding="utf-8") as f:
         f.write(harvest.scrub_secrets.scrub_text(line))
+    # АЛЕРТЫ при семантических сбоях (не python-traceback — те видны по rc≠0). brain_down =
+    # CRITICAL (модель не ответила ВОВСЕ, инбокс пуст), dropped_stub > 0 = WARN (сеть/парс
+    # подводили, но живые идеи БЫЛИ). Может уйти в TG (если ENV) или логируется в stdout.
+    if out.get("brain_down"):
+        alerts.maybe_alert("CRITICAL", "мозг недоступен — все LLM промолчали, инбокс пуст")
+    elif int(out.get("dropped_stub") or 0) > 0:
+        alerts.maybe_alert("WARN", f"отсеяно {out['dropped_stub']} stub-болванок (сеть/парс LLM подводили)")

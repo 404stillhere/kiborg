@@ -114,6 +114,18 @@ SKIP_FOLDERS = []
 # Остальные 5 KIBORG_* ENV-имён живут в frozen-модулях (advisors/ask_llm/keychain) — не выносим.
 SLEEP_ORCHESTRA_ENV = "KIBORG_SLEEP_ORCHESTRA"
 
+# === АЛЕРТИНГ (опциональный, через Telegram Bot API) ===
+# Если при прогоне случился семантический сбой (out['brain_down'] / много dropped_stub),
+# harvest_log._log зовёт alerts.maybe_alert(level, msg). Когда в окружении заданы ОБА ENV —
+# алерт уходит в Telegram (urllib, без новой зависимости). Нет ENV — логируется в stdout с
+# пометкой [ALERT]. Токен бота храним в ENV запуска (не в llm_keys.env — это не LLM-ключ).
+# Задать: export KIBORG_ALERT_TOKEN=123:abc  export KIBORG_ALERT_CHAT_ID=987654321
+ALERT_TOKEN_ENV = "KIBORG_ALERT_TOKEN"
+ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
+# Таймаут HTTP-запроса в TG (алертинг не должен надолго блокировать прогон). При ошибке/timeout
+# молча падает на print — прогон продолжается.
+ALERT_HTTP_TIMEOUT = 10.0
+
 # === PANEL ===
 PANEL_PORT = 8737  # локальный HTTP пульт, слушает ТОЛЬКО 127.0.0.1
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess
