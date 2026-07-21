@@ -13,7 +13,12 @@ def _collect_locked(inputs, env):
 
     sess = (env or {}).get("telegram_session")
     if sess:
-        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=0.2):
+        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=0.2) as held:
+            if not held:
+                print(
+                    f"[warn] state_lock timeout ({wiring._TG_LOCK_TIMEOUT}s) на {sess} — "
+                    f"прошли без лока (возможна гонка write)"
+                )
             return wiring.collect_source.run(inputs, env)
     return wiring.collect_source.run(inputs, env)
 

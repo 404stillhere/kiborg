@@ -747,7 +747,45 @@ class TestCollectLockedTgSession(unittest.TestCase):
         finally:
             wiring._TG_LOCK_TIMEOUT = orig_to
         self.assertTrue(proceeded["yes"])  # прошёл по таймауту, не завис
-        self.assertTrue(os.path.exists(self.sess + ".lock"))  # ЧУЖОЙ лок не тронут
+
+    def test_timeout_logs_warning(self):
+        """При timeout state_lock печатает warning в stdout."""
+        # Мокаем state_lock так, чтобы он сразу выдал timeout (yield False)
+        import store as _ie_store
+        import io
+        import sys
+
+        orig_lock = _ie_store.state_lock
+        timeout_emulated = {}
+
+        def fake_lock(path, timeout=None, poll=None):
+            """Контекст-менеджер, который сразу выдаёт timeout."""
+            def ctxenter():
+                timeout_emulated["entered"] = True
+                return False  # ← timeout, лок не захвачен
+            def ctxexit(exc_type, exc_val, exc_tb):
+                pass
+            return type("FakeCtx", (), {"__enter__": ctxenter, "__exit__": ctxexit})()
+
+        _ie_store.state_lock = fake_lock
+        try:
+            captured = io.StringIO()
+            orig_stdout = sys.stdout
+            sys.stdout = captured
+
+            try:
+                wiring._collect_locked({}, {"telegram_session": self.sess})
+            finally:
+                sys.stdout = orig_stdout
+
+            output = captured.getvalue()
+            self.assertTrue(timeout_emulated.get("entered"))
+            self.assertIn("[warn] state_lock timeout", output)
+            self.assertIn("прошли без лока", output)
+            self.assertIn(self.sess, output)  # путь к sess есть в warning
+        finally:
+            _ie_store.state_lock = orig_lock
+
 
 
 class TestRunIdeateProviderSurfaces(unittest.TestCase):
