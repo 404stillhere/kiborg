@@ -22,35 +22,34 @@
 
 ### Branch protection — текущий статус
 
-На момент написания (2026-07-21): репозиторий **PRIVATE**, GitHub Pro **отсутствует**.
-Branch protection rules требуют Pro или публичного репо — поэтому **серверно прямой пуш
-в master НЕ заблокирован**. Это сознательное решение (см. ниже).
+На момент последнего обновления (2026-07-21): репозиторий **PUBLIC**, branch protection
+**ВКЛЮЧЁН**. Прямой пуш в master заблокирован сервером (даже для владельца).
 
 | Механизм | Статус |
 |----------|--------|
 | CI на каждый push/PR | ✅ работает |
-| CONTRIBUTING.md фиксирует процесс | ✅ задокументировано |
-| Прямой пуш в master заблокирован сервером | ❌ требует Pro/public |
+| Прямой пуш в master заблокирован сервером | ✅ включено |
+| Обязательный зелёный CI для merge | ✅ `test` job required |
+| Force-push в master заблокирован | ✅ `allow_force_pushes=false` |
+| Админ не может обойти правила | ✅ `enforce_admins=true` |
 
-**Дисциплина:** правки идут через PR даже без серверной защиты — это норма проекта.
-CI всё равно ловит регрессии (прогон срабатывает на любой push). Если в будущем репо
-станет публичным или будет куплен Pro — branch protection включается одной командой:
+**Правила защиты:**
+- `required_status_checks`: strict mode, context `test` (зелёный CI обязателен)
+- `enforce_admins`: true (владелец тоже обязан делать PR)
+- `allow_force_pushes`: false (историю master нельзя переписать)
+- `required_pull_request_reviews`: 1 approval (настроился автоматом при включении защиты)
+
+Для изменения или выключения защиты (не рекомендуется без веской причины):
 
 ```bash
-gh api -X PUT repos/404stillhere/kiborg/branches/master/protection \
-  -H "Accept: application/vnd.github+json" \
-  -F "required_status_checks[strict]=true" \
-  -F "required_status_checks[contexts][]=test" \
-  -F "enforce_admins=true" \
-  -F "required_pull_request_reviews[required_approving_review_count]=0" \
-  -F "restrictions=" \
-  -F "allow_force_pushes=false"
+gh api repos/404stillhere/kiborg/branches/master/protection
+gh api -X DELETE repos/404stillhere/kiborg/branches/master/protection  # выключить
 ```
 
 ## TL;DR
 
 ```bash
-# 1. Создать ветку от master (ПРЯМОЙ пуш в master запрещён сервером)
+# 1. Создать ветку от master (прямой пуш в master запрещён сервером — branch protection)
 git checkout master && git pull && git checkout -b feat/my-change
 
 # 2. Локально проверить перед коммитом
