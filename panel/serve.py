@@ -29,28 +29,34 @@ try:  # консоль Windows бывает cp1251
 except Exception:
     pass
 
-# ROOT — относительный от __file__: panel/../ = корень проекта. Раньше был захардкожен
-# абсолютным Windows-путём (M:/projects/kiborg) — ломал CI на Linux. HERE вычисляем первым,
-# от него танцуем ROOT/CYBORG/IDEA. REGISTRY и LAB_ROUTER остаются абсолютными — это ВНЕШНИЕ
-# пути (не в репо), на CI их нет и не нужно (тесты мокают/не трогают).
+# HERE — каталог panel/ (для статических index.html/bodies.js). Локальная ответственность
+# serve.py, не переносится в config (там нет panel-специфики вне PANEL_DIR).
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(HERE, ".."))
-CYBORG = os.path.join(ROOT, "cyborg")
-IDEA = os.path.join(ROOT, "idea_engine")
-REGISTRY = "M:/projects/_shared/organs.json"  # внешний — только на прод-машине юзера
-LAB_ROUTER = os.path.join(ROOT, ".feature-lab", "router.json")
-PORT = 8737
 
 # path-bootstrap: единый с wiring/harvest механизм. serve.py лежит в panel/, а не в cyborg/,
-# поэтому bootstrap_paths напрямую не резолвится — сначала добавляем CYBORG в sys.path локально
-# (одна строка), потом зовём ensure_project_paths(), которая идемпотентно добавит и cyborg/,
-# и idea_engine/. Раньше тут была только эта одна строка (идея-движок клал в path потом wiring
-# при импорте ниже). Теперь не полагаемся на wiring — bootstrap явный и автономный.
-# HERE/ROOT/CYBORG/IDEA остаются как пути к файлам/cwd (нужны в業務-логике ниже), НЕ только для path-init.
-sys.path.insert(0, CYBORG)
+# поэтому bootstrap_paths/config напрямую не резолвятся — сначала добавляем CYBORG в sys.path
+# локально (одна строка, через HERE/.. — то же значение, что config.CYBORG_DIR), потом зовём
+# ensure_project_paths() (она добавит и cyborg/, и idea_engine/ идемпотентно). После этого
+# `import config` работает, и мы берём оттуда остальные константы.
+sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "cyborg")))
 import bootstrap_paths  # noqa: E402
 
 bootstrap_paths.ensure_project_paths()
+
+# Константы из единого config.py (источник истины). CYBORG/AUTO_FILE/LAB_ROUTER — мутабельные
+# алиасы: live-код serve.py читает их БЭАР-НЕЙМ (module globals), патчи в тестах
+# (`serve.CYBORG = tmp`, `serve.AUTO_FILE = tmp`, `serve.LAB_ROUTER = tmp`) переписывают
+# эти globals. Потому `X = config.Y` (assignment) — ruff I001 не трогает assignment-строки
+# (в отличие от `from config import ... as X`, который схлопывался при автофиксе). См. config.py.
+import config  # noqa: E402  # isort: skip
+
+CYBORG = config.CYBORG_DIR  # каталог cyborg/ — subprocess cwd + чтение data-файлов (mutable)
+IDEA = config.IDEA_ENGINE_DIR  # каталог idea_engine/ — subprocess cwd (status инбокса)
+REGISTRY = config.ORGANS_CATALOG  # внешний каталог органов (только прод-машина, на CI нет)
+LAB_ROUTER = config.LAB_ROUTER_FILE  # feature-lab статус (mutable — патчится в test_serve)
+PORT = config.PANEL_PORT  # 8737, локальный HTTP на 127.0.0.1
+RUN_TIMEOUT = config.RUN_TIMEOUT_SEC  # watchdog на прогон (1200с = 20 мин)
+AUTO_FILE = config.AUTO_JSON  # рубильник авто-режима (mutable — патчится в test_serve/test_serve_routes)
 
 import ask_llm  # noqa: E402  (только available() — ключ не читаем и не показываем)
 import council_config  # noqa: E402  (рубильники совета: rank_ideas, ask_llm, orchestra)
@@ -75,11 +81,10 @@ _ORGANS = build_organs()
 RUN = {"running": False, "goal": None, "lines": [], "rc": None, "started": 0.0}
 _LOCK = threading.Lock()
 _PROC = {"p": None}  # текущий Popen (не сериализуем в JSON — держим отдельно от RUN)
-RUN_TIMEOUT = 1200  # с (20 мин); режим «максимум качества»: совет судит 12 кандидатов (7
-# рецензентов × 12) — дольше, чем прежние 6, поэтому потолок поднят с 600.
-# Таймаут только как страховка от настоящего висяка сети, НЕ ограничение на
-# нормальный прогон. Дольше 20 мин — точно зависло: убиваем подпроцесс, чтобы
-# кнопка/пульт не залипли в «работает…» навсегда.
+# RUN_TIMEOUT объявлен выше в блоке констант (= config.RUN_TIMEOUT_SEC). Раньше был тут с
+# комментарием-обоснованием: «режим максимум качества, совет судит 12 кандидатов (7 рецензентов
+# × 12) — дольше прежних 6, поэтому потолок поднят с 600. Страховка от висяка сети, НЕ лимит на
+# нормальный прогон. Дольше 20 мин — точно зависло». См. config.RUN_TIMEOUT_SEC.
 
 
 def _start_proc(goal, args):
@@ -167,7 +172,7 @@ def _start_observe():
 
 
 # --- автономный режим (рубильник): фон гоняет ТОТ ЖЕ сбор по таймеру ---
-AUTO_FILE = os.path.join(HERE, "auto.json")
+# AUTO_FILE объявлен выше в блоке констант (= config.AUTO_JSON).
 _AUTO = {"last": 0.0}
 _AUTO_MIN, _AUTO_MAX = 5, 240  # границы интервала, мин
 

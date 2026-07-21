@@ -17,9 +17,10 @@
 Этот файл (wiring.py) ОСТАЁТСЯ точкой входа для внешних потребителей (run.py, harvest.py,
 panel/serve.py, все тесты): сохраняет (1) sys.path-хак для idea_engine/, (2) импорт органов
 как атрибутов wiring.* (патчатся в тестах: wiring.collect_source.run, wiring.mind.deliberate,
-wiring.finish_step, ...), (3) константы (RECON, SKIP_FOLDERS, _TG_LOCK_TIMEOUT, _CURSOR_FILE),
-и реэкспортит все публичные символы из подмодулей. Подмодули обращаются к органам/константам
-через `import wiring; wiring.X` — так патч `wiring.X = mock` в тестах доходит до живого кода.
+wiring.finish_step, ...), (3) константы-мутабельные алиасы из config.py (RECON, SKIP_FOLDERS,
+_TG_LOCK_TIMEOUT, _CURSOR_FILE) — патч `wiring._CURSOR_FILE = tmp` в тесте переписывает
+module global, и подмодуль (wiring_finish) видит новое значение через `import wiring; wiring.X`.
+И реэкспортит все публичные символы из подмодулей.
 
 Подключены органы idea_engine (локальны, чисты, безопасны: без секретов, без записи в прод).
 Реестр _shared/organs.json (89 карточек) — это каталог; сюда по одному переносятся реальные
@@ -53,20 +54,27 @@ from organs import collect_source, finish_step, ideate, rank_ideas, readability_
 from organs_vendored import scrub_secrets  # noqa: E402,F401  (вендорен из реестра, чистый)
 from store import state_lock  # noqa: E402,F401  (O_EXCL-замок; тот же примитив, что вокруг state.json)
 
-RECON = "M:/projects/panelofprojects/recon.json"
-SKIP_FOLDERS = []  # folder'ы, которые режим B не толкает (пусто = не фильтровать); knob finish_step
+# Константы — мутабельные алиасы из единого config.py (источник истины). Имена те же, что и
+# раньше, чтобы тесты (wiring._CURSOR_FILE = ..., wiring._TG_LOCK_TIMEOUT = ...) и подмодули
+# (import wiring; wiring.X) продолжали работать. Патч переписывает module global фасада.
+# НЕ switchingать подмодули на `config.X` напрямую — это сломало бы patch-target'ы.
+# `import config` + `_X = config.Y` (а НЕ `from config import ... as X`): ruff I001 при автофиксе
+# схлопывал `from config import (...)` и удалял алиасы; assignment-строки он не трогает.
+# `# isort: skip` на import config: иначе ruff I001 пытается слить его с блоком органов выше.
+import config  # noqa: E402  # isort: skip
 
-
+# RECON: backlog проектов для finish_step «доделай». Читается wiring_finish → finish_step.run.
+RECON = config.RECON_FILE
+# SKIP_FOLDERS: folder'ы, которые режим «доделай» не толкает (пусто = не фильтровать). Knob.
+SKIP_FOLDERS = config.SKIP_FOLDERS
 # Телеграм-сессия (pyrogram/SQLite) не терпит двух процессов разом ('database is locked'):
 # гейт-проба, живой прогон и внешний CLI могут пересечься на одном .session. Сериализуем ДОСТУП
-# O_EXCL-замком на файле сессии (тот же примитив, что вокруг state.json) — второй процесс ЖДЁТ
-# освобождения, а не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался,
-# а не прошёл вслепую. Замороженный collect_source НЕ трогаем — оборачиваем его ВЫЗОВ. Нет
-# телеграма (нет telegram_session) → без замка, как раньше.
-_TG_LOCK_TIMEOUT = 130.0
-
-_CURSOR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "finish_cursor.json")
-
+# O_EXCL-замком (тот же примитив, что вокруг state.json) — второй процесс ЖДЁТ освобождения, а
+# не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался. Нет телеграма
+# (нет telegram_session) → без замка, как раньше.
+_TG_LOCK_TIMEOUT = config.TG_LOCK_TIMEOUT  # mutable для тестов (test_wiring ставит 0.2)
+# Курсор ротации finish_step — куда писать/откуда читать next_cursor. Mutable для test_registry.
+_CURSOR_FILE = config.CURSOR_FILE
 
 # Реэкспорт из подмодулей: сохраняет публичный API wiring.* для внешних потребителей
 # (run.py, harvest.py, panel/serve.py, ВСЕ тесты). E402 — импорты после sys.path-хака выше;
