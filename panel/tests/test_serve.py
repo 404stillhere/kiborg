@@ -366,5 +366,76 @@ class TestKeyState(unittest.TestCase):
         self.assertEqual(st["model"], "gemini")
 
 
+class TestHealth(unittest.TestCase):
+    """Healthcheck /api/health — ok=True только когда ВСЁ здорово: LLM, state.json, источники."""
+
+    def setUp(self):
+        # Патчим ВСЕ три компонента, чтобы каждый тест явно готовил свой сценарий.
+        self._orig_avail = serve.ask_llm.available
+        self._orig_state = serve.config.IE_STATE_JSON
+        self._orig_cyborg = serve.CYBORG  # _read_source_status читает {CYBORG}/data/source_status.json
+        self.tmp = tempfile.mkdtemp(prefix="serve_h_")
+        serve.CYBORG = self.tmp
+        os.makedirs(os.path.join(self.tmp, "data"), exist_ok=True)
+        # state.json по умолчанию валиден — тесты, которым нужен сбой, патчат сами
+        self._state_path = os.path.join(self.tmp, "state.json")
+        with open(self._state_path, "w", encoding="utf-8") as f:
+            json.dump({"ideas": [], "seen": []}, f)
+        serve.config.IE_STATE_JSON = self._state_path
+        serve.ask_llm.available = lambda: True
+
+    def tearDown(self):
+        serve.ask_llm.available = self._orig_avail
+        serve.config.IE_STATE_JSON = self._orig_state
+        serve.CYBORG = self._orig_cyborg
+
+    def _write_source_status(self, sources_dict):
+        """Положить source_status.json в {CYBORG}/data/ для теста источников."""
+        with open(os.path.join(self.tmp, "data", "source_status.json"), "w", encoding="utf-8") as f:
+            json.dump({"sources": sources_dict}, f)
+
+    def test_all_healthy(self):
+        # LLM есть, state.json валиден, источник работает (нет error) → ok=True
+        self._write_source_status({"telegram": {"ok": True, "error": None}})
+        h = serve._health()
+        self.assertTrue(h["ok"])
+        self.assertTrue(h["llm"]["available"])
+        self.assertTrue(h["state_json"]["ok"])
+        self.assertEqual(h["sources"]["down"], [])
+
+    def test_llm_down(self):
+        serve.ask_llm.available = lambda: False
+        h = serve._health()
+        self.assertFalse(h["ok"])
+        self.assertFalse(h["llm"]["available"])
+
+    def test_state_json_corrupted(self):
+        with open(self._state_path, "w", encoding="utf-8") as f:
+            f.write("{ это не json !!!")
+        h = serve._health()
+        self.assertFalse(h["ok"])
+        self.assertFalse(h["state_json"]["ok"])
+        self.assertIsNotNone(h["state_json"]["error"])  # причина повреждения
+
+    def test_source_down_makes_unhealthy(self):
+        # Источник упал (есть error) → ok=False, имя в sources.down
+        self._write_source_status(
+            {
+                "telegram": {"ok": True, "error": None},
+                "reddit": {"ok": False, "error": "HTTP Error 403: Blocked"},
+            }
+        )
+        h = serve._health()
+        self.assertFalse(h["ok"])
+        self.assertIn("reddit", h["sources"]["down"])
+        self.assertNotIn("telegram", h["sources"]["down"])
+
+    def test_no_source_status_file_is_ok(self):
+        # Нет source_status.json (ещё не гоняли) → sources.down пуст, ok=True (если LLM+state ок)
+        h = serve._health()
+        self.assertTrue(h["ok"])
+        self.assertEqual(h["sources"]["down"], [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

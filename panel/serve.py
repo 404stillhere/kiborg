@@ -304,6 +304,39 @@ def _read_source_status():
         return None
 
 
+def _health():
+    """Healthcheck для мониторинга/алертинга: статус ключевых компонентов в одном JSON.
+
+    ok=True когда ВСЁ здорово: LLM-цепочка жива (есть ключи), state.json парсится (не повреждён),
+    и НИ ОДИН активный источник не упал (нет error в source_status.json). Что-то одно отвалилось
+    — ok=False, в соответствующем поле подробность. last_run — код возврата последнего прогона
+    (rc≠0 = падение подпроцесса, None = ещё не гоняли)."""
+    # LLM: ask_llm.available() = есть ли цепочка ключей (muse→deepseek→nemotron через closerouter).
+    llm_ok = ask_llm.available()
+    # state.json: пытаемся json.load. Повреждён/нет файла — ok=False + error.
+    state_err = None
+    try:
+        with open(config.IE_STATE_JSON, encoding="utf-8") as f:
+            json.load(f)
+    except Exception as e:
+        state_err = str(e)[:200]
+    # Источники: per-source статус из source_status.json (если есть). Упавший = есть error.
+    sources = _read_source_status()
+    src_down = []
+    if isinstance(sources, dict):
+        for name, st in (sources.get("sources") or {}).items():
+            if isinstance(st, dict) and st.get("error"):
+                src_down.append(name)
+    ok = bool(llm_ok and state_err is None and not src_down)
+    return {
+        "ok": ok,
+        "llm": {"available": llm_ok},
+        "state_json": {"ok": state_err is None, "error": state_err},
+        "sources": {"down": src_down, "status": sources},
+        "last_run": {"rc": RUN.get("rc"), "running": RUN.get("running")},
+    }
+
+
 def _read_inbox():
     try:
         with open(IDEA + "/data/state.json", encoding="utf-8") as f:
@@ -461,6 +494,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"probe": collect_source.probe_paths(folders.all_paths())})
             except Exception as e:
                 self._json({"error": str(e)[:300]}, 500)
+        elif self.path == "/api/health":
+            # healthcheck: статус ключевых компонентов для мониторинга/алертинга.
+            # ok=True когда LLM-цепочка жива, state.json парсится, и НИ ОДИН источник не упал
+            # (источник с error в source_status.json = явный сбой сети/кред — виден в /health).
+            try:
+                self._json(_health())
+            except Exception as e:
+                self._json({"ok": False, "error": str(e)[:300]}, 500)
         else:
             self._json({"error": "нет такого пути"}, 404)
 
