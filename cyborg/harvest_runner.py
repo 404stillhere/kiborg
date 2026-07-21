@@ -17,6 +17,13 @@ def main(argv):
     n = int(nums[0]) if nums else 1
     n = max(1, min(n, 50))  # предохранитель: не больше 50 прогонов за вызов
     goal = "приноси свежие идеи"  # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
+    # РЕЗЕРВНОЕ КОПИРОВАНИЕ state.json + seen_items.json перед прогоном (ОДИН раз за вызов main,
+    # НЕ за каждый прогон в цикле — иначе N прогонов = N бэкапов под одним таймстемпом, а state.json
+    # всё равно под state_lock и гонки внутри одного вызова нет). backup_state сам ротирует старые
+    # (держит config.MAX_BACKUPS). Любая ошибка (нет файла/нет прав) — НЕ роняет прогон, только print.
+    import backup
+
+    backup.backup_state()
     env = harvest._harvest_env()
     mode = (
         (f"идеи={harvest.ask_llm._MODEL}" if harvest.ask_llm.available() else "идеи=stub (ключа нет)")

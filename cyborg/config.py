@@ -132,6 +132,14 @@ ALERT_HTTP_TIMEOUT = 10.0
 # авто-сборе раз в 45 мин, или много месяцев ручных прогонов.
 MAX_LOG_ENTRIES = 1000
 
+# === РЕЗЕРВНОЕ КОПИРОВАНИЕ state.json + seen_items.json ===
+# harvest_runner.main() перед прогоном зовёт backup.backup_state() — копирует оба файла в
+# BACKUPS_DIR/<TS>/. Ротация: храним последние MAX_BACKUPS копий (по умолчанию 10). Восстановление —
+# через CLI-утилиту cyborg/restore_backup.py. Бэкап только при авто-сборе (ручной run.py не триггерит —
+# меньше шума; state.json всё равно под state_lock, гонки нет).
+BACKUPS_DIR = os.path.join(CYBORG_DATA_DIR, "backups")
+MAX_BACKUPS = 10
+
 # === PANEL ===
 PANEL_PORT = 8737  # локальный HTTP пульт, слушает ТОЛЬКО 127.0.0.1
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess
