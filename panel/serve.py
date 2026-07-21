@@ -41,8 +41,16 @@ REGISTRY = "M:/projects/_shared/organs.json"  # внешний — только 
 LAB_ROUTER = os.path.join(ROOT, ".feature-lab", "router.json")
 PORT = 8737
 
-if CYBORG not in sys.path:
-    sys.path.insert(0, CYBORG)
+# path-bootstrap: единый с wiring/harvest механизм. serve.py лежит в panel/, а не в cyborg/,
+# поэтому bootstrap_paths напрямую не резолвится — сначала добавляем CYBORG в sys.path локально
+# (одна строка), потом зовём ensure_project_paths(), которая идемпотентно добавит и cyborg/,
+# и idea_engine/. Раньше тут была только эта одна строка (идея-движок клал в path потом wiring
+# при импорте ниже). Теперь не полагаемся на wiring — bootstrap явный и автономный.
+# HERE/ROOT/CYBORG/IDEA остаются как пути к файлам/cwd (нужны в業務-логике ниже), НЕ только для path-init.
+sys.path.insert(0, CYBORG)
+import bootstrap_paths  # noqa: E402
+
+bootstrap_paths.ensure_project_paths()
 
 import ask_llm  # noqa: E402  (только available() — ключ не читаем и не показываем)
 import council_config  # noqa: E402  (рубильники совета: rank_ideas, ask_llm, orchestra)

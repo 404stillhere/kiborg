@@ -17,10 +17,14 @@ import os
 import sys
 import time
 
-_HERE = os.path.dirname(os.path.abspath(__file__))  # .../kiborg/cyborg
-_KIBORG = os.path.dirname(_HERE)  # .../kiborg
-sys.path.insert(0, _HERE)  # cyborg (harvest, seen_items)
-sys.path.insert(0, os.path.join(_KIBORG, "idea_engine"))  # organs.collect_source
+# path-bootstrap: единый с wiring/harvest механизм. Сначала добавляем свой каталог
+# (чтобы `import bootstrap_paths` резолвился), потом зовём ensure_project_paths — он добавит
+# и cyborg/, и idea_engine/ идемпотентно. Раньше тут был inline sys.path.insert, дублировавший
+# логику фасадов. См. cyborg/bootstrap_paths.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bootstrap_paths  # noqa: E402
+
+bootstrap_paths.ensure_project_paths()
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
