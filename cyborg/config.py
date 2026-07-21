@@ -126,6 +126,12 @@ ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
 # молча падает на print — прогон продолжается.
 ALERT_HTTP_TIMEOUT = 10.0
 
+# Ротация runs.md: после записи нового прогона harvest_log._rotate_if_needed обрезает файл
+# до последних MAX_LOG_ENTRIES строк (1 прогон = 1 строка, формат построчный — см. serve._read_runs).
+# Раньше runs.md рос без огранички; сейчас — скользящее окно. 1000 записей ≈ 30 дней при
+# авто-сборе раз в 45 мин, или много месяцев ручных прогонов.
+MAX_LOG_ENTRIES = 1000
+
 # === PANEL ===
 PANEL_PORT = 8737  # локальный HTTP пульт, слушает ТОЛЬКО 127.0.0.1
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess

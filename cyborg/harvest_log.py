@@ -7,6 +7,9 @@
 """
 
 import datetime
+import os
+
+import config
 
 
 def council_note(out):
@@ -57,8 +60,6 @@ def _degrade_note(out):
 
 
 def _log(goal, out):
-    import os
-
     import alerts
     import harvest
 
@@ -75,8 +76,10 @@ def _log(goal, out):
     if dn:
         line += f" | ⚠ {dn}"  # деградация видна в истории пульта, не только в консоли
     line += "\n"
-    with open(os.path.join(harvest.DATA, "runs.md"), "a", encoding="utf-8") as f:
+    runs_path = os.path.join(harvest.DATA, "runs.md")
+    with open(runs_path, "a", encoding="utf-8") as f:
         f.write(harvest.scrub_secrets.scrub_text(line))
+    _rotate_if_needed(runs_path)
     # АЛЕРТЫ при семантических сбоях (не python-traceback — те видны по rc≠0). brain_down =
     # CRITICAL (модель не ответила ВОВСЕ, инбокс пуст), dropped_stub > 0 = WARN (сеть/парс
     # подводили, но живые идеи БЫЛИ). Может уйти в TG (если ENV) или логируется в stdout.
@@ -84,3 +87,26 @@ def _log(goal, out):
         alerts.maybe_alert("CRITICAL", "мозг недоступен — все LLM промолчали, инбокс пуст")
     elif int(out.get("dropped_stub") or 0) > 0:
         alerts.maybe_alert("WARN", f"отсеяно {out['dropped_stub']} stub-болванок (сеть/парс LLM подводили)")
+
+
+def _rotate_if_needed(path):
+    """Обрезать файл runs.md до последних config.MAX_LOG_ENTRIES строк, если вырос сверх лимита.
+
+    Формат runs.md — построчный (1 прогон = 1 строка, парсер serve._read_runs тоже считает
+    строками), поэтому «1000 записей» буквально «1000 строк». Ротация: читаем все, если больше
+    лимита — оставляем хвост, атомарно переписываем через tmp+os.replace (как _atomic_write в
+    harvest_gate, чтобы обрыв записи не бил файл). Нет файла — no-op (первый прогон).
+    Идемпотентна: файлы ≤ лимита не трогает."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return  # первый прогон / файл удалён вручную — нечего ротировать
+    if len(lines) <= config.MAX_LOG_ENTRIES:
+        return
+    keep = "".join(lines[-config.MAX_LOG_ENTRIES :])
+    # атомарно: во временный рядом + os.replace (обрыв записи НЕ обрежет runs.md)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(keep)
+    os.replace(tmp, path)
