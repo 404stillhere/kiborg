@@ -10,7 +10,11 @@ import os
 
 
 def main(argv):
+    import bootstrap_paths
     import harvest
+
+    # создать data dirs на свежем клоне (до всего остального)
+    bootstrap_paths.ensure_data_dirs()
 
     force = "--force" in argv or "force" in argv  # ручной клик из пульта перебивает гейт
     nums = [a for a in argv if a.isdigit()]

@@ -27,6 +27,7 @@ import sys
 # ещё и защищает от гонки при двух вызовах подряд в разных контекстах — лишний insert
 # с `if X not in sys.path` мог бы попасть между проверкой и вставкой в потоке (теоретически).
 _DONE = False
+_DIRS_DONE = False  # отдельный кэш для ensure_data_dirs (она тоже идемпотентна)
 
 
 def ensure_project_paths():
@@ -48,3 +49,18 @@ def ensure_project_paths():
     if idea not in sys.path:
         sys.path.insert(0, idea)
     _DONE = True
+
+
+def ensure_data_dirs():
+    """Создать cyborg/data/, idea_engine/data/, cyborg/data/backups/ при первом запуске.
+
+    Идемпотентна: повторный вызов не падает, файлы внутри директорий не трогает.
+    Предотвращает падение backup_state()/serve.py на свежем клоне, где data/ ещё не существует.
+    """
+    global _DIRS_DONE
+    if _DIRS_DONE:
+        return
+    import config  # noqa: E402  # isort: skip
+    for d in (config.CYBORG_DATA_DIR, config.IDEA_ENGINE_DATA_DIR, config.BACKUPS_DIR):
+        os.makedirs(d, exist_ok=True)
+    _DIRS_DONE = True

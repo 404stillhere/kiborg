@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "cyborg")))
 import bootstrap_paths  # noqa: E402
 
 bootstrap_paths.ensure_project_paths()
+bootstrap_paths.ensure_data_dirs()  # создать data dirs на свежем клоне (serve пишет в auto.json)
 
 # Константы из единого config.py (источник истины). CYBORG/AUTO_FILE/LAB_ROUTER — мутабельные
 # алиасы: live-код serve.py читает их БЭАР-НЕЙМ (module globals), патчи в тестах
