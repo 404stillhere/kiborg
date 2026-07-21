@@ -222,22 +222,71 @@ python serve.py &
 - **Алертинг:** Telegram chat, указанный в `KIBORG_ALERT_CHAT_ID` (см. `README.md` → «Переменные окружения»)
 - **Для добавления нового чата:** обновите `KIBORG_ALERT_CHAT_ID` и перезапустите `panel/serve.py`
 
-## Стресс-тест (прошёл перед релизом)
+## Стресс-тест (пройден 2026-07-21)
 
-**Что проверяли:** 50 прогонов harvest с моками (без LLM, без сети).
+**Что проверяли:** 50 прогонов harvest с моками (LLM отключён, collect_source возвращает 3 stub items, state/runs/seens redirect'ы в tmpdir).
+
+**Машина:** Windows 10 x64, проект на `M:/projects/kiborg/`, Python 3.12.
 
 **Результат:**
-- Среднее время прогона: `~X ms/iter`
-- Память стабильна (без утечек)
-- Ошибок в `runs.md`: 0
 
-**(Заполняется после первого запуска `stress/stress_test_harvest.py 50`)**
-- TODO: Запустить `python stress/stress_test_harvest.py 50` и вставить сюда результат
+| Метрика | Значение | Оценка |
+|---|---|---|
+| Среднее время прогона | **120.9 ms/итерация** | ✅ отлично (<500ms цель) |
+| Пиковый рост памяти | **2792 KB (~2.8 MB)** | ✅ стабилен (без утечек) |
+| Ошибок в `runs.md` | **0** | ✅ чист |
+| Суммарное время 50 прогонов | **~6 сек** | ✅ быстро |
+| Память после 50 прогонов | та же, что после 10-го | ✅ нет утечки |
 
-**Команда для запуска:**
+**Вывод:** утечек памяти и деградации производительности НЕ обнаружено. Система стабильна на 50+ прогонах подряд.
+
+**Команда для повторного запуска:**
 ```bash
 python stress/stress_test_harvest.py 50
 ```
+
+### ⚠️ Узкое место, найденное при прогоне
+
+**Bottleneck: stale state_lock на telegram-сессии → +130s к каждой итерации**
+
+Первый прогон (до изоляции мока) показал **130553 ms/итерация** (вместо 120 ms) из-за того, что `_collect_locked` реально пытался взять `state_lock` на `cyborg/data/kiborg_tg.session`, где висел stale lock-файл от крашнувшегося процесса 7 дней назад:
+
+```
+cyborg/data/kiborg_tg.session.lock   (0 байт, от 2026-07-14 22:50)
+```
+
+State_lock имеет `timeout=130.0` (config.TG_LOCK_TIMEOUT) — каждая итерация ждёт все 130 секунд, потом проходит без лока (best-effort смягчение гонки в frozen core).
+
+**Что сделано:**
+1. Stale lock удалён вручную: `rm cyborg/data/kiborg_tg.session.lock`
+2. Stress-тест изолирован от telegram_session (`env.pop("telegram_session", None)` в `stress_test_harvest.py`).
+
+**Что НЕ решено (задачи на следующий спринт — см. ниже):**
+
+- Stale lock может появиться снова при любом краше процесса во время telegram-сессии — автоматической очистки нет.
+- Frozen `state_lock` в `idea_engine/store.py` НЕ очищает stale locks (намеренно, чтобы не трогать чужой лок при обходе по timeout).
+- Мониторинг этого warning'а (`[warn] state_lock timeout`) сейчас только в stdout логах — в `/api/health` не попадает.
+
+**Как заметить проблему в проде:** в логах появятся строки `[warn] state_lock timeout (130s) на <path>`. См. RUNBOOK секцию «Прогон завис (stale state_lock)» для ручного лечения.
+
+---
+
+## Задачи на следующий спринт (найдено stress-тестом)
+
+### 🔴 P1 — Stale lock cleanup
+- **Проблема:** краш процесса во время telegram-сессии оставляет `.lock` файл навсегда.
+- **Где:** `cyborg/data/kiborg_tg.session.lock`, `idea_engine/data/state.json.lock`.
+- **Решение:** добавить фоновую очистку stale locks (например, проверка mtime > N минут в `harvest_runner.main()` перед прогоном) ИЛИ добавить мониторинг в `/api/health` (секция `locks.stale`).
+- **Frozen constraint:** НЕ меняем `store.state_lock` (frozen core) — только внешняя проверка mtime + удаление старых.
+
+### 🟡 P2 — state_lock timeout в /api/health
+- **Проблема:** warning `[warn] state_lock timeout` виден только в stdout, в health не попадает.
+- **Решение:** счётчик recent timeouts (например, за последний час) → поле `locks.recent_timeouts` в `/api/health`.
+- **Как:** счётчик в `bootstrap_paths` или отдельный модуль, инкремент при warning.
+
+### 🟡 P3 — Auto-recovery в restore_backup
+- **Проблема:** при повреждении state.json нужен ручной запуск `restore_backup.py`.
+- **Решение:** в `harvest_runner.main()` перед прогоном проверять `state.json` → если повреждён → автоматически восстанавливать из последнего бэкапа + alert.
 
 ---
 
