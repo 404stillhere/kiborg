@@ -22,7 +22,13 @@ from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже выч
 from registry import load_catalog  # noqa: E402
 from wiring import build_organs  # noqa: E402
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+# DATA — мутабельный алиас из config (источник истины). Имя то же, что и раньше, чтобы тест
+# (run.DATA = tmp в test_scrub) продолжал работать: live-код _log_run читает БЭАР-НЕЙМ `DATA`,
+# патч переписывает module global. `import config` + assignment (не `from config import`) —
+# ruff I001 не схлопывает assignment-строки (см. wiring.py/harvest.py для того же паттерна).
+import config  # noqa: E402  # isort: skip
+
+DATA = config.CYBORG_DATA_DIR  # mutable для тестов (test_scrub патчит на tmp)
 
 
 def _log_run(out):
@@ -41,8 +47,13 @@ def _log_run(out):
         line += f" | ⚠ {dn}"  # деградация видна в истории (обе кнопки согласованы)
     line += "\n"
     # защита класса: даже если в результат/цель просочился секрет — в лог он не ляжет
-    with open(os.path.join(DATA, "runs.md"), "a", encoding="utf-8") as f:
+    runs_path = os.path.join(DATA, "runs.md")
+    with open(runs_path, "a", encoding="utf-8") as f:
         f.write(scrub_secrets.scrub_text(line))
+    # ротация: обрезать до config.MAX_LOG_ENTRIES, если вырос (общий хелпер с harvest_log)
+    from harvest_log import _rotate_if_needed
+
+    _rotate_if_needed(runs_path)
 
 
 def main(argv):

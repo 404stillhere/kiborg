@@ -1,465 +1,94 @@
-"""Обвязка ИСПОЛНЯЕМЫХ органов беты. Подключены органы idea_engine (локальны, чисты,
-безопасны: без секретов, без записи в прод). Реестр _shared/organs.json (89 карточек) —
-это каталог; сюда по одному переносятся реальные исполняемые органы (совет: расти
-группами, а не подключать все 47 сразу).
+"""ФАСАД обвязки исполняемых органов беты.
+
+Раньше это был монолит (~465 строк): здесь жили и обёртки _run_* для органов, и сборка
+реестра build_organs, и хелперы совета/вычистки/курсора. Теперь монолит разбит на 7
+коротких подмодулей по одной зоне ответственности каждый:
+
+    wiring_runtime.py  — _content_llm (выбор живой модели из env)
+    wiring_collect.py  — _collect_locked, _run_collect (ГЛАЗА + замок tg-сессии)
+    wiring_ideate.py   — _run_ideate (МОЗГ-генератор)
+    wiring_council.py  — _IntuitionNoCap, _council_no_cap, _rank_by_council, _run_rank,
+                          _run_readability (СОВЕТ на отборе + редактор читаемости)
+    wiring_finish.py   — _run_finish (НОГИ: «доделай» + курсор ротации)
+    wiring_scrub.py    — _liver_clean, _run_deliver, _run_finish_sink, _run_scrub
+                          (ПЕЧЕНЬ + РУКА: вычистка секретов + доставка)
+    wiring_builder.py  — build_organs (сборка публичного реестра из _run_*)
+
+Этот файл (wiring.py) ОСТАЁТСЯ точкой входа для внешних потребителей (run.py, harvest.py,
+panel/serve.py, все тесты): сохраняет (1) sys.path-хак для idea_engine/, (2) импорт органов
+как атрибутов wiring.* (патчатся в тестах: wiring.collect_source.run, wiring.mind.deliberate,
+wiring.finish_step, ...), (3) константы-мутабельные алиасы из config.py (RECON, SKIP_FOLDERS,
+_TG_LOCK_TIMEOUT, _CURSOR_FILE) — патч `wiring._CURSOR_FILE = tmp` в тесте переписывает
+module global, и подмодуль (wiring_finish) видит новое значение через `import wiring; wiring.X`.
+И реэкспортит все публичные символы из подмодулей.
+
+Подключены органы idea_engine (локальны, чисты, безопасны: без секретов, без записи в прод).
+Реестр _shared/organs.json (89 карточек) — это каталог; сюда по одному переносятся реальные
+исполняемые органы (совет: расти группами, а не подключать все 47 сразу).
 """
 
-import json
 import os
 import sys
 
-# idea_engine/ — родственный пакет (органы collect_source/ideate/rank_ideas/...).
-# Раньше был захардкожен абсолютным Windows-путём (M:/projects/kiborg/idea_engine) —
-# ломал CI на Linux. Делаем относительным от __file__: cyborg/../idea_engine.
-_IDEA = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "idea_engine"))
-if _IDEA not in sys.path:
-    sys.path.insert(0, _IDEA)
-
+# path-bootstrap: добавляет cyborg/ и idea_engine/ в sys.path идемпотентно.
+# Вынесено в общий модуль bootstrap_paths.py, чтобы И wiring, И harvest работали АВТОНОМНО
+# (раньше harvest полагался на то, что wiring добавит idea_engine/ — `import harvest` без
+# `import wiring` падал на `import rejected`). Подробности — в bootstrap_paths.py.
+# Сначала добавляем свой каталог (чтобы `import bootstrap_paths` резолвился), потом зовём.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bootstrap_paths  # noqa: E402
 
-import advisors  # noqa: E402  (три советника: арбитр rank_ideas + интуиция ask_llm + оркестр)
-import deliver  # noqa: E402  (cyborg/deliver.py — sink в инбокс idea_engine)
-import finish_sink  # noqa: E402  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
-import mind  # noqa: E402  (движок взвешенного совещания — отбор идей советом, не одним судьёй)
-import seen_items  # noqa: E402  (фильтр «уже видели» по ID сырых items — только для харвеста)
-from core import Organ  # noqa: E402
-from organs import collect_source, finish_step, ideate, rank_ideas, readability_gate  # noqa: E402
-from organs_vendored import scrub_secrets  # noqa: E402  (вендорен из реестра, чистый)
-from store import state_lock  # noqa: E402  (O_EXCL-замок; тот же примитив, что вокруг state.json)
+bootstrap_paths.ensure_project_paths()
 
-RECON = "M:/projects/panelofprojects/recon.json"
-SKIP_FOLDERS = []  # folder'ы, которые режим B не толкает (пусто = не фильтровать); knob finish_step
+# Органы здесь импортируются НЕ для прямого использования в фасаде (код уехал в подмодули),
+# а чтобы остаться атрибутами wiring.* — их патчат тесты (wiring.collect_source.run,
+# wiring.mind.deliberate, wiring.finish_step, ...) и читают подмодули через `import wiring`.
+# Потому F401 на каждом. E402 — импорты после sys.path-хака выше.
+import advisors  # noqa: E402,F401  (три советника: арбитр rank_ideas + интуиция ask_llm + оркестр)
+import deliver  # noqa: E402,F401  (cyborg/deliver.py — sink в инбокс idea_engine)
+import finish_sink  # noqa: E402,F401  (sink: доводит nudge «доделай» до инбокса, вычистив секреты)
+import mind  # noqa: E402,F401  (движок взвешенного совещания — отбор идей советом, не одним судьёй)
+import seen_items  # noqa: E402,F401  (фильтр «уже видели» по ID сырых items — только для харвеста)
+from core import Organ  # noqa: E402,F401
+from organs import collect_source, finish_step, ideate, rank_ideas, readability_gate  # noqa: E402,F401
+from organs_vendored import scrub_secrets  # noqa: E402,F401  (вендорен из реестра, чистый)
+from store import state_lock  # noqa: E402,F401  (O_EXCL-замок; тот же примитив, что вокруг state.json)
 
+# Константы — мутабельные алиасы из единого config.py (источник истины). Имена те же, что и
+# раньше, чтобы тесты (wiring._CURSOR_FILE = ..., wiring._TG_LOCK_TIMEOUT = ...) и подмодули
+# (import wiring; wiring.X) продолжали работать. Патч переписывает module global фасада.
+# НЕ switchingать подмодули на `config.X` напрямую — это сломало бы patch-target'ы.
+# `import config` + `_X = config.Y` (а НЕ `from config import ... as X`): ruff I001 при автофиксе
+# схлопывал `from config import (...)` и удалял алиасы; assignment-строки он не трогает.
+# `# isort: skip` на import config: иначе ruff I001 пытается слить его с блоком органов выше.
+import config  # noqa: E402  # isort: skip
 
+# RECON: backlog проектов для finish_step «доделай». Читается wiring_finish → finish_step.run.
+RECON = config.RECON_FILE
+# SKIP_FOLDERS: folder'ы, которые режим «доделай» не толкает (пусто = не фильтровать). Knob.
+SKIP_FOLDERS = config.SKIP_FOLDERS
 # Телеграм-сессия (pyrogram/SQLite) не терпит двух процессов разом ('database is locked'):
 # гейт-проба, живой прогон и внешний CLI могут пересечься на одном .session. Сериализуем ДОСТУП
-# O_EXCL-замком на файле сессии (тот же примитив, что вокруг state.json) — второй процесс ЖДЁТ
-# освобождения, а не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался,
-# а не прошёл вслепую. Замороженный collect_source НЕ трогаем — оборачиваем его ВЫЗОВ. Нет
-# телеграма (нет telegram_session) → без замка, как раньше.
-_TG_LOCK_TIMEOUT = 130.0
+# O_EXCL-замком (тот же примитив, что вокруг state.json) — второй процесс ЖДЁТ освобождения, а
+# не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался. Нет телеграма
+# (нет telegram_session) → без замка, как раньше.
+_TG_LOCK_TIMEOUT = config.TG_LOCK_TIMEOUT  # mutable для тестов (test_wiring ставит 0.2)
+# Курсор ротации finish_step — куда писать/откуда читать next_cursor. Mutable для test_registry.
+_CURSOR_FILE = config.CURSOR_FILE
 
-
-def _collect_locked(inputs, env):
-    """collect_source.run под замком tg-сессии, когда телеграм в игре (иначе — как есть)."""
-    sess = (env or {}).get("telegram_session")
-    if sess:
-        with state_lock(sess, timeout=_TG_LOCK_TIMEOUT, poll=0.2):
-            return collect_source.run(inputs, env)
-    return collect_source.run(inputs, env)
-
-
-def _run_collect(inputs, env):
-    # ВАЖНО: раньше env игнорировался (жёстко n=8/source=hn) — расширение харвеста
-    # (SOURCE_N) реально не долетало до сборщика в живом прогоне, только до gate-проверки
-    # в _source_signature (та звала collect_source напрямую). Теперь настройки прокидываются.
-    env = env if isinstance(env, dict) else {}
-    # переиспользуем фетч гейта, если он уже сходил в источник ЭТИМ тиком (harvest кладёт
-    # prefetched_out) — не тянем телегу второй раз за тик (~90с/лишний pyrogram-логин). Нет /
-    # невалидно (force / сбой гейта / ручной прогон run.py) → фетчим сами, как раньше.
-    pf = env.get("prefetched_out")
-    if isinstance(pf, dict) and pf.get("items") is not None:
-        return pf
-    e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
-    if env.get("sources") is not None:
-        e["sources"] = env["sources"]  # пробрасываем И пустой список: пусто = «нет источников»,
-        #                                 collect_source честно вернёт пусто+degraded, не дефолт hn (D7)
-    if env.get("timeout"):
-        e["timeout"] = env["timeout"]
-    # keyed/конфиг-источники читают свои данные из env по своим ключам — их тоже надо ПРОКИНУТЬ,
-    # иначе источник в списке sources есть, а данных для него нет → тихо падает в фолбэк/partial_errors.
-    # telegram: креды/каналы. files: files_paths (папки-источник) — БЕЗ него _files даёт «no folders
-    # configured», весь прогон уходит в 4 захардкоженных заголовка и degraded=True, а папка юзера НЕ
-    # читается (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
-    for k in (
-        "telegram_channels",
-        "telegram_api_id",
-        "telegram_api_hash",
-        "telegram_session",
-        "telegram_python",
-        "telegram_timeout",
-        "files_paths",
-    ):
-        if env.get(k) is not None:
-            e[k] = env[k]
-    # Глаза ТОЛЬКО смотрят — приносят всё, что увидели, без фильтра «уже видели». Помнить,
-    # что уже обдумывали, — работа Мозга (см. _run_ideate): фильтр переехал туда 2026-07-13,
-    # чтобы метафора не врала (смотреть ≠ помнить).
-    out = _collect_locked(inputs, e)  # под замком tg-сессии, если телеграм в игре
-    # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести секрет в
-    # ЗАГОЛОВКЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ из gitignored
-    # gemini.md). Заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. scrub downstream
-    # (перед deliver) ПОЗДНО — промпт уже ушёл. Чистим заголовки ЗДЕСЬ, до генерации: scrub_secrets
-    # ловит форматы, что _FILES_SECRET_LINE пропустил (проверено: AQ.-ключ → [REDACTED]).
-    if isinstance(out, dict) and isinstance(out.get("items"), list):
-        for it in out["items"]:
-            if isinstance(it, dict) and isinstance(it.get("title"), str):
-                it["title"] = scrub_secrets.scrub_text(it["title"])
-    return out
-
-
-def _content_llm(env):
-    """Живая модель для контентных органов (ideate/rank): env['content_llm'], иначе общий env['llm'].
-    Так генератор и судья идут на живой модели, даже когда мозг оставлен на детерминированном stub."""
-    env = env if isinstance(env, dict) else {}
-    llm = env.get("content_llm") or env.get("llm")
-    return llm if callable(llm) else None
-
-
-def _run_ideate(inputs, env):
-    inp = inputs or {}
-    # ПАМЯТЬ — работа Мозга, не Глаз (2026-07-13, переехало из _run_collect). Фильтр «уже
-    # видели» — ТОЛЬКО когда явно попросили (харвест ставит флаг в env). Интерактивный
-    # «приноси идеи» (панель, ручной клик) флаг не ставит — юзер жмёт кнопку, ожидая идей
-    # СЕЙЧАС, а не «а тут всё уже старое, пропускаю». filter_fresh отмечает виденным ровно
-    # то, что реально уходит на генерацию — не раньше.
-    fresh = None
-    if env.get("filter_seen_items") and inp.get("items"):
-        inp = dict(inp)
-        fresh = seen_items.filter_fresh(inp["items"], mark=False)  # фильтруем БЕЗ пометки
-        inp["items"] = fresh
-    e = {"k": 12}  # режим «максимум качества»: генерим 12 кандидатов — судье есть из чего отобрать лучшее
-    llm = _content_llm(env)
-    if llm:
-        e["llm"] = llm
-    if env.get("direction"):
-        e["direction"] = env["direction"]  # руль темы долетает до генератора
-    if env.get("on_progress"):
-        e["on_progress"] = env["on_progress"]  # живой суб-прогресс долетает до органа (иначе молчит)
-    out = ideate.run(inp, e)
-    # Метим сырьё виденным ТОЛЬКО ПОСЛЕ генерации и лишь если она удалась. При живом ключе
-    # (llm_mode) осечка парса / обрыв даёт brain='stub' — НЕ метим, чтобы посты не сгорели зря:
-    # сбой транзиентный, повторим на следующем тике (раньше метили ДО генерации — сжигали). Без
-    # ключа stub ожидаем — метим как обычно, чтобы не крутить одни и те же заголовки.
-    if fresh:
-        ideas = out.get("ideas") or []
-        produced_real = any(isinstance(i, dict) and i.get("brain") != "stub" for i in ideas)
-        if produced_real or not callable(llm):
-            seen_items.mark_seen(fresh)
-    # PROVIDER — кто РЕАЛЬНО ответил в генераторе (muse-spark/deepseek/nemotron — цепочка
-    # closerouter, см. keychain._SPEC). Полезно видеть, какое плечо сработало: muse-spark=первичная,
-    # остальное=фолбэк при отлёте первичной. ask_llm.last_provider ставит _run_chain от organ.js
-    # result.provider; поднимаем в out органа → orchestrator пробросит в run-выхлоп →
-    # harvest._degrade_note рендерит «модель=…». Только при живой модели (stub-режим без ключа
-    # провайдера не имеет).
-    if callable(llm):
-        try:
-            import ask_llm as _ask
-
-            prov = _ask.last_provider
-        except Exception:
-            prov = ""
-        if prov:
-            out["provider"] = prov
-    return out
-
-
-class _IntuitionNoCap(advisors.AskLlmAdvisor):
-    """Интуиция (ask_llm) БЕЗ потолка на ответ (реш. юзера 2026-07-13: «убрать ограничение
-    вообще»). Рассуждающие модели closerouter при max_tokens=256 тратят весь лимит на скрытое
-    рассуждение и возвращают пусто → интуиция молчит. Проверено: без max_tokens deepseek
-    досказывает рассуждение (~1000 токенов) и отдаёт баллы.
-
-    Отличие от родителя ровно одно — нет потолка ответа. Наследуем _ask как есть, гасим лишь
-    `_MAX_TOKENS` (родитель кладёт max_tokens в payload, только когда он не None). Копию _ask
-    больше не держим — параметр уже в advisors.AskLlmAdvisor."""
-
-    _MAX_TOKENS = None
-
-
-def _council_no_cap(context=None):
-    """Тот же совет (advisors.build_council), но голос интуиции — БЕЗ потолка (_IntuitionNoCap).
-    Арбитр и оркестр берём как есть из их модуля; подменяем только ask_llm."""
-    return [_IntuitionNoCap() if getattr(a, "name", "") == "ask_llm" else a for a in advisors.build_council(context)]
-
-
-def _rank_by_council(inputs, env, keep):
-    """Отбор топ-keep идей ВЗВЕШЕННЫМ СОВЕТОМ (mind.deliberate), а не одиночным судьёй.
-
-    Совет = арбитр rank_ideas (0.41) + интуиция ask_llm (0.39) + оркестр (0.20). Оркестр
-    голосует ВСЕГДА, когда есть ключи (реш. юзера: совет зовётся всегда, а не по сомнению
-    интуиции — «умный сомневается всегда»). Потому deliberate (плоский, все голосуют
-    безусловно), а НЕ think (там оркестр за эскалацией). Совет ставит балл каждой идее,
-    берём топ-keep по итоговому баллу — так форма ideas_best (список) цела,
-    downstream (scrub/deliver) не трогаем.
-
-    Возвращает {'ideas_best':[...]} когда проголосовал хоть один советник (арбитр внутри
-    совета (mind.deliberate) опрашивается первым, живой моделью — его результат переиспользуем,
-    чтобы НЕ звать rank_ideas.run повторно). solo=True в метаданных = по факту судил один арбитр.
-    None только если воздержались ВСЕ (degraded) -> вызыватель идёт на плоский rank_ideas."""
-    ideas = list((inputs or {}).get("ideas") or [])
-    if len(ideas) <= keep:
-        return {"ideas_best": ideas}  # отбирать не из чего — отдаём как есть
-    # варианты для совета: копия идей с явным id=индекс, чтобы вернуть ИСХОДНЫЕ дикты по id
-    options, orig = [], {}
-    for i, d in enumerate(ideas):
-        base = dict(d) if isinstance(d, dict) else {"title": str(d)}
-        options.append({**base, "id": i})
-        orig[i] = d
-    # Оркестр теперь голосует на КАЖДОМ отборе (горячий путь) и судит весь пул идей подряд.
-    # Чтобы 12 идей × рецензент не вылезли за таймаут пульта (180с): гоним ВСЕХ рецензентов
-    # параллельно (max_workers = число моделей) и держим короткий бюджет на идею. Настройки
-    # кладём в cfg здесь — keychain/advisors их принимают, но сами не трогаются.
-    orch = env.get("orchestra")
-    if isinstance(orch, dict) and orch.get("models"):
-        orch = {**orch, "max_workers": len(orch["models"]), "timeout_sec": int(env.get("orchestra_timeout_sec", 45))}
-    context = {
-        "content_llm": _content_llm(env),  # оживляет арбитра живой моделью (иначе фолбэк-порядок)
-        "llm_chain": env.get("llm_chain"),  # оживляет интуицию (цепочка провайдеров с ключами)
-        "orchestra": orch,  # оркестр: голосует всегда (параллельно, короткий бюджет)
-        "llm_timeout_ms": env.get("llm_timeout_ms", 45000),
-        "direction": env.get("direction"),  # руль темы: арбитр читает из ctx, интуиция/оркестр — из вопроса
-    }
-    question = "Отбери лучшие идеи для доставки: оригинальность, польза, выполнимость."
-    if env.get("direction"):  # направление в вопрос → его видят интуиция и оркестр
-        question += f" Приоритет — идеи в направлении «{env['direction']}»."
-    # живой суб-прогресс: отбор советом — САМЫЙ медленный шаг (рецензенты × идеи, минуты), а
-    # внутренний цикл в mind.deliberate (заморожен) отсюда не видно — даём хотя бы одну строку
-    # «совет судит N идей», чтобы пульт не молчал на самом долгом органе.
-    op = env.get("on_progress")
-    if callable(op):
-        n_rev = len(orch["models"]) if isinstance(orch, dict) and orch.get("models") else 0
-        op("совет судит %d идей%s" % (len(options), (" (%d рецензентов)" % n_rev) if n_rev else ""))
-    # deliberate = плоский совет: арбитр + интуиция + оркестр голосуют ВСЕ и ВСЕГДА (кто без
-    # ключа — сам воздержится). Не think: там оркестр спал, пока интуиция не засомневается —
-    # ровно та «пропущу совет, раз уверен» логика, которую юзер не хотел.
-    verdict = mind.deliberate(question, options, _council_no_cap(context), context)
-    live = verdict.get("live") or []
-    if verdict.get("degraded") or not live:  # никто не проголосовал -> плоский откат на судью
-        return None
-    # Арбитр внутри совета (mind.deliberate) УЖЕ отработал живой моделью (его опрашивают первым). Поэтому и
-    # когда голос один (интуиция/оркестр промолчали), берём готовый результат ОТСЮДА, а не зовём
-    # rank_ideas.run повторно — иначе второй платный вызов той же модели (нашёл скептик 2026-07-13).
-    scores = verdict.get("scores") or {}
-    ranked = sorted(orig, key=lambda oid: (-float(scores.get(oid, 0.0)), oid))  # по баллу, стабильно
-    solo = len(live) < 2  # по факту судил один арбитр (честная пометка)
-    tag = "solo" if solo else "council"
-    best = []
-    for oid in ranked[:keep]:
-        o = orig[oid]
-        if not isinstance(o, dict):
-            best.append(o)
-            continue
-        card = dict(o, judged=tag)
-        sc = scores.get(oid)
-        if sc is not None:
-            card["score"] = round(float(sc) * 10, 1)  # балл совета 0..1 → 0-10 для бейджа «оценка совета» (D6)
-        best.append(card)
-    return {
-        "ideas_best": best,
-        "council": {"live": live, "solo": solo, "woken": ("orchestra" in live), "why": verdict.get("why")},
-    }
-
-
-def _run_readability(inputs, env):
-    """Редактор читаемости: карточкам-победителям (ideas_best) ставит балл читаемости и
-    описание ниже порога переписывает самонесущим. Идею НЕ теряем, карточку НЕ выкидываем —
-    правим только текст why. Живёт ПОСЛЕ отбора (чиним лишь то, что реально уйдёт в кучу) и
-    ДО scrub (переписанный текст тоже проходит вычистку секретов). Без ключа — passthrough."""
-    env = env if isinstance(env, dict) else {}
-    e = {"min_score": float(env.get("read_min_score", 8))}  # порог 8 (режим «максимум качества»): ниже 8 → переписать
-    llm = _content_llm(env)
-    if llm:
-        e["llm"] = llm
-        # ОЦЕНКА читаемости — детерминированный суд: даём ей ОТДЕЛЬНЫЙ низкотемпературный вызов,
-        # чтобы балл всегда парсился. temp 0.9 у ask — для генерации; рассуждающая модель на ней
-        # изредка не отдавала чистый JSON scores → карточка проходила без правки (наблюдалось
-        # живьём). score_llm строим ТОЛЬКО для ask_llm.ask (несёт kwarg temperature); чужой llm
-        # (тест/stub) — score_llm нет, оценка падает на llm, поведение байт-в-байт как раньше.
-        # Переписывание остаётся на llm (temp 0.9 — там живость нужна).
-        import ask_llm  # локально: используется только тут, top-level dep не плодим
-
-        if llm is ask_llm.ask:
-            e["score_llm"] = lambda p: ask_llm.ask(p, temperature=0.2)
-    if env.get("on_progress"):
-        e["on_progress"] = env["on_progress"]  # живой суб-прогресс долетает до органа (иначе молчит)
-    return readability_gate.run(inputs, e)
-
-
-def _run_rank(inputs, env):
-    env = env if isinstance(env, dict) else {}
-    e = {"keep": 5}  # режим «максимум качества»: оставить топ-5 из 12 (жёсткий отбор ~40%, куча без потолка)
-    llm = _content_llm(env)
-    if llm:
-        e["llm"] = llm
-    if env.get("direction"):
-        e["direction"] = env["direction"]  # судья-фолбэк тоже учитывает направление
-
-    # Если все идеи - это болванки (LLM не работает / баланс 0 / оффлайн), то опрашивать совет
-    # (оркестр/интуицию) бессмысленно и долго. Сразу переходим на быстрый оффлайн-отбор.
-    ideas = (inputs or {}).get("ideas") or []
-    all_stubs = len(ideas) > 0 and all(isinstance(i, dict) and i.get("brain") == "stub" for i in ideas)
-
-    # СОВЕТ в живом цикле (гейт снят юзером 2026-07-13, ход Г): идеи судит взвешенный совет,
-    # если есть 2-й живой голос (в env принесли цепочку интуиции / оркестр). Иначе — прежний
-    # одиночный судья, офлайн байт-в-байт. Любой сбой совета -> тихий откат, конвейер не встаёт.
-    if not all_stubs and env.get("council") is not False and (env.get("llm_chain") or env.get("orchestra")):
-        try:
-            out = _rank_by_council(inputs, env, keep=int(e["keep"]))
-            if out is not None:
-                return out
-        except Exception:
-            pass  # совет никогда не роняет отбор идей
-
-    import council_config
-
-    if not council_config.is_enabled("rank_ideas"):
-        e.pop("llm", None)  # Если арбитр выключен явно, фолбэк строго оффлайн
-
-    return rank_ideas.run(inputs, e)
-
-
-_CURSOR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "finish_cursor.json")
-
-
-def _run_finish(inputs, env):
-    # ПАМЯТЬ (2026-07-13): курсор — тоже работа Мозга, не Ног. Ноги (finish_step) просто идут
-    # туда, куда сказали; ПОМНИТЬ, на каком проекте остановились, — не их дело. Настоящего
-    # Мозг-органа в цепочке «доделать» нет (finish_step сам источник), поэтому решение живёт
-    # тут, в нервах — на пульте помечено честным узлом «🧠 Мозг (в нервах)» перед Ногами.
-    # Курсор ПЕРСИСТИТСЯ между прогонами — иначе finish_step всегда возвращал первый проект
-    # (память per-run, «cursor» в ней не появлялся; finish_step отдаёт «next_cursor»). Теперь
-    # «доделай» реально ротирует по проектам бэклога.
-    cursor = 0
-    try:
-        with open(_CURSOR_FILE, encoding="utf-8") as f:
-            cursor = int(json.load(f).get("cursor", 0))
-    except Exception:
-        pass
-    out = finish_step.run(inputs, {"recon_path": RECON, "cursor": cursor, "skip_folders": SKIP_FOLDERS})
-    try:
-        os.makedirs(os.path.dirname(_CURSOR_FILE), exist_ok=True)
-        with open(_CURSOR_FILE, "w", encoding="utf-8") as f:
-            json.dump({"cursor": int(out.get("next_cursor", cursor + 1))}, f)
-    except Exception:
-        pass
-    return out
-
-
-def _run_deliver(inputs, env):
-    return deliver.run(inputs, env)
-
-
-def _liver_clean(rec):
-    """Печень (scrub_secrets): прогоняет текстовые поля записи через вычистку секретов.
-    Чистка — работа Печени, не руки. Возвращает копию с вычищенными title/why."""
-    clean = dict(rec)
-    for f in ("title", "why"):
-        if isinstance(clean.get(f), str):
-            clean[f] = scrub_secrets.scrub_text(clean[f])
-    return clean
-
-
-def _run_finish_sink(inputs, env):
-    # Нервы ведут нудж СНАЧАЛА через Печень (scrub_secrets), ПОТОМ в руку (finish_sink).
-    # Рука больше не чистит сама (раньше _scrub_nudge был внутри finish_sink — рука делала
-    # работу Печени). Метафора честная: Печень фильтрует, Рука кладёт, нервы соединяют.
-    inp = inputs or {}
-    nudge = inp.get("nudge")
-    if isinstance(nudge, dict) and nudge:
-        inp = {**inp, "nudge": _liver_clean(nudge)}  # Печень чистит нудж
-    return finish_sink.run(inp, env)  # Рука кладёт уже вычищенное
-
-
-def _run_scrub(inputs, env):
-    inp = inputs or {}
-    ideas = list(inp.get("ideas_polished") or inp.get("ideas_best") or inp.get("ideas") or [])
-    out, red = [], 0
-    for idea in ideas:
-        if isinstance(idea, dict):
-            clean = dict(idea)
-            for f in ("title", "why"):
-                if isinstance(clean.get(f), str):
-                    s = scrub_secrets.scrub_text(clean[f])
-                    if s != clean[f]:
-                        red += 1
-                    clean[f] = s
-            out.append(clean)
-        else:
-            out.append(idea)
-    return {"ideas_safe": out, "redacted": red}
-
-
-def build_organs():
-    return [
-        Organ(
-            name="collect_source",
-            purpose="Тянет свежие внешние items (новости/сигналы) — сырьё для идей.",
-            run=_run_collect,
-            role="source",
-            produces=["items"],
-            consumes=[],
-            tags=["собрать", "новости", "свежие", "источник", "идеи", "сигналы", "сырьё"],
-            needs={"network": True},
-        ),
-        Organ(
-            name="ideate",
-            purpose="Из items делает МНОГО идей-кандидатов с ценником (судья отберёт лучшие).",
-            run=_run_ideate,
-            role="transform",
-            produces=["ideas"],
-            consumes=["items"],
-            tags=["идея", "идеи", "идей", "придумать", "предложить"],
-            needs={"key": "LLM_KEY", "stub_ok": True},
-        ),
-        Organ(
-            name="rank_ideas",
-            purpose="Судья/совет: из пула идей оставляет топ-5 по рубрике (оригинальность/польза/выполнимость).",
-            run=_run_rank,
-            role="transform",
-            produces=["ideas_best"],
-            consumes=["ideas"],
-            tags=["идея", "идеи", "отобрать", "лучшие", "оценить", "судья", "ранжировать"],
-            needs={"key": "LLM_KEY", "stub_ok": True},
-        ),
-        Organ(
-            name="finish_step",
-            purpose="Режим 'доделать': достаёт следующий шаг по существующим проектам.",
-            run=_run_finish,
-            role="source",
-            produces=["nudge"],
-            consumes=[],
-            tags=["доделать", "существующие", "проекты", "шаг", "финиш", "довести"],
-            needs={},
-        ),
-        Organ(
-            name="readability_gate",
-            purpose="Редактор читаемости: карточку с мутным описанием (балл<7) переписывает самонесущей, идею не теряя.",
-            run=_run_readability,
-            role="transform",
-            produces=["ideas_polished"],
-            consumes=["ideas_best"],
-            tags=["читаемость", "понятно", "описание", "идеи", "редактор", "ясно"],
-            needs={"key": "LLM_KEY", "stub_ok": True},
-        ),
-        Organ(
-            name="scrub_secrets",
-            purpose="Защитный проход: вычищает креды (sk-/ghp-/AIza/KEY=…) из текста идей перед доставкой.",
-            run=_run_scrub,
-            role="transform",
-            produces=["ideas_safe"],
-            consumes=["ideas_polished"],
-            tags=["безопасно", "секрет", "очистить", "идеи", "защита"],
-            needs={},
-        ),
-        Organ(
-            name="deliver",
-            purpose="Доставляет идеи в инбокс (cap=0 — без потолка, inbox.md; при живом ключе фильтрует stub-болванки).",
-            run=_run_deliver,
-            role="sink",
-            produces=["delivered"],
-            consumes=["ideas_safe"],
-            tags=["доставить", "идеи", "инбокс", "прислать", "приноси", "свежие"],
-            needs={},
-        ),
-        Organ(
-            name="finish_sink",
-            purpose="Доводит подсказку «доделай» до инбокса (через deliver), вычистив секреты из recon.",
-            run=_run_finish_sink,
-            role="sink",
-            produces=["delivered"],
-            consumes=["nudge"],
-            tags=["доделать", "довести", "шаг", "инбокс", "проекты"],
-            needs={},
-        ),
-    ]
+# Реэкспорт из подмодулей: сохраняет публичный API wiring.* для внешних потребителей
+# (run.py, harvest.py, panel/serve.py, ВСЕ тесты). E402 — импорты после sys.path-хака выше;
+# F401 — символы реэкспортируются, но в ЭТОМ модуле напрямую не используются.
+from wiring_builder import build_organs  # noqa: E402,F401
+from wiring_collect import _collect_locked, _run_collect  # noqa: E402,F401
+from wiring_council import (  # noqa: E402,F401
+    _council_no_cap,
+    _IntuitionNoCap,
+    _rank_by_council,
+    _run_rank,
+    _run_readability,
+)
+from wiring_finish import _run_finish  # noqa: E402,F401
+from wiring_ideate import _run_ideate  # noqa: E402,F401
+from wiring_runtime import _content_llm  # noqa: E402,F401
+from wiring_scrub import _liver_clean, _run_deliver, _run_finish_sink, _run_scrub  # noqa: E402,F401
