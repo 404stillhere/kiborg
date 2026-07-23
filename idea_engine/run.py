@@ -179,14 +179,16 @@ def _cli(argv):
                 try:
                     import triage_events
 
-                    triage_events.append({
-                        "idea_id": idea_id,
-                        "action": st,
-                        "title": victim.get("title", ""),
-                        "source_name": victim.get("source_name"),
-                        "score": victim.get("score"),
-                        "judged": victim.get("judged"),
-                    })
+                    triage_events.append(
+                        {
+                            "idea_id": idea_id,
+                            "action": st,
+                            "title": victim.get("title", ""),
+                            "source_name": victim.get("source_name"),
+                            "score": victim.get("score"),
+                            "judged": victim.get("judged"),
+                        }
+                    )
                 except Exception:
                     pass  # журнал — best-effort, триаж уже сохранён
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")

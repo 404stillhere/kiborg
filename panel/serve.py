@@ -438,8 +438,14 @@ def _read_inbox():
         }
     except Exception as e:
         return {
-            "error": str(e)[:200], "cap": 0, "tick": 0, "ideas": [],
-            "taken": [], "later": [], "finish": None, "seen_count": 0,
+            "error": str(e)[:200],
+            "cap": 0,
+            "tick": 0,
+            "ideas": [],
+            "taken": [],
+            "later": [],
+            "finish": None,
+            "seen_count": 0,
         }
 
 
