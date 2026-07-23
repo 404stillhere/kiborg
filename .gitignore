@@ -4,6 +4,9 @@ llm_keys.env
 *.key
 .env
 
+# временные файлы gemini auto-switch
+.gemini.disabled
+
 # данные/состояние — перегенерируются
 cyborg/data/
 idea_engine/data/

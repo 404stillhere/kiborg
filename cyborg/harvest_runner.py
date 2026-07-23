@@ -74,6 +74,19 @@ def main(argv):
                 continue
             # переиспользуем items гейт-фетча (не тянем телегу второй раз за тик); force / сбой гейта →
             # gate_out=None → _run_collect фетчит сам, как раньше (фолбэк цел)
+            # A6 CACHE_CHECK: отрезаем заголовки, которые уже отдавали генератору в последних 3 прогонах
+            # (TTL 30 мин). Только автосбор — ручной run.py не ставит prefetched_out через этот путь
+            # (решение юзера: жмёшь кнопку → хочешь идей сейчас, даже если посты мелькали). mark_seen
+            # звём тут же: items УЖЕ свежие (прошли фильтр) → уйдут в генерацию → метим как виденные.
+            if isinstance(gate_out, dict):
+                try:
+                    import items_cache
+
+                    fresh_items = items_cache.filter_fresh(gate_out.get("items") or [])
+                    gate_out = {**gate_out, "items": fresh_items}
+                    items_cache.mark_seen(fresh_items)
+                except Exception:
+                    pass  # cache_check НИКОГДА не роняет автосбор — тише едешь, хоть и с дублями
             run_env = {**env, "prefetched_out": gate_out} if isinstance(gate_out, dict) else env
             out = cy.run(goal, env=run_env)
             r = out.get("result")

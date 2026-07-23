@@ -11,6 +11,7 @@ sys.path.insert(0, BASE)
 
 import rejected  # noqa: E402
 import run  # noqa: E402
+import triage_store  # noqa: E402
 from store import LATER, OPEN, TAKE, TRASH, Store  # noqa: E402
 
 
@@ -307,22 +308,43 @@ class TestDedup(unittest.TestCase):
         self.assertFalse(s.add_idea(_idea("старая идея")))  # засеяно из legacy -> не повторяем
 
 
-class TestRunTrashRejects(unittest.TestCase):
-    """Оболочка run.py: «мусор» = ОТКЛОНЕНА — убрать из списков + записать суть в rejected (2026-07-18)."""
+class TestRunTriageMoves(unittest.TestCase):
+    """Оболочка run.py: разбор идеи (take/later/trash) переносит её из state.json в отдельный
+    мастер-файл (2026-07-22). state.json хранит только open; take→taken.json, later→later.json,
+    trash→rejected.json. Идея вырезается из ideas[] совсем (не tombstone со статусом)."""
 
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="runtrash_")
-        self._saved = (run.STATE, run.INBOX, rejected.PATH, rejected.DATA)
+        self.tmp = tempfile.mkdtemp(prefix="runtriage_")
+        self._saved = (
+            run.STATE,
+            run.INBOX,
+            rejected.PATH,
+            rejected.DATA,
+            triage_store.TAKEN_PATH,
+            triage_store.LATER_PATH,
+            triage_store.DATA,
+        )
         run.STATE = os.path.join(self.tmp, "state.json")
         run.INBOX = os.path.join(self.tmp, "inbox.md")
         rejected.DATA = self.tmp
         rejected.PATH = os.path.join(self.tmp, "rejected.json")
+        triage_store.DATA = self.tmp
+        triage_store.TAKEN_PATH = os.path.join(self.tmp, "taken.json")
+        triage_store.LATER_PATH = os.path.join(self.tmp, "later.json")
         s = Store(run.STATE, cap=0)
         s.add_idea(_idea("Плохая идея"))  # id=1
         s.save()
 
     def tearDown(self):
-        run.STATE, run.INBOX, rejected.PATH, rejected.DATA = self._saved
+        (
+            run.STATE,
+            run.INBOX,
+            rejected.PATH,
+            rejected.DATA,
+            triage_store.TAKEN_PATH,
+            triage_store.LATER_PATH,
+            triage_store.DATA,
+        ) = self._saved
 
     def test_trash_removes_from_ideas_and_records(self):
         run._cli(["status", "1", "trash"])
@@ -330,18 +352,55 @@ class TestRunTrashRejects(unittest.TestCase):
         self.assertEqual(s.data["ideas"], [])  # убрана из списков совсем (не tombstone)
         self.assertEqual(rejected.recent(), ["Плохая идея"])  # суть записана в rejected
 
-    def test_take_keeps_idea_not_rejected(self):
+    def test_take_moves_to_taken(self):
         run._cli(["status", "1", "take"])
         s = Store(run.STATE, cap=0)
-        self.assertEqual(len(s.data["ideas"]), 1)  # взял — идея остаётся (в разобранных)
-        self.assertEqual(s.data["ideas"][0]["status"], "take")
+        self.assertEqual(s.data["ideas"], [])  # вырезана из state.json (только open)
+        taken = triage_store.load(triage_store.TAKEN_PATH)["taken"]
+        self.assertEqual(len(taken), 1)  # легла в taken.json целиком
+        self.assertEqual(taken[0]["title"], "Плохая идея")
+        self.assertEqual(taken[0]["id"], 1)  # полная идея: id сохранён
+        self.assertIn("triaged_ts", taken[0])  # метка времени действия проставлена
+        self.assertEqual(triage_store.count(triage_store.LATER_PATH), 0)  # не в later
         self.assertEqual(rejected.count(), 0)  # не отклонена
 
-    def test_later_keeps_idea_not_rejected(self):
+    def test_later_moves_to_later(self):
         run._cli(["status", "1", "later"])
         s = Store(run.STATE, cap=0)
-        self.assertEqual(s.data["ideas"][0]["status"], "later")
-        self.assertEqual(rejected.count(), 0)
+        self.assertEqual(s.data["ideas"], [])  # вырезана из state.json
+        later = triage_store.load(triage_store.LATER_PATH)["later"]
+        self.assertEqual(len(later), 1)  # легла в later.json целиком
+        self.assertEqual(later[0]["title"], "Плохая идея")
+        self.assertIn("triaged_ts", later[0])
+        self.assertEqual(triage_store.count(triage_store.TAKEN_PATH), 0)  # не в taken
+        self.assertEqual(rejected.count(), 0)  # не отклонена
+
+    def test_triage_writes_event_to_jsonl(self):
+        # B3: каждый triage (take/later/trash) дописывает событие в triage_events.jsonl.
+        # Формат: {ts, idea_id, action, title, source_name, score, judged}. Feedback Cortex
+        # (B4) читает это как сигнал для адаптации весов/профиля.
+        import triage_events
+
+        triage_events.PATH = os.path.join(self.tmp, "triage_events.jsonl")
+        # take → событие action="take"
+        run._cli(["status", "1", "take"])
+        events = triage_events.load()
+        self.assertEqual(len(events), 1)
+        ev = events[0]
+        self.assertEqual(ev["action"], "take")
+        self.assertEqual(ev["idea_id"], 1)
+        self.assertEqual(ev["title"], "Плохая идея")
+        self.assertIn("ts", ev)
+
+        # добавим ещё одну идею и сделаем trash → второе событие action="trash"
+        s = Store(run.STATE, cap=0)
+        s.add_idea(_idea("Вторая идея"))
+        s.save()
+        run._cli(["status", "2", "trash"])
+        events = triage_events.load()
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[1]["action"], "trash")
+        self.assertEqual(events[1]["title"], "Вторая идея")
 
 
 if __name__ == "__main__":

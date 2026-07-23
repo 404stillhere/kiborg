@@ -338,3 +338,127 @@ class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
         self.assertIn("try:", source)
         self.assertIn("except KeyboardInterrupt:", source)
         self.assertIn("return", source)  # handler вызывает return, а не propagates
+
+
+class TestHarvestRunnerCacheCheck(unittest.TestCase):
+    """A6: harvest_runner фильтрует gate_out items по кэшу (SHA256 title, TTL 30 мин)
+    и метит прошедшие filter_fresh как виденные. Только автосбор; ручной run.py сюда
+    не доходит (не ставит prefetched_out). Интеграционный тест: end-to-end по main()."""
+
+    def setUp(self):
+        import items_cache
+
+        self._ic = items_cache
+        self._orig_path = items_cache.PATH
+        self.tmp_dir = os.path.join(tempfile.gettempdir(), "kiborg_harvest_ic")
+        os.makedirs(self.tmp_dir, exist_ok=True)
+        self.cache_file = os.path.join(self.tmp_dir, "ic_integration.json")
+        items_cache.PATH = self.cache_file
+        self._cleanup()
+
+    def tearDown(self):
+        self._ic.PATH = self._orig_path
+        self._cleanup()
+
+    def _cleanup(self):
+        try:
+            os.remove(self.cache_file)
+        except OSError:
+            pass
+
+    def test_cache_check_filters_seen_and_marks_new(self):
+        # 1-й прогон: items «повтор» и «новое» помечаются видим. 2-й прогон: «повтор» отфильтрован,
+        # но «совсем-новое» (которого не было в 1-м) проходит.
+        import harvest_runner
+
+        captured = {"run": 0}
+
+        # gate_out меняется между прогонами: 1-й — {повтор, новое}, 2-й — {повтор, совсем-новое}
+        runs = [
+            {
+                "items": [
+                    {"title": "повтор", "id": "i1", "source": "hn"},
+                    {"title": "новое", "id": "i2", "source": "hn"},
+                ],
+                "source": "hn",
+            },
+            {
+                "items": [
+                    {"title": "повтор", "id": "i1", "source": "hn"},  # был в 1-м → отфильтруется
+                    {"title": "совсем-новое", "id": "i3", "source": "hn"},  # нового не было → пройдёт
+                ],
+                "source": "hn",
+            },
+        ]
+
+        def fake_signature():
+            return (None, False, 2, None, runs[captured["run"]])
+
+        harvest._source_signature = fake_signature
+        harvest._should_run = lambda sig, force, fresh_n: True
+        harvest._save_sig = lambda sig: None
+        harvest._persist_status = lambda status: None
+        harvest._log = lambda *a, **k: None
+        harvest._degrade_note = lambda out: ""
+        harvest._harvest_env = lambda: {"filter_seen_items": False}  # seen_items ВЫключен —
+        #   тестируем ТОЛЬКО cache_check (иначе 2 независимых слоя фильтруют одновременно и
+        #   мы не отличим, кто убрал item).
+        harvest.ask_llm.available = lambda: False
+        harvest._active_sources = lambda: ["hn"]
+        harvest.SOURCE_N = 8
+
+        class FakeCy:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, goal, env=None):
+                # фиксируем items, ушедшие в генератор (prefetched_out.items ПОСЛЕ cache_check)
+                pf = (env or {}).get("prefetched_out") or {}
+                captured["items_seen_by_generator"] = [i.get("title") for i in pf.get("items", [])]
+                return {"result": 1, "dropped_stub": 0}
+
+        harvest.Cyborg = FakeCy
+        harvest.build_organs = lambda: []
+
+        # 1-й прогон: оба items новые → генератор видит оба, кэш их запомнил
+        harvest_runner.main([])
+        captured["run"] = 1
+        self.assertEqual(sorted(captured["items_seen_by_generator"]), ["новое", "повтор"])
+
+        # 2-й прогон: «повтор» теперь в кэше → отфильтрован, «совсем-новое» проходит
+        harvest_runner.main([])
+        self.assertEqual(captured["items_seen_by_generator"], ["совсем-новое"])  # повтор отрезан
+
+    def test_cache_check_never_crashes_harvest(self):
+        # items_cache.PATH указывает на недоступное место / битый → harvest НЕ падает
+        import harvest_runner
+
+        self._ic.PATH = "/несуществующий/путь/кэш.json"
+        harvest._source_signature = lambda: (
+            None,
+            False,
+            1,
+            None,
+            {"items": [{"title": "тест", "id": "i1", "source": "hn"}], "source": "hn"},
+        )
+        harvest._should_run = lambda sig, force, fresh_n: True
+        harvest._save_sig = lambda sig: None
+        harvest._persist_status = lambda status: None
+        harvest._log = lambda *a, **k: None
+        harvest._degrade_note = lambda out: ""
+        harvest._harvest_env = lambda: {}
+        harvest.ask_llm.available = lambda: False
+        harvest._active_sources = lambda: ["hn"]
+        harvest.SOURCE_N = 8
+
+        class FakeCy:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, goal, env=None):
+                return {"result": 0, "dropped_stub": 0}
+
+        harvest.Cyborg = FakeCy
+        harvest.build_organs = lambda: []
+        # не должно упасть — try/except вокруг cache_check ловит всё
+        harvest_runner.main([])
