@@ -156,6 +156,10 @@ def _deliberate_with_lazy_orchestra(question, options, context, env, orch, op, n
     mind.WEIGHTS подменяется на council_weights.current_weights() в try/finally вокруг ВСЕХ
     deliberate-вызовов здесь. finally восстанавливает канон даже при исключении. mind.py
     (FROZEN) НЕ трогаем — WEIGHTS module-global, читается в момент deliberate.
+
+    C4 shadow: на канон-пути (оркестр всегда) после deliberate замеряем overlap
+    rank_ideas×ask_llm из breakdown и пишем в shadow_metrics.jsonl. Реальное поведение НЕ
+    меняется — запись «что было бы если бы включили lazy». Данные для решения «включать ли A2».
     """
     keep = 3  # топ-3 для оценки согласия советников (ранг внутри breakdown)
     # B2: scoped rebind весов если Feedback Cortex включил адаптивный режим
@@ -171,8 +175,15 @@ def _deliberate_with_lazy_orchestra(question, options, context, env, orch, op, n
         except Exception:
             pass  # council_weights недоступен/битый → канон, не роняем отбор
         if not env.get("lazy_orchestra") or not (isinstance(orch, dict) and orch.get("models")):
-            # канон: оркестр всегда
-            return wiring.mind.deliberate(question, options, _council_no_cap(context), context)
+            # канон: оркестр всегда. Один deliberate С orchestra в context.
+            verdict = wiring.mind.deliberate(question, options, _council_no_cap(context), context)
+            # C4 shadow: замеряем «что было бы если бы lazy orchestra включили» — насколько
+            # согласны rank_ideas×ask_llm на ТОМ ЖЕ breakdown (оркестр УЖЕ голосовал, мы только
+            # читаем его副产品). Реальное поведение НЕ меняется: оркестр отработал, вердикт тот же.
+            # Shadow-логирование живёт только когда orchestra был в context (есть что замерять) —
+            # т.е. именно на канон-пути «оркестр всегда». Без orchestra overlap считать не из чего.
+            _shadow_log_lazy(verdict, orch, n_ideas)
+            return verdict
 
         # Фаза 1: deliberate БЕЗ orchestra
         ctx_no_orch = {k: v for k, v in context.items() if k != "orchestra"}
@@ -213,6 +224,43 @@ def _top_k_from_breakdown(breakdown, name, k):
         ranked = sorted(sc.keys(), key=lambda oid: (-float(sc.get(oid, 0.0)), str(oid)))
         return ranked[:k]
     return None
+
+
+def _shadow_log_lazy(verdict, orch, n_ideas):
+    """C4: замерить overlap rank_ideas×ask_llm и записать в shadow_metrics.jsonl.
+
+    НЕ меняет поведение — только наблюдатель. Читает breakdown уже свершившегося
+    deliberate (оркестр голосовал в каноне), считает Jaccard топ-3 двух советников
+    и пишет запись о том, «вызвал бы lazy orchestra Фазу 2 (расхождение) или нет».
+    Любой сбой (нет breakdown, не-словарь, исключение в jsonl) → тихо, не роняем отбор.
+    """
+    try:
+        breakdown = (verdict or {}).get("breakdown") or []
+        if not isinstance(breakdown, list) or not breakdown:
+            return
+        keep = 3
+        top_rank = _top_k_from_breakdown(breakdown, "rank_ideas", keep)
+        top_ask = _top_k_from_breakdown(breakdown, "ask_llm", keep)
+        if top_rank is None or top_ask is None:
+            return  # кто-то промолчал — overlap считать не из чего, запись бесмысленна
+        from wiring_ideate import _jaccard
+
+        overlap = _jaccard(set(top_rank), set(top_ask))
+        n_rev = len(orch["models"]) if isinstance(orch, dict) and orch.get("models") else None
+        import shadow_metrics
+
+        shadow_metrics.append(
+            {
+                "overlap": round(overlap, 3),
+                "would_call_phase2": overlap < 2 / 3,
+                "top_rank": top_rank,
+                "top_ask": top_ask,
+                "n_ideas": n_ideas,
+                "n_reviewers": n_rev,
+            }
+        )
+    except Exception:
+        pass  # shadow — наблюдатель; НИКОГДА не роняет прогон
 
 
 def _rank_by_council(inputs, env, keep):

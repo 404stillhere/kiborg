@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ask_llm  # noqa: E402  (last_provider мок для provider-проброса в _run_ideate)
 import seen_items  # noqa: E402
+import shadow_metrics  # noqa: E402
 import wiring  # noqa: E402
 
 
@@ -1038,6 +1039,111 @@ class TestLazyOrchestra(unittest.TestCase):
         wiring.mind.deliberate = fake
         wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "lazy_orchestra": True})
         self.assertEqual(len(self.calls), 1)  # orchestra нет → Фаза 2 не запускается
+
+
+class TestShadowLogging(unittest.TestCase):
+    """C4 shadow-логирование: на канон-пути (оркестр всегда) после deliberate считаем overlap
+    rank_ideas×ask_llm и пишем запись в shadow_metrics.jsonl. Реальное поведение НЕ меняется —
+    только наблюдатель. Любой сбой (нет breakdown, исключение) → тихо, прогон не роняется.
+    """
+
+    IDEAS = [{"title": t, "why": t.lower()} for t in ("A", "B", "C", "D", "E")]
+
+    def setUp(self):
+        self._orig_deliberate = wiring.mind.deliberate
+        self._orig_sm_path = shadow_metrics.PATH
+        # redirect PATH в tmp чтобы не писать в реальный data/
+        self.tmp = os.path.join(tempfile.gettempdir(), "kiborg_shadow_test.jsonl")
+        shadow_metrics.PATH = self.tmp
+        self._cleanup()
+
+    def tearDown(self):
+        wiring.mind.deliberate = self._orig_deliberate
+        shadow_metrics.PATH = self._orig_sm_path
+        self._cleanup()
+
+    def _cleanup(self):
+        try:
+            os.remove(self.tmp)
+        except OSError:
+            pass
+
+    def _patch_deliberate(self, breakdown):
+        """Патчит deliberate чтобы вернуть verdict с заданным breakdown."""
+
+        def fake(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm", "orchestra"],
+                "degraded": False,
+                "scores": {i: 0.5 for i in range(len(options))},
+                "breakdown": breakdown,
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake
+
+    def test_shadow_logs_overlap_on_canon_path(self):
+        # канон-прогон (без lazy_orchestra, с orchestra в env) → deliberate отработал,
+        # shadow замерил overlap и записал. Реальный deliberate не меняется.
+        breakdown = [
+            {"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+            {"name": "ask_llm", "weight": 0.39, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+        ]
+        self._patch_deliberate(breakdown)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        recs = shadow_metrics.load()
+        self.assertEqual(len(recs), 1)
+        rec = recs[0]
+        self.assertEqual(rec["overlap"], 1.0)  # топ-3 полностью совпал
+        self.assertFalse(rec["would_call_phase2"])  # 1.0 >= 2/3 → Фаза 2 не нужна
+        self.assertEqual(rec["top_rank"], [0, 1, 2])
+        self.assertEqual(rec["top_ask"], [0, 1, 2])
+        self.assertEqual(rec["n_ideas"], 5)
+        self.assertEqual(rec["n_reviewers"], 1)
+
+    def test_shadow_records_disagreement_as_would_call_phase2(self):
+        # rank_ideas топ {0,1,2}, ask_llm топ {3,4,0} → пересечение {0}=1, объединение
+        # {0,1,2,3,4}=5 → Jaccard=0.2 < 2/3 → запись помечает would_call_phase2=True
+        # (lazy бы подключил оркестр для разрешения расхождения)
+        breakdown = [
+            {"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7, 3: 0.1, 4: 0.05}, "why": ""},
+            {"name": "ask_llm", "weight": 0.39, "scores": {0: 0.3, 1: 0.1, 2: 0.05, 3: 0.9, 4: 0.8}, "why": ""},
+        ]
+        self._patch_deliberate(breakdown)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1", "m2"]}})
+        recs = shadow_metrics.load()
+        self.assertEqual(len(recs), 1)
+        self.assertTrue(recs[0]["would_call_phase2"])
+        self.assertAlmostEqual(recs[0]["overlap"], 0.2)  # Jaccard 1/5
+        self.assertEqual(recs[0]["n_reviewers"], 2)
+
+    def test_shadow_no_record_when_breakdown_absent(self):
+        # deliberate без breakdown (моки в существующих тестах, stub) → overlap считать не из
+        # чего, запись НЕ пишется. Это защита: shadow не должен спамить пустыми записями.
+        self._patch_deliberate(breakdown=None)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        self.assertEqual(shadow_metrics.load(), [])
+
+    def test_shadow_silent_when_one_advisor_missing(self):
+        # только rank_ideas в breakdown (ask_llm промолчал) → overlap не считается, записи нет
+        breakdown = [{"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""}]
+        self._patch_deliberate(breakdown)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        self.assertEqual(shadow_metrics.load(), [])
+
+    def test_shadow_does_not_break_when_metrics_unavailable(self):
+        # если shadow_metrics падает (битый PATH/импорт) → прогон НЕ роняется, отбор идёт как обычно
+        breakdown = [
+            {"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+            {"name": "ask_llm", "weight": 0.39, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+        ]
+        self._patch_deliberate(breakdown)
+        # PATH в несоздаваемый каталог → append упадёт на os.makedirs, но _shadow_log_lazy
+        # ловит всё в try/except → _run_rank возвращает нормальный результат
+        shadow_metrics.PATH = "Z:/nonexistent_drive/shadow_test.jsonl"
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        # отбор не сломан: ideas_best не пустой
+        self.assertTrue(out and out.get("ideas_best"))
 
 
 class TestScopedRebindWeights(unittest.TestCase):
