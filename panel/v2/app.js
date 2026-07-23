@@ -298,6 +298,14 @@ class Renderer {
     const pst = Renderer.$('.h-pstate');
     if (pst) { pst.textContent = S.running ? 'работает' : 'жив'; pst.className = 'h-pstate ' + (S.running ? 'working' : 'alive'); }
 
+    // Кнопка Стоп: активна ТОЛЬКО когда идёт прогон. Раньше disabled был хардкод в
+    // index.html и НИКОГДА не снимался → юзер не мог остановить прогон, а триаж был
+    // заблокирован busy-защитой (serve.py /api/idea: «идёт прогон — разбор отложен»).
+    // Симметрия с Принести (та disabled при running=true). После клика stopRun() шлёт
+    // POST /api/stop → RUN.running=False → следующий /api/state снимет disabled обратно.
+    const stopBtn = Renderer.$('.actions-list .btn-action.danger');
+    if (stopBtn) stopBtn.disabled = !S.running;
+
     // авто в шапке
     const at = Renderer.$('#auto-toggle');
     const al = Renderer.$('#auto-label');

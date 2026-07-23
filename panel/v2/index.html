@@ -25,7 +25,7 @@
     <div class="h-metrics">
       <div class="h-metric" title="Открытых идей в инбоксе">
         <span class="h-metric-label">inbox</span>
-        <span class="h-metric-value good" id="m-inbox">12</span>
+        <span class="h-metric-value good" id="m-inbox">0</span>
       </div>
       <div class="h-metric" title="Сколько идей киборг помнит (seen)">
         <span class="h-metric-label">memory</span>
@@ -184,7 +184,7 @@
         </div>
 
         <div class="tabs-actions">
-          <span class="tabs-counter" id="ideas-counter">12 открыто</span>
+          <span class="tabs-counter" id="ideas-counter">0 открыто</span>
           <button class="btn-mini" id="btn-purge" title="Мусор: все идеи с оценкой < 8.0">🗑 Очистить &lt;8</button>
           <button class="btn-mini" id="btn-done-toggle">Разобранные</button>
         </div>
@@ -206,106 +206,9 @@
 
           <!-- Контейнер списка открытых идей (app.js._renderIdeas пишет сюда реальные карточки) -->
           <div id="ideas-open">
-            <!-- Демо-карточки (видны только до первого /api/state; потом их вычистит app.js) -->
-
-            <!-- Карточка «finish slot» — демо, сейчас скрыто, реальный finish придёт из API -->
-            <!-- (переехало в #finish-slot выше как пустой контейнер) -->
-
-            <!-- Карточки идей -->
-            <div class="idea-card">
-              <div class="idea-head">
-              <div class="idea-title">VPN-туннель на WireGuard с авто-сменой endpoint</div>
-              <div class="score-badge high">9.2</div>
-            </div>
-            <div class="idea-why">Если один endpoint блокируют — клиент автоматически переключается на запасный. Пинг-проверка каждые 30 сек.</div>
-            <div class="idea-meta">
-              <span class="idea-tag src">reddit</span>
-              <span class="idea-tag llm">нейронка</span>
-              <span class="idea-tag">сложность: средняя</span>
-              <span class="idea-tag">#142</span>
-            </div>
-            <div class="idea-actions">
-              <button class="act-btn take">✓ Взять</button>
-              <button class="act-btn later">⏳ Позже</button>
-              <button class="act-btn trash">✕ Мусор</button>
-            </div>
-          </div>
-
-          <div class="idea-card">
-            <div class="idea-head">
-              <div class="idea-title">CLI для подсчёта строк кода в репозитории с фильтрами</div>
-              <div class="score-badge high">8.7</div>
-            </div>
-            <div class="idea-why">Лёгкая утилита на Python: cloc-аналог, но с интеграцией git blame и поддержкой .gitignore.</div>
-            <div class="idea-meta">
-              <span class="idea-tag src">hn</span>
-              <span class="idea-tag llm">нейронка</span>
-              <span class="idea-tag">сложность: лёгкая</span>
-              <span class="idea-tag">#141</span>
-            </div>
-            <div class="idea-actions">
-              <button class="act-btn take">✓ Взять</button>
-              <button class="act-btn later">⏳ Позже</button>
-              <button class="act-btn trash">✕ Мусор</button>
-            </div>
-          </div>
-
-          <div class="idea-card">
-            <div class="idea-head">
-              <div class="idea-title">Бот для мониторинга изменений на статичных сайтах</div>
-              <div class="score-badge good">7.8</div>
-            </div>
-            <div class="idea-why">Diff по тексту страницы через cron, уведомления в Telegram при изменении контента.</div>
-            <div class="idea-meta">
-              <span class="idea-tag src">reddit</span>
-              <span class="idea-tag">болванка</span>
-              <span class="idea-tag">сложность: лёгкая</span>
-              <span class="idea-tag">#140</span>
-            </div>
-            <div class="idea-actions">
-              <button class="act-btn take">✓ Взять</button>
-              <button class="act-btn later">⏳ Позже</button>
-              <button class="act-btn trash">✕ Мусор</button>
-            </div>
-          </div>
-
-          <div class="idea-card">
-            <div class="idea-head">
-              <div class="idea-title">Telegram-бот для трекинга расходов по категориям</div>
-              <div class="score-badge medium">6.3</div>
-            </div>
-            <div class="idea-why">Хранение в SQLite, monthly-отчёты с графиками, экспорт в CSV. Поддержка нескольких пользователей.</div>
-            <div class="idea-meta">
-              <span class="idea-tag src">hn</span>
-              <span class="idea-tag llm">нейронка</span>
-              <span class="idea-tag">сложность: средняя</span>
-              <span class="idea-tag">#139</span>
-            </div>
-            <div class="idea-actions">
-              <button class="act-btn take">✓ Взять</button>
-              <button class="act-btn later">⏳ Позже</button>
-              <button class="act-btn trash">✕ Мусор</button>
-            </div>
-          </div>
-
-          <div class="idea-card">
-            <div class="idea-head">
-              <div class="idea-title">Веб-скрапер для сбора цен с маркетплейсов</div>
-              <div class="score-badge low">4.1</div>
-            </div>
-            <div class="idea-why">Общий каркас скрапера: pagination, anti-bot обход, прокси-ротация.</div>
-            <div class="idea-meta">
-              <span class="idea-tag src">reddit</span>
-              <span class="idea-tag">болванка</span>
-              <span class="idea-tag">сложность: сложная</span>
-              <span class="idea-tag">#138</span>
-            </div>
-            <div class="idea-actions">
-              <button class="act-btn take">✓ Взять</button>
-              <button class="act-btn later">⏳ Позже</button>
-              <button class="act-btn trash">✕ Мусор</button>
-            </div>
-          </div>
+            <!-- Контейнер открытых идей. app.js._renderIdeas заполняет его карточками из
+                 inbox.ideas (статус 'open'). До первого /api/state список пустой — нейтральный
+                 empty-state лучше фантомных демо-карточек, которые залипали если JS спотыкался. -->
           </div><!-- /#ideas-open -->
 
           <!-- Empty state (пример, скрыт по умолчанию) -->
