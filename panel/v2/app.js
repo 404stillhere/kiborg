@@ -401,8 +401,12 @@ class Renderer {
       return (b.id || 0) - (a.id || 0);  // при равенстве — по id
     });
 
-    // счётчик
+    // счётчики
     Renderer.$('#ideas-counter').textContent = open.length + ' открыто';
+    // #ideas-panel-count — бейдж в заголовке вкладки «Открытые идеи» (раньше был хардкод
+    // «12» в HTML без JS-обновления → зависал, вводя в заблуждение).
+    const panelCount = Renderer.$('#ideas-panel-count');
+    if (panelCount) panelCount.textContent = open.length;
 
     // список открытых идей — вставляем между finish-slot (или .panel-title)
     // и .done-toggle. Контейнер: #ideas-open.
