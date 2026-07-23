@@ -490,5 +490,145 @@ class TestHealth(unittest.TestCase):
         self.assertEqual(h["locks"]["recent_timeouts"], 99)
 
 
+class TestPurgeLowScore(unittest.TestCase):
+    """_purge_low_score — массовый триаж идей с оценкой ниже порога в мусор.
+
+    Дизайн: один read state.json → N вызовов _set_idea(id, "trash"). Каждый _set_idea
+    сам проверяет RUN["running"], поэтому busy-развал безопасен (частичная очистка).
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_purge_")
+        self._orig_state = serve.config.IE_STATE_JSON
+        self._orig_set = serve._set_idea
+        self._orig_run = dict(serve.RUN)
+        # state.json с разными идеями для покрытия веток
+        self._state_path = os.path.join(self.tmp, "state.json")
+        serve.config.IE_STATE_JSON = self._state_path
+        serve.RUN["running"] = False
+        self.trashed = []  # какие id ушли в мусор
+        # дефолтный мок: тихо «успешно» всё
+        serve._set_idea = lambda iid, st: (self.trashed.append(iid) or {"ok": True, "msg": "OK"})
+
+    def tearDown(self):
+        serve.config.IE_STATE_JSON = self._orig_state
+        serve._set_idea = self._orig_set
+        serve.RUN.clear()
+        serve.RUN.update(self._orig_run)
+
+    def _write_state(self, ideas):
+        with open(self._state_path, "w", encoding="utf-8") as f:
+            json.dump({"ideas": ideas}, f)
+
+    def test_purges_only_open_below_threshold(self):
+        # 4 идеи: open+6.0 (в мусор), open+8.5 (оставить), take+5.0 (не трогать — не open),
+        # open+None (не трогать — без оценки).
+        self._write_state(
+            [
+                {"id": 1, "status": "open", "score": 6.0, "title": "слабая"},
+                {"id": 2, "status": "open", "score": 8.5, "title": "хорошая"},
+                {"id": 3, "status": "take", "score": 5.0, "title": "уже разобрана"},
+                {"id": 4, "status": "open", "score": None, "title": "без оценки"},
+            ]
+        )
+        r = serve._purge_low_score(8.0)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["purged"], 1)
+        self.assertEqual(self.trashed, [1])  # только #1 ушла в мусор
+        self.assertEqual(r["candidates"], 1)
+        self.assertEqual(r["threshold"], 8.0)
+
+    def test_threshold_strict_excludes_equality(self):
+        # score РАВНЫЙ порогу (8.0) — НЕ уходит (условие строго <, как просил юзер: «[0;7,9]»).
+        self._write_state(
+            [
+                {"id": 10, "status": "open", "score": 8.0, "title": "на границе"},
+                {"id": 11, "status": "open", "score": 7.9, "title": "чуть ниже"},
+            ]
+        )
+        r = serve._purge_low_score(8.0)
+        self.assertEqual(r["purged"], 1)
+        self.assertEqual(self.trashed, [11])  # только #11, не #10
+
+    def test_no_candidates_returns_zero_purged(self):
+        # все идеи либо разобраны, либо без оценки, либо выше порога → зачищать нечего
+        self._write_state(
+            [
+                {"id": 1, "status": "open", "score": 9.5},
+                {"id": 2, "status": "take", "score": 3.0},
+                {"id": 3, "status": "open", "score": None},
+            ]
+        )
+        r = serve._purge_low_score(8.0)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["purged"], 0)
+        self.assertEqual(self.trashed, [])
+        self.assertIn("нет открытых", r["msg"])
+
+    def test_rejects_invalid_threshold(self):
+        # порог вне 0..10 → отказ ДО чтения state.json
+        self.assertFalse(serve._purge_low_score(-0.1)["ok"])
+        self.assertFalse(serve._purge_low_score(10.5)["ok"])
+        self.assertEqual(self.trashed, [])  # ничего не зачищено
+
+    def test_deferred_while_run_active(self):
+        # идёт прогон → busy, без мутации state.json
+        serve.RUN["running"] = True
+        self._write_state([{"id": 1, "status": "open", "score": 5.0}])
+        r = serve._purge_low_score(8.0)
+        self.assertFalse(r["ok"])
+        self.assertTrue(r.get("busy"))
+        self.assertEqual(self.trashed, [])
+
+    def test_state_corrupt_returns_error(self):
+        # state.json битый → отказ с причиной, без падения
+        with open(self._state_path, "w", encoding="utf-8") as f:
+            f.write("{ битый json !!!")
+        r = serve._purge_low_score(8.0)
+        self.assertFalse(r["ok"])
+        self.assertIn("state.json", r["msg"])
+        self.assertEqual(self.trashed, [])
+
+    def test_partial_purge_when_busy_mid_cycle(self):
+        # первая идея зачищена, вторая отбита busy (пошёл прогон посреди цикла) —
+        # останавливаемся, не падаем, reported failed count.
+        calls = [0]
+
+        def fake_set(iid, st):
+            calls[0] += 1
+            if calls[0] == 1:
+                self.trashed.append(iid)
+                return {"ok": True, "msg": "OK"}
+            return {"ok": False, "busy": True, "msg": "прогон стартовал"}
+
+        serve._set_idea = fake_set
+        self._write_state(
+            [
+                {"id": 1, "status": "open", "score": 5.0},
+                {"id": 2, "status": "open", "score": 6.0},
+                {"id": 3, "status": "open", "score": 7.0},  # не должен дойти — busy развал
+            ]
+        )
+        r = serve._purge_low_score(8.0)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["purged"], 1)
+        self.assertEqual(r["failed"], 1)
+        self.assertEqual(self.trashed, [1])  # только первая зачищена
+
+    def test_custom_threshold(self):
+        # порог 6.0 → зачищаем только <6, оставляем [6,8)
+        self._write_state(
+            [
+                {"id": 1, "status": "open", "score": 5.9},
+                {"id": 2, "status": "open", "score": 6.5},
+                {"id": 3, "status": "open", "score": 7.5},
+            ]
+        )
+        r = serve._purge_low_score(6.0)
+        self.assertEqual(r["purged"], 1)
+        self.assertEqual(self.trashed, [1])
+        self.assertEqual(r["threshold"], 6.0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

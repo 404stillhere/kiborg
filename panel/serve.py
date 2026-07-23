@@ -17,6 +17,7 @@
 
 import atexit
 import json
+import mimetypes
 import os
 import re
 import signal
@@ -34,6 +35,10 @@ except Exception:
 # HERE — каталог panel/ (для статических index.html/bodies.js). Локальная ответственность
 # serve.py, не переносится в config (там нет panel-специфики вне PANEL_DIR).
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Панель v2 (новый дизайн): /, /index.html, /style.css, /app.js отдаются из panel/v2/.
+# Старый index.html и bodies.js продолжают отдаваться из panel/ — не ломаем v1.
+STATIC_DIR = os.path.join(HERE, "v2")
 
 # path-bootstrap: единый с wiring/harvest механизм. serve.py лежит в panel/, а не в cyborg/,
 # поэтому bootstrap_paths/config напрямую не резолвятся — сначала добавляем CYBORG в sys.path
@@ -75,6 +80,7 @@ import lock_monitor  # noqa: E402  (счётчик таймаутов state_lock
 # строке И isort-sorting отключена здесь вручную (нарушение умышленное, не переупорядочивать).
 from wiring import build_organs  # noqa: E402  (метаданные органов; импорт чистый)
 import rejected  # noqa: E402  (счётчик отклонённых для пульта; idea_engine на path через wiring)
+import triage_store  # noqa: E402  (taken/later — разобранные идеи для пульта)
 from organs import (  # noqa: E402  (проба папок: probe_paths — путь валиден? сколько файлов?)
     collect_source,
 )
@@ -262,6 +268,75 @@ def _set_idea(idea_id, status):
     return {"ok": p.returncode == 0 and "NOT_FOUND" not in out, "msg": out[:200]}
 
 
+def _purge_low_score(max_score):
+    """Массовый триаж: все открытые идеи с score < max_score → мусор.
+
+    Один вызов = один read state.json + N вызовов канонического _set_idea(id, "trash")
+    (по одному subprocess на идею — как кнопки в UI, только пакетом). Каждый _set_idea
+    сам проверяет RUN["running"], поэтому если стартанул прогон во время очистки —
+    оставшиеся идеи будут отбиты busy (частичная очистка безопасна: state.json под state_lock).
+    Возвращает статистику: сколько зачищено, сколько ошиблось, порог.
+    """
+    if not (0.0 <= max_score <= 10.0):
+        return {"ok": False, "msg": "max_score должен быть в диапазоне 0..10"}
+    with _LOCK:
+        if RUN["running"]:
+            return {
+                "ok": False,
+                "busy": True,
+                "msg": "идёт прогон — дождись окончания, потом очищай",
+            }
+    # читаем снимок state.json, чтобы найти кандидатов (сам триаж идёт через _set_idea)
+    try:
+        with open(config.IE_STATE_JSON, encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception as e:
+        return {"ok": False, "msg": f"state.json не читается: {str(e)[:200]}"}
+
+    candidates = []
+    for idea in state.get("ideas", []):
+        if idea.get("status") != "open":
+            continue
+        score = idea.get("score")
+        if score is None:
+            continue  # без оценки — не трогаем, оставляем на ручной разбор
+        try:
+            sc = float(score)
+        except (TypeError, ValueError):
+            continue
+        if sc < max_score:
+            candidates.append(idea["id"])
+
+    if not candidates:
+        return {
+            "ok": True,
+            "purged": 0,
+            "failed": 0,
+            "threshold": max_score,
+            "msg": "нет открытых идей с оценкой ниже порога",
+        }
+
+    purged, failed = 0, []
+    for idea_id in candidates:
+        r = _set_idea(idea_id, "trash")
+        if r.get("ok"):
+            purged += 1
+        else:
+            # busy посреди цикла (пошёл прогон) — останавливаемся, оставшиеся ждут
+            if r.get("busy"):
+                failed.append({"id": idea_id, "msg": "прогон стартовал — пропущено"})
+                break
+            failed.append({"id": idea_id, "msg": (r.get("msg") or "")[:120]})
+    return {
+        "ok": True,
+        "purged": purged,
+        "failed": len(failed),
+        "failed_details": failed[:10],  # первые 10 ошибок деталей (для UI)
+        "threshold": max_score,
+        "candidates": len(candidates),
+    }
+
+
 _RUN_LINE = re.compile(r"^- \[(?P<ts>[^\]]+)\] «(?P<goal>.*?)» → (?P<chain>.*?) \| (?P<res>.*)$")
 
 
@@ -349,15 +424,29 @@ def _read_inbox():
     try:
         with open(IDEA + "/data/state.json", encoding="utf-8") as f:
             s = json.load(f)
+        # state.json хранит только open (мастер-разделение 2026-07-22): take/later/trash физически
+        # перенесены в taken.json / later.json / rejected.json при триаже. Отдаём их пульту отдельными
+        # полями — UI собирает «Разобранные» из этих источников (раньше фильтровал ideas[] по status).
         return {
             "cap": s.get("cap", 0),
             "tick": s.get("tick", 0),
-            "ideas": s.get("ideas", []),
+            "ideas": s.get("ideas", []),  # только open (остальные вырезаны при триаже)
+            "taken": triage_store.load(triage_store.TAKEN_PATH).get("taken", []),
+            "later": triage_store.load(triage_store.LATER_PATH).get("later", []),
             "finish": s.get("finish"),
             "seen_count": len(s.get("seen", [])),
         }
     except Exception as e:
-        return {"error": str(e)[:200], "cap": 0, "tick": 0, "ideas": [], "finish": None, "seen_count": 0}
+        return {
+            "error": str(e)[:200],
+            "cap": 0,
+            "tick": 0,
+            "ideas": [],
+            "taken": [],
+            "later": [],
+            "finish": None,
+            "seen_count": 0,
+        }
 
 
 def _read_registry():
@@ -471,7 +560,50 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False))
 
+    def serve_static(self, filename):
+        """Отдать файл из STATIC_DIR (panel/v2/). Content-Type через mimetypes.guess_type.
+        Кеширование:
+          - HTML (index.html) НЕ кешируем (Cache-Control: no-store) — иначе браузер
+            не увидит обновлений верстки после правок (баг 2026-07-22: пользователь
+            открывал старый v1 из кеша, потому что ранее на / стоял max-age=3600).
+          - CSS/JS кешируем на час — они версионируются через содержимое, а index.html
+            ссылается на них по статичному URL; при обновлении serve.py новый index.html
+            (без кеша) снова тянет их свежие версии.
+        Файл отсутствует → 404 текстом (как api-роуты, без трейсбека)."""
+        path = os.path.join(STATIC_DIR, filename)
+        if not os.path.isfile(path):
+            self._send(404, f"нет файла: {filename}", "text/plain; charset=utf-8")
+            return
+        ctype, _ = mimetypes.guess_type(path)
+        ctype = ctype or "application/octet-stream"
+        is_html = filename.endswith(".html")
+        # На этапе активной разработки v2 кешируем только bodies.js (он не меняется
+        # месяцами и тяжёлый — 20кб SVG-кода). HTML/CSS/JS отдаём без кеша: иначе
+        # у пользователя залипает старая версия после правок и он видит «декоративные»
+        # кнопки, потому что app.js не обновился (баг 2026-07-22). Когда v2 устаканится —
+        # вернём public,max-age=3600 на css/js с версионированием через ?v=хэш.
+        cache = "no-store" if is_html else "no-store"
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype + "; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", cache)
+            self.end_headers()
+            self.wfile.write(raw)
+        except Exception as e:
+            self._send(500, f"не читается: {e}", "text/plain; charset=utf-8")
+
     def do_GET(self):
+        # ── Статика v2 (новый пульт): /, /index.html, /style.css, /app.js ──
+        # Старая отдача index.html из HERE перекрыта этим блоком (v2 — приоритет),
+        # но старый код ниже оставлен — не ломаем v1, просто он теперь недостижим
+        # для '/' и '/index.html'. bodies.js отдаётся как и раньше из HERE.
+        if self.path in ("/", "/index.html", "/style.css", "/app.js"):
+            fname = "index.html" if self.path in ("/", "/index.html") else self.path.lstrip("/")
+            self.serve_static(fname)
+            return
         if self.path in ("/", "/index.html"):
             try:
                 with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
@@ -608,6 +740,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 res = _set_idea(idea_id, str(body.get("status")))
+            except Exception as e:
+                res = {"ok": False, "msg": ("не вышло: " + str(e))[:200]}
+            self._json(res)
+        elif self.path == "/api/ideas/purge":
+            # массовый триаж: все открытые идеи с score < threshold → мусор.
+            # threshold по умолчанию 8.0 (зелёный круг = хорошая идея, ниже = на разбор).
+            try:
+                threshold = float(body.get("threshold", 8.0))
+            except (TypeError, ValueError):
+                self._json({"ok": False, "msg": "threshold должен быть числом"}, 400)
+                return
+            try:
+                res = _purge_low_score(threshold)
             except Exception as e:
                 res = {"ok": False, "msg": ("не вышло: " + str(e))[:200]}
             self._json(res)

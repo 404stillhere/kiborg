@@ -861,6 +861,10 @@ body {
           <h2>Свежие идеи</h2>
           <span class="count" id="ideas-count">0</span>
           <div class="panel-actions">
+            <button class="btn-mini" onclick="purgeLowScore()" id="purge-btn"
+                    title="Отправить в мусор все открытые идеи с оценкой ниже 8.0 (оранжевые и серые)">
+              🗑 Очистить &lt;8
+            </button>
             <button class="btn-mini" onclick="toggleDone()" id="done-toggle-btn">Разобранные</button>
           </div>
         </div>
@@ -1314,6 +1318,43 @@ async function ideaAct(id, status) {
     body: JSON.stringify({id, status})}).then(r => r.json()).catch(() => ({ok:false,msg:'сеть'}));
   if (!r.ok) { if (card) card.classList.remove('dismissing'); alert('не вышло: '+(r.msg||'')); }
   setTimeout(refresh, 250);
+}
+
+async function purgeLowScore() {
+  // Массовый триаж: все открытые идеи с оценкой < 8 → мусор. Просим подтверждение (как и кнопки
+  // разборки), показываем сколько нашлось кандидатов на сервере. Порог 8.0 = граница зелёного круга.
+  const open = S && S.inbox ? S.inbox.ideas.filter(i => i.status === 'open') : [];
+  const low = open.filter(i => i.score != null && parseFloat(i.score) < 8.0);
+  if (!low.length) {
+    alert('Нет идей с оценкой ниже 8.0 — очищать нечего.');
+    return;
+  }
+  const sample = low.slice(0, 5).map(i => `  #${i.id} (${parseFloat(i.score).toFixed(1)}): ${(i.title||'').slice(0,50)}`).join('\n');
+  const more = low.length > 5 ? `\n  ...и ещё ${low.length - 5}` : '';
+  if (!confirm(`Отправить в мусор ВСЕ открытые идеи с оценкой < 8.0?\n\nНайдено: ${low.length} шт.\n\n${sample}${more}\n\nЭто нельзя отменить.`)) {
+    return;
+  }
+  const btn = document.getElementById('purge-btn');
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ очищаю…'; }
+  try {
+    const r = await fetch('/api/ideas/purge', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({threshold: 8.0})}).then(r => r.json()).catch(() => ({ok:false,msg:'сеть'}));
+    if (r.ok) {
+      const failTxt = r.failed ? ` · ошибок: ${r.failed}` : '';
+      const msg = `Готово: зачищено ${r.purged} идей с оценкой < 8.0${failTxt}`;
+      // не alert (бесит), а просто обновим UI — статистику увидит в углу/журнале
+      console.log('[purge]', msg, r);
+      // если что-то не вышло — покажем детали
+      if (r.failed) alert(msg + '\n\nЧасть идей не вышло зачистить:\n' +
+        (r.failed_details||[]).map(f => `  #${f.id}: ${f.msg}`).join('\n'));
+    } else {
+      alert('Не вышло: ' + (r.msg || 'неизвестно'));
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+    refresh();
+  }
 }
 
 // ─── RUNS ───

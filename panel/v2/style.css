@@ -1,0 +1,1744 @@
+/* ════════════════════════════════════════════════════════════════════════
+   kiborg — пульт v2 / style.css
+   Стиль: Cyber-Risograph (цифровой ризограф).
+
+   Идея: интерфейс — слои краски на бумаге, имитация трафаретной печати.
+   - Плоские заливки, без градиентов на элементах.
+   - Жёсткие тени без размытия + двойной контур через вторую серую/цветную тень
+     со смещением (эффект «рассовмещения» красок при трафаретной печати).
+   - Кнопки при нажатии сдвигаются на 3px и оставляют серый след.
+   - Карточки при наведении приподнимаются, тень становится малиновой.
+   - Анимации механические, без «стеклянности».
+
+   Палитра:
+     бумага  #F5F5DC · малинова #FF0050 · голубая #00C2FF · жёлтая #FFE900
+     серая(недопечатка) #333333 · текст #000000 / #666666 · OK #00E676
+
+   Шрифты: заголовки — Bebas Neue/Arial Black капсом; данные — Roboto Mono/Courier New.
+
+   Карта ID/классов (используются app.js — НЕ переименовывать):
+   Раскладка: #app #main #left #left-scroll #right
+   Шапка: #header .h-brand/.h-logo/.h-name/.h-pulse .h-metric/.h-metric-value
+          #m-inbox/#m-memory/#m-fresh/#m-keys #btn-bring #auto-toggle/#auto-label
+          #btn-settings .h-pstate
+   Рыцарь: #knight #knight-svg #knight-body .breath/.heartbeat/.nerve
+           .knight-alive/.knight-working/.knight-error
+   Левая панель: .l-section/.l-section-title .sources-chips/.src-chip/.src-dot/.src-count
+                 .dir-current/.dir-clear/.dir-presets/.dir-preset/.dp-x/.dir-input-row
+                 .actions-list/.btn-action (.primary/.secondary/.danger)
+                 #run-section/.run-header/.run-spinner/.run-timer/.run-progress/.pipe-chip
+                 #console-area/.console-header/.console-caret/.console-controls/.console-btn
+                 #console-body
+   Правая панель: #tabs-bar .seg-control/.seg-btn/#seg-indicator .tabs-actions/.tabs-counter
+                  #btn-purge #btn-done-toggle #tab-content .tab-panel .panel-title
+                  #finish-slot #ideas-open
+   Карточки: .idea-card .idea-head/.idea-title/.score-badge (.high/.good/.medium/.low)
+             .idea-why .idea-meta/.idea-tag (.src/.llm)
+             .idea-actions .act-btn (.take/.later/.trash) .removing .high-score
+   Органы/журнал: #organs-list .organ-row/.organ-main/.organ-line1/.organ-name/.organ-flow
+                   /.organ-badges/.organ-purpose .runs-table/.run-ts/.run-goal/.run-result
+                   /.run-duration/.run-status-pill #journal-dock/.dock-*
+   Настройки: #settings-overlay #settings-drawer .settings-header/.settings-title
+              /.settings-close #settings-body .settings-section/.settings-section-title
+              .settings-row/.settings-label/.settings-input .list-item/.list-item-path
+              /.list-item-note/.list-item-rm .list-add-row .toggle/.check (.on)
+              .settings-footer
+   Прочее: #toasts/.toast/.toast-icon/.toast-msg .btn-primary/.btn-mini
+           .empty-state/.empty-* .done-* .dir-none .text-bad
+
+   ВНИМАНИЕ по именам: в ТЗ упоминались #logs и #settings-panel — в реальном v2
+   это #console-area/#console-body и #settings-drawer (использует app.js).
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ─── ТОКЕНЫ ─── */
+:root {
+  --paper:      #F5F5DC;
+  --paper-2:    #EFEEBE;     /* чуть темнее бумаги — для «волокон» и паддинга */
+  --paper-3:    #E6E5AB;     /* для зебры в таблицах */
+  --ink:        #000000;
+  --ink-2:      #666666;     /* выцветшая печать */
+  --gray:       #333333;     /* недопечатка / след краски */
+  --white:      #FFFFFF;
+  --magenta:    #FF0050;     /* основная краска */
+  --cyan:       #00C2FF;     /* акцентная краска */
+  --yellow:     #FFE900;     /* консоль / предупреждения */
+  --ok:         #00E676;
+  --fail:       #FF0050;
+
+  --bd:         3px;
+  --border:     var(--bd) solid var(--ink);
+  --shadow:     3px 3px 0 var(--gray);          /* базовая жёсткая тень */
+  --shadow-2:   3px 3px 0 var(--gray), 6px 6px 0 var(--magenta);  /* двойной контур */
+  --trail:     -3px -3px 0 var(--gray);         /* след при нажатии */
+
+  --font-display: "Bebas Neue", "Arial Black", "Impact", sans-serif;
+  --font-mono:    "Roboto Mono", "Courier New", "Courier", monospace;
+  --font-sans:    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ─── ПЕРЕКЛЮЧАТЕЛЬ ТЕМ ─── */
+/*
+  Две темы: risograph (по умолчанию, см. переменные в :root) и industrial.
+  Тема ставится на <html data-theme="..."> из app.js (localStorage 'kiborg-theme').
+  Industrial — структурно другой стиль: рамки 4px, шапка чёрная, рыцарь оранжевый
+  с косыми полосами, консоль терминальная (чёрный фон + зелёный текст), бейдж
+  прямоугольный (не круглый), миллиметровая сетка справа. Поэтому переменных
+  недостаточно — ниже отдельный блок переопределений под [data-theme="industrial"].
+*/
+html[data-theme="industrial"] {
+  --paper:      #E8E6DF;
+  --paper-2:    #DCDAD2;
+  --paper-3:    #C9C7BF;
+  --ink:        #090909;
+  --ink-2:      #2A2A2A;
+  --gray:       #090909;
+  --white:      #FFFFFF;
+  --magenta:    #FF4911;     /* в industrial это оранжевый акцент */
+  --cyan:       #B1FA5C;     /* лайм (роль «голубой краски» подменяется лаймом) */
+  --yellow:     #EED642;
+  --ok:         #B1FA5C;
+  --fail:       #FF1E90;     /* маджента для ошибок */
+  --term:       #33FF00;     /* терминальный зелёный — только в industrial */
+
+  --bd:         4px;
+  --shadow:     6px 6px 0 var(--ink);
+  --shadow-2:   6px 6px 0 var(--ink), 9px 9px 0 var(--magenta);
+  --trail:      -6px -6px 0 var(--ink);
+
+  --font-display: "Arial Black", "Impact", "Haettenschweiler", sans-serif;
+}
+
+/* ── Industrial: тело и фон ── */
+html[data-theme="industrial"] body {
+  background-image: none;             /* без «волокон бумаги» */
+  -webkit-font-smoothing: none;
+}
+
+/* ── Industrial: шапка ЧЁРНАЯ, белый текст ── */
+html[data-theme="industrial"] #header {
+  background: var(--ink);
+  color: var(--white);
+  border-bottom: var(--border);
+}
+html[data-theme="industrial"] .h-name {
+  color: var(--white);
+  text-shadow: none;
+}
+html[data-theme="industrial"] .h-separator { background: var(--white); }
+html[data-theme="industrial"] .h-pulse {
+  background: var(--cyan);
+  border-color: var(--white);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+html[data-theme="industrial"] .h-pulse.working { background: var(--magenta); }
+html[data-theme="industrial"] .h-metric {
+  border-color: var(--white);
+  box-shadow: none;
+}
+html[data-theme="industrial"] .h-metric-label { color: #8C8A82; }
+html[data-theme="industrial"] .h-metric-value,
+html[data-theme="industrial"] .h-metric-value.good { color: var(--cyan); }
+html[data-theme="industrial"] .h-metric-value.warn { color: var(--yellow); }
+html[data-theme="industrial"] .h-metric-value.bad,
+html[data-theme="industrial"] .text-bad { color: var(--fail) !important; }
+
+/* Industrial: кнопки шапки */
+html[data-theme="industrial"] .btn-primary {
+  background: var(--cyan);
+  color: var(--ink);
+}
+html[data-theme="industrial"] .auto-toggle {
+  background: var(--ink-2);
+  color: var(--white);
+  border-color: var(--white);
+}
+html[data-theme="industrial"] .auto-toggle.on { background: var(--ink-2); }
+html[data-theme="industrial"] .auto-toggle.on .auto-dot {
+  background: var(--cyan);
+  box-shadow: inset 0 0 0 2px var(--white);
+}
+html[data-theme="industrial"] .btn-icon {
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+/* ── Industrial: правая область — миллиметровая сетка ── */
+html[data-theme="industrial"] #right {
+  background-image:
+    linear-gradient(var(--paper-3) 1px, transparent 1px),
+    linear-gradient(90deg, var(--paper-3) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+html[data-theme="industrial"] #right::before,
+html[data-theme="industrial"] #right::after { display: none; }  /* без клякс */
+
+/* ── Industrial: рыцарь — оранжевый с косыми чёрными полосами ── */
+html[data-theme="industrial"] #knight {
+  background-color: var(--magenta);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--ink) 0, var(--ink) 6px,
+    var(--magenta) 6px, var(--magenta) 22px
+  );
+  border-bottom: 8px solid var(--ink);
+}
+html[data-theme="industrial"] #knight-svg { filter: drop-shadow(4px 4px 0 var(--ink)); }
+html[data-theme="industrial"] #knight-body,
+html[data-theme="industrial"] #knight-body * {
+  fill: var(--white);
+  stroke: var(--ink);
+}
+html[data-theme="industrial"] .knight-working #knight-body * { fill: var(--cyan); }
+html[data-theme="industrial"] .knight-error   #knight-body * { fill: var(--fail); }
+html[data-theme="industrial"] .heartbeat { fill: var(--fail) !important; }
+html[data-theme="industrial"] .nerve { stroke: var(--term); }
+
+/* ── Industrial: секции и стикеры — без «продавливания» ── */
+html[data-theme="industrial"] .src-chip:hover { transform: none; }
+html[data-theme="industrial"] .src-chip.ok  { background: var(--cyan); color: var(--ink); }
+html[data-theme="industrial"] .src-chip.bad { background: var(--fail); color: var(--white); }
+
+/* ── Industrial: консоль — ЧЁРНЫЙ фон + терминальный зелёный текст ── */
+html[data-theme="industrial"] #console-area {
+  background: var(--ink);
+  border-top: var(--border);
+}
+html[data-theme="industrial"] .console-header {
+  color: var(--term);
+  border-bottom-color: var(--term);
+}
+html[data-theme="industrial"] .console-btn {
+  color: var(--term);
+  border-color: var(--term);
+  background: var(--ink);
+}
+html[data-theme="industrial"] .console-btn:hover,
+html[data-theme="industrial"] .console-btn.on {
+  background: var(--term);
+  color: var(--ink);
+}
+html[data-theme="industrial"] #console-body {
+  color: var(--term);
+}
+html[data-theme="industrial"] #console-body::before,
+html[data-theme="industrial"] #console-body::after {
+  background: var(--ink);
+  border-color: var(--term);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+/* ── Industrial: вкладки ── */
+html[data-theme="industrial"] .seg-control { box-shadow: var(--shadow); }
+html[data-theme="industrial"] .seg-btn { color: var(--ink); }
+html[data-theme="industrial"] .seg-btn:hover { background: var(--paper-3); }
+html[data-theme="industrial"] .seg-btn.active {
+  background: var(--cyan);
+  color: var(--ink);
+  transform: none;            /* без «резкого сдвига стикера» — брутал ровный */
+}
+html[data-theme="industrial"] #seg-indicator { background: var(--fail); }
+html[data-theme="industrial"] .tabs-counter { color: var(--magenta); }
+
+/* ── Industrial: скоринг-бейдж — ПРЯМОУГОЛЬНЫЙ (border-radius: 0), 120px слева ── */
+html[data-theme="industrial"] .score-badge {
+  border-radius: 0;
+  width: 120px; height: auto;
+  min-height: 64px;
+  font-size: 38px;
+  box-shadow: none;
+  order: -1;
+}
+html[data-theme="industrial"] .idea-head {
+  align-items: stretch;
+  padding: 0;
+}
+html[data-theme="industrial"] .idea-title { padding: 12px 14px; }
+html[data-theme="industrial"] .score-badge.high   { background: var(--ink);   color: var(--cyan); }
+html[data-theme="industrial"] .score-badge.good   { background: var(--white); color: var(--ink); }
+html[data-theme="industrial"] .score-badge.medium { background: var(--yellow); color: var(--ink); }
+html[data-theme="industrial"] .score-badge.low    { background: var(--paper-2); color: var(--ink); }
+
+/* Industrial: карточка с высоким баллом — целиком лаймовая */
+html[data-theme="industrial"] .idea-card:has(.score-badge.high),
+html[data-theme="industrial"] .idea-card.high-score {
+  background: var(--cyan);
+  box-shadow: var(--shadow);
+}
+html[data-theme="industrial"] .idea-card:has(.score-badge.high)::before { display: none; }
+
+/* Industrial: действия — Take=лайм, Trash=маджента */
+html[data-theme="industrial"] .act-btn.take  { background: var(--cyan);   color: var(--ink); }
+html[data-theme="industrial"] .act-btn.later { background: var(--yellow); color: var(--ink); }
+html[data-theme="industrial"] .act-btn.trash { background: var(--fail);   color: var(--white); }
+html[data-theme="industrial"] .idea-actions .act-btn:hover { box-shadow: inset 0 -5px 0 var(--ink); }
+
+/* Industrial: анимация удаления — схлопывание, без диагонального улёта */
+html[data-theme="industrial"] .idea-card.removing {
+  animation: mechanical-trash 0.15s steps(2, end) forwards;
+}
+html[data-theme="industrial"] .idea-card.removing::after { background: var(--ink); }
+@keyframes mechanical-trash {
+  0%   { transform: translateX(0); opacity: 1; max-height: 600px; }
+  50%  { transform: translateX(-10px); opacity: 1; }
+  100% { transform: translateX(60%); opacity: 0; max-height: 0; border-width: 0; box-shadow: none; }
+}
+
+/* ── Industrial: органы — цветные полоски слева ── */
+html[data-theme="industrial"] .organ-row.role-source::before    { background: var(--magenta); }
+html[data-theme="industrial"] .organ-row.role-transform::before { background: var(--cyan); }
+html[data-theme="industrial"] .organ-row.role-sink::before      { background: var(--fail); }
+html[data-theme="industrial"] .organ-name { color: var(--ink); }
+html[data-theme="industrial"] .organ-flow { color: #8C8A82; }
+
+/* ── Industrial: журнал ── */
+html[data-theme="industrial"] .runs-table thead th {
+  background: var(--ink);
+  color: var(--cyan);
+}
+html[data-theme="industrial"] .run-result.ok   { background: var(--cyan); color: var(--ink); }
+html[data-theme="industrial"] .run-result.bad  { background: var(--fail); color: var(--white); }
+html[data-theme="industrial"] .run-status-pill.ok   { background: var(--cyan); color: var(--ink); }
+html[data-theme="industrial"] .run-status-pill.fail { background: var(--fail); color: var(--white); }
+
+/* Industrial: dock журнала — чёрный, терминальный */
+html[data-theme="industrial"] #journal-dock { color: var(--term); }
+html[data-theme="industrial"] .dock-body { border-top-color: var(--term); }
+html[data-theme="industrial"] .dock-goal { color: var(--term); }
+html[data-theme="industrial"] .dock-qty  { color: var(--cyan); }
+html[data-theme="industrial"] .dock-qty.zero { color: var(--yellow); }
+
+/* ── Industrial: настройки — жёлтый лоток остаётся, но с брутал-рамками ── */
+html[data-theme="industrial"] #settings-drawer {
+  border-left: var(--border);
+  box-shadow: -6px 0 0 var(--ink);
+}
+html[data-theme="industrial"] .settings-header {
+  background: var(--ink);
+  color: var(--yellow);
+}
+html[data-theme="industrial"] .settings-section-title {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+html[data-theme="industrial"] .settings-footer { background: var(--ink); }
+html[data-theme="industrial"] .settings-footer .btn-primary {
+  background: var(--cyan);
+  color: var(--ink);
+}
+
+/* Industrial: состояния */
+html[data-theme="industrial"] .done-toggle { background: var(--ink); color: var(--white); }
+html[data-theme="industrial"] .done-status.take  { background: var(--cyan); }
+html[data-theme="industrial"] .done-status.trash { background: var(--fail); color: var(--white); }
+html[data-theme="industrial"] .toast.success { background: var(--cyan); color: var(--ink); }
+html[data-theme="industrial"] .toast.error  { background: var(--fail); color: var(--white); }
+html[data-theme="industrial"] .list-item-note.ok  { background: var(--cyan); }
+html[data-theme="industrial"] .list-item-note.bad { background: var(--fail); color: var(--white); }
+html[data-theme="industrial"] .empty-stat { background: var(--paper-2); }
+html[data-theme="industrial"] .empty-stat-val { color: var(--ink); }
+
+/* ─── СБРОС ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* Лёгкая текстура «волокон бумаги» — структурный паттерн, не декоративный градиент.
+     Тонкие линии как у офсетной бумаги. */
+  background-image:
+    repeating-linear-gradient(0deg,  rgba(51,51,51,0.025) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(51,51,51,0.020) 0 1px, transparent 1px 6px);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input  { font-family: inherit; }
+a      { color: var(--ink); }
+
+/* ─── СКРОЛЛБАРЫ (плоские, бумажные) ─── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--magenta) var(--paper-2);
+}
+::-webkit-scrollbar       { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: var(--paper-2); border-left: 2px solid var(--ink); }
+::-webkit-scrollbar-thumb { background: var(--magenta); border: 3px solid var(--paper-2); }
+::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+::-webkit-scrollbar-corner { background: var(--paper-2); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   РАСКЛАДКА
+   ════════════════════════════════════════════════════════════════════════ */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ─── ЛЕВАЯ ПАНЕЛЬ (бумажная) ─── */
+#left {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-right: var(--border);
+  min-height: 0;
+}
+#left-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+/* ─── ПРАВАЯ ПАНЕЛЬ (основная область — бумага с лёгким просвечиванием краски) ─── */
+#right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--paper);
+  position: relative;
+}
+/* Две плоских «кляксы» краски как артефакты тиража — реализованы сдвигом плоских
+   блоков через ::before/::after (без размытия, чистый силуэт, как при срыве трафарета). */
+#right::before,
+#right::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+#right::before {
+  top: 8%; right: 4%;
+  width: 220px; height: 160px;
+  background: var(--magenta);
+  opacity: 0.05;
+  transform: rotate(-7deg);
+}
+#right::after {
+  bottom: 12%; left: 6%;
+  width: 180px; height: 180px;
+  background: var(--cyan);
+  opacity: 0.05;
+  transform: rotate(11deg);
+}
+#tabs-bar, #tab-content, #journal-dock { position: relative; z-index: 1; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ШАПКА — бумажная, снизу малиновая полоса 4px
+   ════════════════════════════════════════════════════════════════════════ */
+#header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  padding: 0 16px;
+  height: 70px;
+  background: var(--paper);
+  border-bottom: 4px solid var(--magenta);
+}
+
+.h-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.h-logo { font-size: 30px; line-height: 1; }
+.h-name {
+  font-family: var(--font-display);
+  font-size: 36px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--magenta);
+  /* лёгкий сдвиг трафарета */
+  text-shadow: 2px 2px 0 var(--gray);
+}
+.h-pulse {
+  width: 14px; height: 14px;
+  background: var(--magenta);
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 2px var(--gray);
+  flex-shrink: 0;
+  animation: pulse-ink 1.6s steps(4, end) infinite;
+}
+.h-pulse.working { animation-duration: 0.7s; background: var(--yellow); }
+.h-pulse.error   { background: var(--fail); }
+@keyframes pulse-ink {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.25); }
+}
+
+.h-separator {
+  width: 3px;
+  background: var(--ink);
+  margin: 14px 0;
+}
+
+/* Метрики — белые стикеры-бирки с чёрной рамкой и малиновым текстом */
+.h-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.h-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 84px;
+  padding: 5px 12px;
+  background: var(--white);
+  border: var(--border);
+  box-shadow: 2px 2px 0 var(--gray);
+}
+.h-metric-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ink-2);
+}
+.h-metric-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--magenta);
+}
+.h-metric-value.good { color: var(--magenta); }
+.h-metric-value.warn { color: var(--ink); }
+.h-metric-value.bad,
+.h-metric-value.error,
+.text-bad { color: var(--cyan) !important; }
+
+.h-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Кнопка «Принести идеи» — малиновый стикер ── */
+.btn-primary {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 18px;
+  padding: 10px 20px;
+  background: var(--magenta);
+  color: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.btn-primary:hover { box-shadow: var(--shadow-2); }
+.btn-primary:active {
+  transform: translate(3px, 3px);
+  box-shadow: var(--trail);
+}
+
+/* Autopilot — рычажок принтера (квадратный переключатель) */
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ink);
+  background: var(--white);
+  border: var(--border);
+  user-select: none;
+}
+.auto-dot {
+  width: 14px; height: 14px;
+  background: var(--paper-3);
+  border: 2px solid var(--ink);
+  /* чёрная «ручка» рычажка */
+  box-shadow: inset 3px 3px 0 var(--ink);
+}
+.auto-toggle.on { background: var(--yellow); }
+.auto-toggle.on .auto-dot {
+  background: var(--ink);
+  box-shadow: inset -3px -3px 0 var(--paper);
+}
+
+/* Кнопка настроек — малиновый стикер SET */
+.btn-icon {
+  width: 48px; height: 48px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 1px;
+  background: var(--magenta);
+  color: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+}
+.btn-icon:hover { box-shadow: var(--shadow-2); }
+.btn-icon:active { transform: translate(3px, 3px); box-shadow: var(--trail); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ЛЕВАЯ ПАНЕЛЬ — рыцарь, источники, направление, действия, консоль
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Контейнер рыцаря — бумажный, рыцарь печатается малиновым с серым контуром ── */
+#knight {
+  position: relative;
+  background: var(--white);
+  border: var(--border);
+  border-bottom: 6px solid var(--ink);
+  box-shadow: var(--shadow);
+  height: 180px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+#knight-svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* «сдвиг трафарета»: малиновая заливка + серый контур со смещением */
+  filter: drop-shadow(2px 2px 0 var(--gray));
+}
+/* Тела рыцаря — малиновая краска */
+#knight-body, #knight-body * {
+  fill: var(--magenta);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.knight-alive   #knight-body * { fill: var(--magenta); }
+.knight-working #knight-body * { fill: var(--cyan); }   /* в работе — голубая краска */
+.knight-error   #knight-body * { fill: var(--fail); }
+
+/* Сердцебиение */
+.heartbeat {
+  fill: var(--yellow) !important;
+  stroke: var(--ink);
+  stroke-width: 3;
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: heartbeat var(--hb, 1.4s) ease-in-out infinite;
+}
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  25%      { transform: scale(1.22); }
+  45%      { transform: scale(0.92); }
+  60%      { transform: scale(1.08); }
+}
+
+/* Дыхание каркаса — лёгкий scale при работе */
+.breath {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: breath 3.6s ease-in-out infinite;
+}
+@keyframes breath {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.02); }
+}
+.knight-working .breath { animation-play-state: paused; }
+
+/* Нервы — малиновый пунктир */
+.nerve {
+  fill: none;
+  stroke: var(--magenta);
+  stroke-width: 3;
+  stroke-dasharray: 6 10;
+  animation: nerve 1.6s linear infinite;
+}
+@keyframes nerve { to { stroke-dashoffset: -32; } }
+
+/* ── Секции левой панели (бумажные карточки) ── */
+.l-section {
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.l-section-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 18px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 3px solid var(--magenta);
+  color: var(--ink);
+}
+
+/* ── Чипы источников — малиновые стикеры, «продавливаются» при наведении ── */
+.sources-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  background: var(--magenta);
+  color: var(--white);
+  border: 2px solid var(--ink);
+  transition: transform 0.06s steps(2);
+}
+.src-chip:hover { transform: translate(2px, 2px); }
+.src-chip.bad { background: var(--white); color: var(--fail); }
+.src-chip.bad .src-count { color: var(--fail); }
+.src-dot {
+  width: 9px; height: 9px;
+  background: var(--white);
+  border: 2px solid var(--ink);
+}
+.src-dot.ok  { background: var(--white); }
+.src-dot.bad { background: var(--fail); }
+.src-count {
+  font-weight: 700;
+  padding-left: 5px;
+  margin-left: 2px;
+  border-left: 2px solid var(--ink);
+}
+
+/* ── Направление ── */
+.dir-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 9px;
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+  margin-bottom: 8px;
+}
+.dir-clear {
+  margin-left: auto;
+  font-weight: 700;
+  padding: 0 7px;
+  background: var(--white);
+  border: 2px solid var(--ink);
+}
+.dir-clear:hover { background: var(--magenta); color: var(--white); }
+.dir-none { color: var(--ink-2); font-style: normal; }
+
+.dir-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.dir-preset {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 4px 10px 4px 8px;
+  background: var(--white);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  user-select: none;
+}
+.dir-preset.on { background: var(--magenta); color: var(--white); }
+.dp-x {
+  margin-left: 6px;
+  font-weight: 700;
+  color: var(--fail);
+}
+.dir-preset:not(.on) .dp-x { color: var(--ink-2); }
+
+.dir-input-row {
+  display: flex;
+  gap: 6px;
+}
+.dir-input-row input { flex: 1; min-width: 0; }
+
+/* ── Поля ввода (общие; в настройках тоже) — белый листок с чёрной рамкой ── */
+input[type="text"],
+input[type="number"],
+.settings-input {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 10px;
+  background: var(--white);
+  color: var(--ink);
+  border: var(--border);
+  outline: none;
+}
+input[type="text"]:focus,
+input[type="number"]:focus,
+.settings-input:focus {
+  background: var(--yellow);
+  box-shadow: var(--shadow);
+}
+
+/* ── Мини-кнопки ── */
+.btn-mini {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  font-size: 14px;
+  letter-spacing: 1px;
+  padding: 8px 12px;
+  background: var(--white);
+  color: var(--ink);
+  border: var(--border);
+  box-shadow: 2px 2px 0 var(--gray);
+  white-space: nowrap;
+}
+.btn-mini:hover { background: var(--cyan); color: var(--ink); }
+.btn-mini:active { transform: translate(2px, 2px); box-shadow: none; }
+
+/* ── Блок «Действия» — В бой / Доделать / Стоп ── */
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.btn-action {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 20px;
+  text-align: left;
+  padding: 12px 16px;
+  border: var(--border);
+  box-shadow: var(--shadow);
+}
+.btn-action:hover { box-shadow: var(--shadow-2); }
+.btn-action:active { transform: translate(3px, 3px); box-shadow: var(--trail); }
+.btn-action.primary   { background: var(--magenta); color: var(--white); }
+.btn-action.secondary { background: var(--cyan);    color: var(--ink); }
+.btn-action.danger    {
+  background: var(--magenta);
+  color: var(--white);
+  /* «смазанная краска» — дополнительная цветная тень со смещением */
+  box-shadow: 3px 3px 0 var(--gray), 5px 5px 0 var(--fail);
+}
+.btn-action.danger:hover { box-shadow: 3px 3px 0 var(--gray), 7px 7px 0 var(--fail); }
+
+/* ── Секция прогона (видна при running) ── */
+#run-section {
+  display: none;
+  background: var(--yellow);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+#run-section.visible { display: block; }
+.run-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+.run-timer { margin-left: auto; font-family: var(--font-mono); color: var(--magenta); }
+.run-spinner {
+  width: 16px; height: 16px;
+  border: 3px solid var(--ink);
+  border-top-color: transparent;
+  animation: spin 0.8s steps(8) infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.run-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pipe-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  background: var(--white);
+  color: var(--ink-2);
+  border: 2px solid var(--ink);
+}
+.pipe-chip.done   { background: var(--ok); color: var(--ink); }
+.pipe-chip.active { background: var(--magenta); color: var(--white); }
+
+/* ── Консоль (#console-body): жёлтый фон, чёрный монотекст, винты по углам ── */
+#console-area {
+  flex-shrink: 0;
+  background: var(--yellow);
+  border-top: var(--border);
+  max-height: 38vh;
+  display: flex;
+  flex-direction: column;
+}
+#console-area.collapsed { max-height: 40px; }
+#console-area.expanded  { max-height: 60vh; }
+.console-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ink);
+  border-bottom: 3px solid var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+.console-caret { width: 14px; }
+.console-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.console-btn {
+  width: 28px; height: 26px;
+  font-size: 12px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: var(--white);
+  line-height: 1;
+}
+.console-btn:hover,
+.console-btn.on { background: var(--magenta); color: var(--white); }
+
+#console-body {
+  flex: 1;
+  overflow: auto;
+  padding: 24px 18px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  position: relative;
+}
+/* Винты по углам консоли — чёрные кружки */
+#console-body::before,
+#console-body::after {
+  content: "";
+  position: absolute;
+  width: 10px; height: 10px;
+  background: var(--ink);
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  box-shadow: 0 0 0 2px var(--yellow);
+}
+#console-body::before { top: 7px; left: 7px; }
+#console-body::after  { top: 7px; right: 7px; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ПРАВАЯ ПАНЕЛЬ — вкладки-стикеры, карточки идей
+   ════════════════════════════════════════════════════════════════════════ */
+#tabs-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-bottom: var(--border);
+}
+
+/* Вкладки-стикеры */
+.seg-control {
+  position: relative;
+  display: flex;
+  border: var(--border);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+.seg-btn {
+  position: relative;
+  z-index: 2;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 18px;
+  padding: 8px 22px;
+  color: var(--ink-2);
+  background: transparent;
+  border-right: 2px solid var(--ink);
+}
+.seg-btn:last-child { border-right: none; }
+.seg-btn:hover { background: var(--paper-3); color: var(--ink); }
+.seg-btn.active {
+  background: var(--magenta);
+  color: var(--white);
+  /* резкий сдвиг активного стикера */
+  transform: translate(-1px, -2px);
+}
+#seg-indicator {
+  position: absolute;
+  bottom: -4px;
+  height: 4px;
+  background: var(--cyan);
+  z-index: 3;
+  transition: none;
+}
+
+.tabs-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tabs-counter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 5px 10px;
+  background: var(--white);
+  border: 2px solid var(--ink);
+  color: var(--magenta);
+}
+
+#tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.panel-title h2 {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 32px;
+  color: var(--ink);
+}
+.panel-title .count {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 3px 12px;
+  background: var(--magenta);
+  color: var(--white);
+  border: 2px solid var(--ink);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   КАРТОЧКИ ИДЕЙ — белые с чёрной рамкой, круглый малиновый бейдж
+   ════════════════════════════════════════════════════════════════════════ */
+#ideas-open,
+#finish-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.idea-card {
+  position: relative;
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  transition: transform 0.08s steps(2), box-shadow 0.08s steps(2);
+}
+/* При наведении — приподнимается, тень становится малиновой (двойной контур) */
+.idea-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--gray);
+}
+
+/* Высокий балл (>=8) — лёгкая малиновая подложка как у «отпечатанной» карточки.
+   app.js ставит класс на .score-badge; :has() красит карточку. Запасной
+   селектор — .idea-card.high-score, если класс ставить на саму карточку. */
+.idea-card:has(.score-badge.high),
+.idea-card.high-score {
+  background: var(--white);
+  box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--gray);
+}
+.idea-card:has(.score-badge.high)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--magenta);
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+.idea-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 2px solid var(--ink);
+}
+.idea-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+}
+/* Скоринг-бейдж — круглый, малиновый, с белым числом, обведён чёрным */
+.score-badge {
+  flex-shrink: 0;
+  width: 56px; height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1;
+  background: var(--magenta);
+  color: var(--white);
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  /* серый контур-сдвиг трафарета */
+  box-shadow: 2px 2px 0 var(--gray);
+}
+.score-badge.high   { background: var(--magenta); color: var(--white); }
+.score-badge.good   { background: var(--cyan);   color: var(--ink); }
+.score-badge.medium { background: var(--yellow); color: var(--ink); }
+.score-badge.low    { background: var(--paper-3); color: var(--ink-2); }
+
+.idea-why {
+  padding: 12px 16px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+
+.idea-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 2px solid var(--ink);
+}
+.idea-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  background: var(--paper-3);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+}
+.idea-tag.src { background: var(--magenta); color: var(--white); }
+.idea-tag.llm { background: var(--cyan); color: var(--ink); }
+.idea-tag:not(.src):not(.llm) { background: var(--paper-3); }
+
+/* Кнопки действий: Take — голубая, Trash — малиновая */
+.idea-actions {
+  display: flex;
+  gap: 0;
+}
+.idea-actions .act-btn {
+  flex: 1;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 16px;
+  padding: 12px 8px;
+  border: none;
+  border-right: 2px solid var(--ink);
+  box-shadow: none;
+  transition: transform 0.06s steps(2);
+}
+.idea-actions .act-btn:last-child { border-right: none; }
+.idea-actions .act-btn:hover { box-shadow: inset 0 -4px 0 var(--ink); }
+.idea-actions .act-btn:active { transform: translate(2px, 2px); }
+.act-btn.take  { background: var(--cyan);    color: var(--ink); }
+.act-btn.later { background: var(--yellow);  color: var(--ink); }
+.act-btn.trash { background: var(--magenta); color: var(--white); }
+
+/* Анимация удаления — диагональный улёт с перечёркиванием */
+.idea-card.removing {
+  animation: riso-trash 0.22s steps(4, end) forwards;
+  pointer-events: none;
+}
+.idea-card.removing::after {
+  content: "";
+  position: absolute;
+  left: -4%;
+  top: 50%;
+  width: 108%;
+  height: 12px;
+  background: var(--magenta);
+  transform: translateY(-50%) rotate(-8deg);
+  z-index: 5;
+}
+@keyframes riso-trash {
+  0%   { transform: translate(0, 0) rotate(0); opacity: 1; }
+  40%  { transform: translate(10px, -10px) rotate(3deg); opacity: 1; }
+  100% { transform: translate(40px, -40px) rotate(10deg); opacity: 0; }
+}
+
+/* ── Empty state ── */
+.empty-state {
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 32px 24px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.empty-icon { font-size: 44px; margin-bottom: 10px; }
+.empty-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 26px;
+  margin-bottom: 10px;
+}
+.empty-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.empty-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 18px 0;
+}
+.empty-stat {
+  padding: 10px 6px;
+  background: var(--paper-3);
+  border: 2px solid var(--ink);
+}
+.empty-stat-val {
+  font-family: var(--font-display);
+  font-size: 26px;
+  color: var(--magenta);
+}
+.empty-stat-lbl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* ── Слот «доделать» ── */
+#finish-slot .idea-card { background: var(--yellow); }
+#finish-slot .idea-card .score-badge { display: none; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   РАЗОБРАННЫЕ (done-list)
+   ════════════════════════════════════════════════════════════════════════ */
+.done-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--ink);
+  color: var(--white);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 18px;
+  border: var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+.done-caret { display: inline-block; transition: none; }
+.done-toggle.open .done-caret { transform: rotate(90deg); }
+.done-list {
+  display: none;
+  border: var(--border);
+  border-top: none;
+  background: var(--white);
+}
+.done-list.open { display: block; }
+.done-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.done-filter {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border: 2px solid var(--ink);
+  background: var(--white);
+}
+.done-filter.on { background: var(--magenta); color: var(--white); }
+.done-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--paper-3);
+  font-size: 13px;
+}
+.done-row:last-child { border-bottom: none; }
+.done-status {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border: 2px solid var(--ink);
+  flex-shrink: 0;
+}
+.done-status.take  { background: var(--cyan);    color: var(--ink); }
+.done-status.later { background: var(--yellow);  color: var(--ink); }
+.done-status.trash { background: var(--magenta); color: var(--white); }
+.done-title { flex: 1; min-width: 0; }
+.done-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  flex-shrink: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ОРГАНЫ
+   ════════════════════════════════════════════════════════════════════════ */
+#organs-list { display: flex; flex-direction: column; gap: 12px; }
+.organ-row {
+  display: flex;
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+}
+.organ-row::before {
+  content: "";
+  flex: 0 0 12px;
+  background: var(--ink);
+}
+.organ-row.role-source::before    { background: var(--magenta); }
+.organ-row.role-transform::before { background: var(--cyan); }
+.organ-row.role-sink::before      { background: var(--yellow); }
+.organ-main { padding: 12px 16px; flex: 1; min-width: 0; }
+.organ-line1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.organ-name {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--magenta);
+}
+.organ-flow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  padding: 2px 7px;
+  background: var(--paper-3);
+  border: 2px solid var(--ink);
+}
+.organ-badges { font-size: 14px; }
+.organ-purpose {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ЖУРНАЛ — таблица
+   ════════════════════════════════════════════════════════════════════════ */
+.runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--white);
+  border: var(--border);
+}
+.runs-table th,
+.runs-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 2px solid var(--ink);
+  border-right: 2px solid var(--paper-3);
+  font-size: 13px;
+}
+.runs-table th:last-child,
+.runs-table td:last-child { border-right: none; }
+.runs-table thead th {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 14px;
+  background: var(--ink);
+  color: var(--yellow);
+  border-bottom: var(--border);
+}
+.runs-table tbody tr:nth-child(even) { background: var(--paper); }
+.run-ts, .run-duration { font-family: var(--font-mono); }
+.run-goal { font-family: var(--font-sans); }
+.run-result {
+  font-family: var(--font-display);
+  font-size: 14px;
+  padding: 2px 9px;
+  border: 2px solid var(--ink);
+}
+.run-result.ok   { background: var(--ok);     color: var(--ink); }
+.run-result.zero { background: var(--paper-3); color: var(--ink); }
+.run-result.bad  { background: var(--magenta); color: var(--white); }
+.run-status-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 2px solid var(--ink);
+}
+.run-status-pill.ok   { background: var(--ok);     color: var(--ink); }
+.run-status-pill.fail { background: var(--magenta); color: var(--white); }
+
+/* ── Dock журнала ── */
+#journal-dock {
+  flex-shrink: 0;
+  border-top: var(--border);
+  background: var(--ink);
+  color: var(--yellow);
+}
+.dock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.dock-caret { transition: none; }
+#journal-dock.open .dock-caret { transform: rotate(180deg); }
+.dock-body {
+  display: none;
+  padding: 8px 16px 12px;
+  border-top: 2px solid var(--yellow);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+#journal-dock.open .dock-body { display: block; }
+.dock-row {
+  display: grid;
+  grid-template-columns: 54px 1fr auto;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--ink-2);
+}
+.dock-row:last-child { border-bottom: none; }
+.dock-ts   { color: var(--ink-2); }
+.dock-goal { color: var(--yellow); }
+.dock-qty  { font-weight: 700; color: var(--magenta); text-align: right; }
+.dock-qty.zero { color: var(--paper-3); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   SETTINGS DRAWER — жёлтый лоток, выдвигается справа
+   ════════════════════════════════════════════════════════════════════════ */
+#settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--ink);
+  display: none;
+  z-index: 80;
+}
+#settings-overlay.open { display: block; }
+
+#settings-drawer {
+  position: fixed;
+  top: 0; right: 0;
+  width: 420px;
+  max-width: 92vw;
+  height: 100vh;
+  background: var(--yellow);
+  border-left: 4px solid var(--ink);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  z-index: 90;
+  box-shadow: -6px 0 0 var(--gray);
+}
+#settings-drawer.open { transform: translateX(0); }
+
+.settings-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 16px 18px;
+  background: var(--magenta);
+  color: var(--white);
+  border-bottom: var(--border);
+}
+.settings-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 24px;
+}
+.settings-close {
+  margin-left: auto;
+  width: 38px; height: 38px;
+  font-size: 18px;
+  background: var(--white);
+  color: var(--ink);
+  border: var(--border);
+}
+.settings-close:active { transform: translate(2px, 2px); }
+
+#settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+}
+.settings-section {
+  background: var(--white);
+  border: var(--border);
+  box-shadow: 2px 2px 0 var(--gray);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.settings-section-title {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 20px;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 3px solid var(--magenta);
+  color: var(--magenta);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.settings-label {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+.settings-row input[type="number"] { width: 90px; }
+
+/* list-item (папки/ленты) */
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px;
+  border-bottom: 2px solid var(--paper-3);
+}
+.list-item:last-child { border-bottom: none; }
+.list-item-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item-path.off { color: var(--ink-2); text-decoration: line-through; }
+.list-item-note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 2px solid var(--ink);
+  flex-shrink: 0;
+}
+.list-item-note.ok   { background: var(--ok);     color: var(--ink); }
+.list-item-note.warn { background: var(--yellow); color: var(--ink); }
+.list-item-note.bad  { background: var(--magenta); color: var(--white); }
+.list-item-rm {
+  width: 28px; height: 28px;
+  font-size: 16px;
+  background: var(--white);
+  border: 2px solid var(--ink);
+  flex-shrink: 0;
+}
+.list-item-rm:hover { background: var(--magenta); color: var(--white); }
+.list-item-rm:active { transform: translate(2px, 2px); }
+
+.list-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+}
+.list-add-row input { flex: 1; min-width: 0; }
+
+/* ── Тумблеры .toggle (auto/folder/feed): рычажок принтера ── */
+.toggle {
+  width: 28px; height: 28px;
+  flex-shrink: 0;
+  background: var(--paper-3);
+  border: var(--border);
+  position: relative;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 18px; height: 18px;
+  background: var(--white);
+  border: 2px solid var(--ink);
+}
+.toggle.on { background: var(--magenta); }
+.toggle.on::after {
+  left: auto; right: 3px;
+  background: var(--ink);
+}
+
+/* ── Чекбоксы .check (совет): квадрат с жирным крестом ── */
+.check {
+  width: 28px; height: 28px;
+  flex-shrink: 0;
+  background: var(--white);
+  border: var(--border);
+  position: relative;
+}
+.check.on { background: var(--magenta); }
+.check.on::before,
+.check.on::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 70%; height: 5px;
+  background: var(--white);
+}
+.check.on::before { transform: translate(-50%, -50%) rotate(45deg); }
+.check.on::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+
+/* Футер настроек — кнопка STAMP (малиновая, эффект оттиска) */
+.settings-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--ink);
+  border-top: var(--border);
+}
+.settings-footer .btn-primary {
+  background: var(--magenta);
+  padding: 12px 24px;
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+.settings-footer .btn-primary:active {
+  transform: translate(3px, 3px);
+  box-shadow: var(--trail);
+}
+.settings-footer .btn-mini { background: var(--white); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ТОСТЫ
+   ════════════════════════════════════════════════════════════════════════ */
+#toasts {
+  position: fixed;
+  top: 80px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 100;
+  max-width: 340px;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.toast-icon {
+  font-family: var(--font-display);
+  font-size: 16px;
+  width: 26px; height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ink);
+  flex-shrink: 0;
+}
+.toast.success { background: var(--ok);     color: var(--ink); }
+.toast.warn    { background: var(--yellow); color: var(--ink); }
+.toast.error   { background: var(--magenta); color: var(--white); }
+.toast.info    { background: var(--white);  color: var(--ink); }
+.toast-msg { flex: 1; }
+#toasts .toast[style*="translateX"] { border: var(--border); box-shadow: var(--shadow); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   СОСТОЯНИЯ И ADAPTIVE
+   ════════════════════════════════════════════════════════════════════════ */
+button:disabled,
+.btn-action[disabled] {
+  background: var(--paper-3) !important;
+  color: var(--ink-2) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.h-pstate {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.h-pstate.working { color: var(--magenta); }
+.h-pstate.alive   { color: var(--ok); }
+.h-pstate.error   { color: var(--fail); }
+
+@media (max-width: 980px) {
+  #left { width: 312px; }
+  .h-metric { min-width: 70px; }
+  .panel-title h2 { font-size: 26px; }
+}
+@media (max-width: 720px) {
+  #main { flex-direction: column; }
+  #left { width: 100%; border-right: none; border-bottom: var(--border); max-height: 44vh; }
+  #header { height: auto; flex-wrap: wrap; padding: 10px 12px; }
+  .h-metrics { width: 100%; }
+  .panel-title h2 { font-size: 22px; }
+  .score-badge { width: 48px; height: 48px; font-size: 22px; }
+}

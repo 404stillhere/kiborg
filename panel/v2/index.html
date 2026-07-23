@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kiborg — пульт</title>
+<meta name="description" content="Пульт автономного агента kiborg — живой статус, идеи, источники">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ═══════════ HEADER ═══════════ -->
+  <header id="header">
+    <div class="h-brand">
+      <span class="h-logo">🤖</span>
+      <span class="h-name">kiborg</span>
+      <span class="h-pulse" id="h-pulse"></span>
+    </div>
+
+    <div class="h-separator"></div>
+
+    <div class="h-metrics">
+      <div class="h-metric" title="Открытых идей в инбоксе">
+        <span class="h-metric-label">inbox</span>
+        <span class="h-metric-value good" id="m-inbox">12</span>
+      </div>
+      <div class="h-metric" title="Сколько идей киборг помнит (seen)">
+        <span class="h-metric-label">memory</span>
+        <span class="h-metric-value" id="m-memory">487</span>
+      </div>
+      <div class="h-metric" title="Когда последний раз что-то принёс">
+        <span class="h-metric-label">fresh</span>
+        <span class="h-metric-value" id="m-fresh">5 мин</span>
+      </div>
+      <div class="h-metric" title="Состав цепочки LLM">
+        <span class="h-metric-label">keys</span>
+        <span class="h-metric-value" id="m-keys">3/3</span>
+      </div>
+    </div>
+
+    <div class="h-right">
+      <button class="btn-primary" id="btn-bring">
+        ⚡ Принести идеи
+      </button>
+
+      <div class="auto-toggle on" id="auto-toggle" title="Автономность: киборг сам ходит за идеями">
+        <span class="auto-dot"></span>
+        <span id="auto-label">авто 30м</span>
+      </div>
+
+      <button class="btn-icon" id="btn-settings" title="Настройки">⚙</button>
+    </div>
+  </header>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <div id="main">
+
+    <!-- ──────── LEFT ──────── -->
+    <aside id="left">
+      <div id="left-scroll">
+
+        <!-- Knight (контейнер; bodies.js вставит реальный SVG, app.js — режим) -->
+        <div id="knight">
+          <svg id="knight-svg" viewBox="83 28 344 430" xmlns="http://www.w3.org/2000/svg">
+            <g class="breath" id="knight-body"></g>
+            <!-- Heart -->
+            <path class="heartbeat" id="knight-heart"
+                  d="M255,196 L273,214 L255,232 L237,214 Z" style="--hb:1.4s"></path>
+            <!-- Nerves -->
+            <path class="nerve" d="M255,230 Q220,290 190,320"></path>
+            <path class="nerve" d="M255,230 Q290,290 320,320" style="animation-delay:-.8s"></path>
+            <path class="nerve" d="M255,160 Q255,140 255,120" style="animation-delay:-.4s"></path>
+          </svg>
+        </div>
+
+        <!-- Источники -->
+        <section class="l-section">
+          <div class="l-section-title">📡 Источники</div>
+          <div class="sources-chips">
+            <span class="src-chip ok">
+              <span class="src-dot ok"></span>HN
+              <span class="src-count">42</span>
+            </span>
+            <span class="src-chip ok">
+              <span class="src-dot ok"></span>Reddit
+              <span class="src-count">18</span>
+            </span>
+            <span class="src-chip ok">
+              <span class="src-dot ok"></span>GitHub
+              <span class="src-count">7</span>
+            </span>
+            <span class="src-chip bad">
+              <span class="src-dot bad"></span>Telegram
+              <span class="src-count" title="HTTP 403: Blocked">!</span>
+            </span>
+            <span class="src-chip ok">
+              <span class="src-dot ok"></span>Папки
+              <span class="src-count">12</span>
+            </span>
+          </div>
+        </section>
+
+        <!-- Направление -->
+        <section class="l-section">
+          <div class="l-section-title">🎯 Направление</div>
+          <div class="dir-current">
+            <span>→ «VPN и приватность»</span>
+            <span class="dir-clear" title="Сбросить направление">✕</span>
+          </div>
+          <div class="dir-presets">
+            <span class="dir-preset on">VPN</span>
+            <span class="dir-preset">Telegram-боты</span>
+            <span class="dir-preset">CLI-утилиты</span>
+            <span class="dir-preset">Игры</span>
+          </div>
+          <div class="dir-input-row">
+            <input type="text" placeholder="своя тема…" maxlength="120">
+            <button class="btn-mini" title="Применить">→</button>
+            <button class="btn-mini" title="Сохранить в пресеты">★</button>
+          </div>
+        </section>
+
+        <!-- Быстрые действия -->
+        <section class="l-section">
+          <div class="l-section-title">⚡ Действия</div>
+          <div class="actions-list">
+            <button class="btn-action primary">⚡ Принести идеи</button>
+            <button class="btn-action secondary">🏁 Доделать проект</button>
+            <button class="btn-action danger" disabled>⏹ Стоп</button>
+          </div>
+        </section>
+
+        <!-- Прогон (скрыт по умолчанию) -->
+        <section id="run-section">
+          <div class="run-header">
+            <span class="run-spinner"></span>
+            <span>работает · генерация</span>
+            <span class="run-timer">2:14</span>
+          </div>
+          <div class="run-progress">
+            <span class="pipe-chip done">Сбор</span>
+            <span class="pipe-chip active">Генерация</span>
+            <span class="pipe-chip">Арбитр</span>
+            <span class="pipe-chip">Доставка</span>
+          </div>
+        </section>
+
+      </div><!-- /left-scroll -->
+
+      <!-- Консоль (прижата к низу) -->
+      <div id="console-area">
+        <div class="console-header">
+          <span class="console-caret">▾</span>
+          <span>Живой вывод</span>
+          <div class="console-controls">
+            <button class="console-btn" title="Пауза прокрутки">⏸</button>
+            <button class="console-btn" title="Очистить">✕</button>
+            <button class="console-btn" title="Развернуть">⤢</button>
+          </div>
+        </div>
+        <div id="console-body">[kiborg] запуск cyborg/run.py "приноси свежие идеи"
+шаг 1: collect_source
+⏳ иду: collect_source
+✓ готов: collect_source (42 поста, 18 годных)
+шаг 2: ideate
+⏳ иду: ideate
+⏳ генерирую 5 идей...</div>
+      </div>
+    </aside>
+
+    <!-- ──────── RIGHT ──────── -->
+    <main id="right">
+
+      <!-- Segmented control + действия вкладки -->
+      <div id="tabs-bar">
+        <div class="seg-control">
+          <div class="seg-indicator" id="seg-indicator"></div>
+          <button class="seg-btn active" data-tab="ideas">Идеи</button>
+          <button class="seg-btn" data-tab="organs">Органы</button>
+          <button class="seg-btn" data-tab="journal">Журнал</button>
+        </div>
+
+        <div class="tabs-actions">
+          <span class="tabs-counter" id="ideas-counter">12 открыто</span>
+          <button class="btn-mini" id="btn-purge" title="Мусор: все идеи с оценкой < 8.0">🗑 Очистить &lt;8</button>
+          <button class="btn-mini" id="btn-done-toggle">Разобранные</button>
+        </div>
+      </div>
+
+      <!-- Контент вкладок -->
+      <div id="tab-content">
+
+        <!-- ═══ Вкладка ИДЕИ ═══ -->
+        <div class="tab-panel active" id="tab-ideas">
+
+          <div class="panel-title">
+            <h2>Открытые идеи</h2>
+            <span class="count">12</span>
+          </div>
+
+          <!-- Контейнер слота «доделать» (app.js._renderIdeas пишет сюда finish slot) -->
+          <div id="finish-slot"></div>
+
+          <!-- Контейнер списка открытых идей (app.js._renderIdeas пишет сюда реальные карточки) -->
+          <div id="ideas-open">
+            <!-- Демо-карточки (видны только до первого /api/state; потом их вычистит app.js) -->
+
+            <!-- Карточка «finish slot» — демо, сейчас скрыто, реальный finish придёт из API -->
+            <!-- (переехало в #finish-slot выше как пустой контейнер) -->
+
+            <!-- Карточки идей -->
+            <div class="idea-card">
+              <div class="idea-head">
+              <div class="idea-title">VPN-туннель на WireGuard с авто-сменой endpoint</div>
+              <div class="score-badge high">9.2</div>
+            </div>
+            <div class="idea-why">Если один endpoint блокируют — клиент автоматически переключается на запасный. Пинг-проверка каждые 30 сек.</div>
+            <div class="idea-meta">
+              <span class="idea-tag src">reddit</span>
+              <span class="idea-tag llm">нейронка</span>
+              <span class="idea-tag">сложность: средняя</span>
+              <span class="idea-tag">#142</span>
+            </div>
+            <div class="idea-actions">
+              <button class="act-btn take">✓ Взять</button>
+              <button class="act-btn later">⏳ Позже</button>
+              <button class="act-btn trash">✕ Мусор</button>
+            </div>
+          </div>
+
+          <div class="idea-card">
+            <div class="idea-head">
+              <div class="idea-title">CLI для подсчёта строк кода в репозитории с фильтрами</div>
+              <div class="score-badge high">8.7</div>
+            </div>
+            <div class="idea-why">Лёгкая утилита на Python: cloc-аналог, но с интеграцией git blame и поддержкой .gitignore.</div>
+            <div class="idea-meta">
+              <span class="idea-tag src">hn</span>
+              <span class="idea-tag llm">нейронка</span>
+              <span class="idea-tag">сложность: лёгкая</span>
+              <span class="idea-tag">#141</span>
+            </div>
+            <div class="idea-actions">
+              <button class="act-btn take">✓ Взять</button>
+              <button class="act-btn later">⏳ Позже</button>
+              <button class="act-btn trash">✕ Мусор</button>
+            </div>
+          </div>
+
+          <div class="idea-card">
+            <div class="idea-head">
+              <div class="idea-title">Бот для мониторинга изменений на статичных сайтах</div>
+              <div class="score-badge good">7.8</div>
+            </div>
+            <div class="idea-why">Diff по тексту страницы через cron, уведомления в Telegram при изменении контента.</div>
+            <div class="idea-meta">
+              <span class="idea-tag src">reddit</span>
+              <span class="idea-tag">болванка</span>
+              <span class="idea-tag">сложность: лёгкая</span>
+              <span class="idea-tag">#140</span>
+            </div>
+            <div class="idea-actions">
+              <button class="act-btn take">✓ Взять</button>
+              <button class="act-btn later">⏳ Позже</button>
+              <button class="act-btn trash">✕ Мусор</button>
+            </div>
+          </div>
+
+          <div class="idea-card">
+            <div class="idea-head">
+              <div class="idea-title">Telegram-бот для трекинга расходов по категориям</div>
+              <div class="score-badge medium">6.3</div>
+            </div>
+            <div class="idea-why">Хранение в SQLite, monthly-отчёты с графиками, экспорт в CSV. Поддержка нескольких пользователей.</div>
+            <div class="idea-meta">
+              <span class="idea-tag src">hn</span>
+              <span class="idea-tag llm">нейронка</span>
+              <span class="idea-tag">сложность: средняя</span>
+              <span class="idea-tag">#139</span>
+            </div>
+            <div class="idea-actions">
+              <button class="act-btn take">✓ Взять</button>
+              <button class="act-btn later">⏳ Позже</button>
+              <button class="act-btn trash">✕ Мусор</button>
+            </div>
+          </div>
+
+          <div class="idea-card">
+            <div class="idea-head">
+              <div class="idea-title">Веб-скрапер для сбора цен с маркетплейсов</div>
+              <div class="score-badge low">4.1</div>
+            </div>
+            <div class="idea-why">Общий каркас скрапера: pagination, anti-bot обход, прокси-ротация.</div>
+            <div class="idea-meta">
+              <span class="idea-tag src">reddit</span>
+              <span class="idea-tag">болванка</span>
+              <span class="idea-tag">сложность: сложная</span>
+              <span class="idea-tag">#138</span>
+            </div>
+            <div class="idea-actions">
+              <button class="act-btn take">✓ Взять</button>
+              <button class="act-btn later">⏳ Позже</button>
+              <button class="act-btn trash">✕ Мусор</button>
+            </div>
+          </div>
+          </div><!-- /#ideas-open -->
+
+          <!-- Empty state (пример, скрыт по умолчанию) -->
+          <!--
+          <div class="empty-state">
+            <div class="empty-icon">🌱</div>
+            <div class="empty-title">Киборг жив, отдыхает</div>
+            <div class="empty-sub">Пустой инбокс — это нормально. Прошлый сбор принёс 5 идей 8 минут назад.<br>Авто выкл — можно нажать кнопку.</div>
+            <div class="empty-stats">
+              <div class="empty-stat"><div class="empty-stat-val">87</div><div class="empty-stat-lbl">прогонов</div></div>
+              <div class="empty-stat"><div class="empty-stat-val">412</div><div class="empty-stat-lbl">принёс</div></div>
+              <div class="empty-stat"><div class="empty-stat-val">14</div><div class="empty-stat-lbl">взял</div></div>
+              <div class="empty-stat"><div class="empty-stat-val">398</div><div class="empty-stat-lbl">помнит</div></div>
+            </div>
+          </div>
+          -->
+
+          <!-- Разобранные (свёрнуто) -->
+          <div class="done-toggle" id="done-toggle">
+            <span class="done-caret">▸</span>
+            <span>Разобранные (<span id="done-count">38</span>)</span>
+          </div>
+          <div class="done-list" id="done-list">
+            <div class="done-filters">
+              <span class="done-filter on">все 38</span>
+              <span class="done-filter">взял 14</span>
+              <span class="done-filter">позже 9</span>
+              <span class="done-filter">мусор 15</span>
+            </div>
+            <div class="done-row">
+              <span class="done-status take">взял</span>
+              <span class="done-title">VPN-туннель на WireGuard с авто-сменой endpoint</span>
+              <span class="done-id">#137</span>
+            </div>
+            <div class="done-row">
+              <span class="done-status later">позже</span>
+              <span class="done-title">Бот для мониторинга изменений на статичных сайтах</span>
+              <span class="done-id">#136</span>
+            </div>
+            <div class="done-row">
+              <span class="done-status trash">мусор</span>
+              <span class="done-title">Очередной CRUD на React</span>
+              <span class="done-id">#135</span>
+            </div>
+            <div class="done-row">
+              <span class="done-status take">взял</span>
+              <span class="done-title">CLI для подсчёта строк кода с git blame</span>
+              <span class="done-id">#134</span>
+            </div>
+          </div>
+
+        </div><!-- /tab-ideas -->
+
+        <!-- ═══ Вкладка ОРГАНЫ ═══ -->
+        <div class="tab-panel" id="tab-organs">
+          <div class="panel-title">
+            <h2>Рабочее тело</h2>
+            <span class="count">6 впаяно</span>
+          </div>
+
+          <div class="organ-row role-source">
+            <div class="organ-main">
+              <div class="organ-line1">
+                <span class="organ-name">collect_source</span>
+                <span class="organ-flow">→ raw_items</span>
+                <span class="organ-badges">🌐</span>
+              </div>
+              <div class="organ-purpose">Сбор сырьевых постов из источников: HN, Reddit, GitHub Trending, Telegram, локальные папки. Дедуп по seen-хэшу.</div>
+            </div>
+          </div>
+
+          <div class="organ-row role-transform">
+            <div class="organ-main">
+              <div class="organ-line1">
+                <span class="organ-name">ideate</span>
+                <span class="organ-flow">raw_items → ideas</span>
+                <span class="organ-badges">🔑</span>
+              </div>
+              <div class="organ-purpose">Генерация идей из сырья через LLM-цепочку muse-spark → deepseek-v4-pro. На каждый пост — 1-2 гипотезы.</div>
+            </div>
+          </div>
+
+          <div class="organ-row role-transform">
+            <div class="organ-main">
+              <div class="organ-line1">
+                <span class="organ-name">rank_ideas</span>
+                <span class="organ-flow">ideas → ranked</span>
+                <span class="organ-badges">🔑</span>
+              </div>
+              <div class="organ-purpose">Арбитр совета: 7 рецензентов оценивают каждую идею 0-10, совет суммирует вердикты в финальный score.</div>
+            </div>
+          </div>
+
+          <div class="organ-row role-transform">
+            <div class="organ-main">
+              <div class="organ-line1">
+                <span class="organ-name">readability_gate</span>
+                <span class="organ-flow">ranked → readable</span>
+              </div>
+              <div class="organ-purpose">Переписывание заголовков/описаний идей: сложно → просто, длинно → коротко. Чистка от жаргона.</div>
+            </div>
+          </div>
+
+          <div class="organ-row role-transform">
+            <div class="organ-main">
+              <div class="organ-line1">
+                <span class="organ-name">scrub_secrets</span>
+                <span class="organ-flow">readable → clean</span>
+              </div>
+              <div class="organ-purpose">Проверка на утечку секретов в сгенерированном тексте. Эвристики + regex по паттернам ключей.</div>
+            </div>
+          </div>
+
+          <div class="organ-row role-sink">
+            <div class="organ-main">
+              <div class="organ-line1">
+                <span class="organ-name">deliver</span>
+                <span class="organ-flow">clean → inbox</span>
+                <span class="organ-badges">🔑</span>
+              </div>
+              <div class="organ-purpose">Доставка в state.json инбокса. Идеи получают ID, статус open, привязку к источнику.</div>
+            </div>
+          </div>
+        </div><!-- /tab-organs -->
+
+        <!-- ═══ Вкладка ЖУРНАЛ ═══ -->
+        <div class="tab-panel" id="tab-journal">
+          <div class="panel-title">
+            <h2>Журнал прогонов</h2>
+            <span class="count">87</span>
+          </div>
+
+          <table class="runs-table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Цель</th>
+                <th>Итог</th>
+                <th>Длит.</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="run-ts">14:32:18</td>
+                <td class="run-goal">«приноси свежие идеи»</td>
+                <td><span class="run-result ok">+5</span></td>
+                <td class="run-duration">2:14</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">14:02:11</td>
+                <td class="run-goal">«автосбор идей (по расписанию)»</td>
+                <td><span class="run-result ok">+3</span></td>
+                <td class="run-duration">1:48</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">13:32:05</td>
+                <td class="run-goal">«приноси свежие идеи»</td>
+                <td><span class="run-result zero">0</span></td>
+                <td class="run-duration">0:42</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">13:00:22</td>
+                <td class="run-goal">«доделать существующие проекты»</td>
+                <td><span class="run-result ok">+1</span></td>
+                <td class="run-duration">3:51</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">12:30:14</td>
+                <td class="run-goal">«приноси свежие идеи»</td>
+                <td><span class="run-result ok">+7</span></td>
+                <td class="run-duration">2:33</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">12:00:08</td>
+                <td class="run-goal">«автосбор идей (по расписанию)»</td>
+                <td><span class="run-result bad">ERR</span></td>
+                <td class="run-duration">0:05</td>
+                <td><span class="run-status-pill fail">fail</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">11:30:02</td>
+                <td class="run-goal">«приноси свежие идеи»</td>
+                <td><span class="run-result ok">+4</span></td>
+                <td class="run-duration">2:01</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+              <tr>
+                <td class="run-ts">11:00:44</td>
+                <td class="run-goal">«наблюдаю за источниками»</td>
+                <td><span class="run-result">42 поста</span></td>
+                <td class="run-duration">1:12</td>
+                <td><span class="run-status-pill ok">ok</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div><!-- /tab-journal -->
+
+      </div><!-- /tab-content -->
+
+      <!-- Sticky dock журнала (всегда виден, раскрывается по клику) -->
+      <div id="journal-dock">
+        <div class="dock-header" id="dock-header">
+          <span class="dock-caret">▴</span>
+          <span>Журнал</span>
+          <span style="margin-left:auto; font-size:11px; color:var(--text-tertiary); text-transform:none; letter-spacing:0">последние 3 прогона</span>
+        </div>
+        <div class="dock-body">
+          <div class="dock-row">
+            <span class="dock-ts">14:32</span>
+            <span class="dock-goal">«приноси свежие идеи»</span>
+            <span class="dock-qty">+5</span>
+            <span class="dock-ts">2:14</span>
+          </div>
+          <div class="dock-row">
+            <span class="dock-ts">14:02</span>
+            <span class="dock-goal">«автосбор идей (по расписанию)»</span>
+            <span class="dock-dock qty">+3</span>
+            <span class="dock-ts">1:48</span>
+          </div>
+          <div class="dock-row">
+            <span class="dock-ts">13:32</span>
+            <span class="dock-goal">«приноси свежие идеи»</span>
+            <span class="dock-qty zero">0</span>
+            <span class="dock-ts">0:42</span>
+          </div>
+        </div>
+      </div>
+
+    </main><!-- /right -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+
+<!-- ═══════════ SETTINGS DRAWER ═══════════ -->
+<div id="settings-overlay"></div>
+<aside id="settings-drawer">
+
+  <div class="settings-header">
+    <span class="settings-title">⚙ Настройки</span>
+    <button class="settings-close" id="settings-close">✕</button>
+  </div>
+
+  <div id="settings-body">
+
+    <!-- Автономность -->
+    <section class="settings-section">
+      <div class="settings-section-title">Автономность</div>
+      <div class="settings-row">
+        <span class="settings-label">Автоцикл включён</span>
+        <div class="toggle on" data-toggle="auto"></div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Интервал (мин)</span>
+        <input type="number" class="settings-input" min="5" max="240" value="30">
+      </div>
+    </section>
+
+    <!-- Папки-источники -->
+    <section class="settings-section">
+      <div class="settings-section-title">Папки-источники</div>
+      <div class="list-item">
+        <div class="toggle on" data-toggle="folder"></div>
+        <span class="list-item-path">M:/projects/kiborg</span>
+        <span class="list-item-note ok">42 файла</span>
+        <button class="list-item-rm">×</button>
+      </div>
+      <div class="list-item">
+        <div class="toggle on" data-toggle="folder"></div>
+        <span class="list-item-path">M:/projects/scratch</span>
+        <span class="list-item-note warn">0 файлов</span>
+        <button class="list-item-rm">×</button>
+      </div>
+      <div class="list-item">
+        <div class="toggle" data-toggle="folder"></div>
+        <span class="list-item-path off">M:/missing/path</span>
+        <span class="list-item-note bad">не найден</span>
+        <button class="list-item-rm">×</button>
+      </div>
+      <div class="list-add-row">
+        <input type="text" placeholder="M:/projects/myproject" maxlength="400">
+        <button class="btn-mini">+ Добавить</button>
+      </div>
+    </section>
+
+    <!-- Ленты-источники -->
+    <section class="settings-section">
+      <div class="settings-section-title">Ленты-источники</div>
+      <div class="list-item">
+        <div class="toggle on" data-toggle="feed"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans)">Hacker News</span>
+      </div>
+      <div class="list-item">
+        <div class="toggle on" data-toggle="feed"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans)">Reddit /r/programming</span>
+      </div>
+      <div class="list-item">
+        <div class="toggle on" data-toggle="feed"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans)">GitHub Trending</span>
+      </div>
+      <div class="list-item">
+        <div class="toggle" data-toggle="feed"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans); color:var(--text-tertiary)">Telegram <span style="color:var(--status-working)">β</span></span>
+      </div>
+    </section>
+
+    <!-- Совет -->
+    <section class="settings-section">
+      <div class="settings-section-title">Участники совета (отбор идей)</div>
+      <div class="list-item">
+        <div class="check on" data-check="council"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans)">Арбитр (rank_ideas)</span>
+      </div>
+      <div class="list-item">
+        <div class="check on" data-check="council"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans)">Интуиция (ask_llm)</span>
+      </div>
+      <div class="list-item">
+        <div class="check on" data-check="council"></div>
+        <span class="list-item-path" style="font-family:var(--font-sans)">Оркестр (orchestra)</span>
+      </div>
+    </section>
+
+    <!-- Оформление -->
+    <section class="settings-section">
+      <div class="settings-section-title">Оформление</div>
+      <div class="settings-row">
+        <span class="settings-label">Тема: <strong id="theme-name">Risograph</strong></span>
+        <div class="toggle on" data-toggle="theme"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="settings-footer">
+    <button class="btn-mini">Отмена</button>
+    <button class="btn-primary" style="padding:6px 16px; font-size:12px">Сохранить</button>
+  </div>
+
+</aside>
+
+
+<!-- ═══════════ TOASTS ═══════════ -->
+<!-- Контейнер; app.js добавляет/убирает отдельные .toast -->
+<div id="toasts"></div>
+
+<!-- ═══════════ CLIENT LOGIC ═══════════ -->
+<script src="/bodies.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

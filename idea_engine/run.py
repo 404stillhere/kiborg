@@ -20,6 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import rejected  # noqa: E402  (мусор = отклонена: суть уходит сюда, учит генератор/судью)
+import triage_store  # noqa: E402  (take/later = разобрана: полная идея уходит в taken.json/later.json)
 from organs import collect_source, finish_step, ideate  # noqa: E402
 from store import Store, state_lock  # noqa: E402
 
@@ -148,16 +149,48 @@ def _cli(argv):
         with state_lock(STATE):  # триаж пульта: замок вокруг load→set_status→save
             store = Store(STATE, cap=CFG["cap"])
             ok = store.set_status(idea_id, st)
-            if ok and st == "trash":
-                # «мусор» = ОТКЛОНЕНА (юзер 2026-07-18): суть → rejected.json (учит генератор/судью
-                # не приносить похожее), и убираем идею из списков совсем — не тихий tombstone со
-                # статусом trash в state. Store не трогаем (заморожен): работаем с его data в оболочке.
+            if ok:
+                # Разбор = перенос идеи из state.json в отдельный файл (мастер-разделение,
+                # 2026-07-22). state.json хранит только open; take/later/trash физически
+                # уходят в taken.json / later.json / rejected.json и вырезаются из ideas[].
+                # Store не трогаем (заморожен): работаем с его data в оболочке, как и раньше
+                # делали только для trash. set_status подтвердил существование и проставил
+                # статус в victim — забираем victim с обновлённым статусом, потом удаляем.
                 victim = next((i for i in store.data["ideas"] if i["id"] == idea_id), None)
                 if victim:
-                    rejected.add(victim.get("title", ""), victim.get("why", ""))
+                    if st == "trash":
+                        # мусор = отклонена: СУТЬ (title+why) → rejected.json — учит генератор/судью
+                        # не приносить похожее. Полная идея здесь не нужна (храним суть, не архив).
+                        rejected.add(victim.get("title", ""), victim.get("why", ""))
+                    else:
+                        # взять/позже: ПОЛНАЯ идея (id/title/why/score/born_tick/…) → taken/later,
+                        # с меткой triaged_ts. Без потолка — разобранные идеи не должны теряться.
+                        triage_store.add(
+                            triage_store.TAKEN_PATH if st == "take" else triage_store.LATER_PATH,
+                            victim,
+                        )
                     store.data["ideas"] = [i for i in store.data["ideas"] if i["id"] != idea_id]
             store.save()
             _write_inbox(store)
+            # B3: журнал триажа для Feedback Cortex (B4 адаптирует веса/профиль по этим сигналам).
+            # Событие = суть действия: что разобрали, как, откуда идея, с каким баллом/судьёй.
+            # ts проставляет triage_events.append. Не роняет триаж при ошибке (best-effort).
+            if ok and victim:
+                try:
+                    import triage_events
+
+                    triage_events.append(
+                        {
+                            "idea_id": idea_id,
+                            "action": st,
+                            "title": victim.get("title", ""),
+                            "source_name": victim.get("source_name"),
+                            "score": victim.get("score"),
+                            "judged": victim.get("judged"),
+                        }
+                    )
+                except Exception:
+                    pass  # журнал — best-effort, триаж уже сохранён
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")
     elif cmd == "show":
         print(open(INBOX, encoding="utf-8").read() if os.path.exists(INBOX) else "(инбокса ещё нет)")
