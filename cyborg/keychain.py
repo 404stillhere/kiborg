@@ -9,7 +9,6 @@
 """
 
 import os
-import time
 
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
 
@@ -86,9 +85,8 @@ def available(path=None):
 # OpenAI-совместимы (Bearer). id рецензента -> (имя ключа, endpoint, модель). Проверены живьём:
 # ✅ sambanova, groq, mistral, openrouter, cohere, nvidia отвечают; ❌ cerebras даёт 403 (ключ
 # отклонён) — оставлен в списке, но воздержится (см. _COUNCIL_DISABLED). ❌ gemini geoblocked с
-# сети юзера (HTTP 400 "User location is not supported") — временно отключён при первом
-# geoblock, автоматически включается обратно при успешном вызове (см. try/except в
-# make_council_chat и временный файл gemini.disabled).
+# сети юзера (HTTP 400 "User location is not supported") — тоже отключён 2026-07-21, спека
+# остается на случай смены сети/VPN (вернуть = убрать из _COUNCIL_DISABLED).
 _COUNCIL_SPEC = {
     "sambanova": ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2"),
     "groq": ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
@@ -99,17 +97,16 @@ _COUNCIL_SPEC = {
     ),
     "mistral": ("MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"),
     "openrouter": ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free"),
-    "cohere": ("COHERE_API_KEY", "https://cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025"),
+    "cohere": ("COHERE_API_KEY", "https://api.cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025"),
     "nvidia": ("NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1/chat/completions", "meta/llama-3.1-8b-instruct"),
     "cerebras": ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b"),
 }
 
 # Рецензенты ОТКЛЮЧЕНЫ, но НЕ удалены (реш. юзера 2026-07-13): спека остаётся, из совета
 # выпадают. Вернуть в строй = убрать id отсюда. cerebras — ключ отдаёт 403.
-# gemini отключён временно при первом geoblock (см. _COUNCIL_DISABLED), автоматически
-# включается обратно при успешном вызове (см. try/except в make_council_chat и
-# файл .gemini.disabled). Ключ/спека остаются; вернём gemini в строй, но с try/except
-# для авто-переключения между VPN и основным провайдером.
+# gemini отключён 2026-07-21 (реш. юзера): нативный Google-эндпоинт geoblocked с сети юзера
+# (HTTP 400 "User location is not supported"), в совете бесполезен — молча падает каждый вызов.
+# Ключ/спека остаются; вернуть = убрать 'gemini' отсюда И убедиться что эндпоинт отвечает с сети.
 _COUNCIL_DISABLED = {"cerebras", "gemini"}
 
 
@@ -163,13 +160,7 @@ def _openai_chat(url, key, model, system, prompt, timeout=40):
 def make_council_chat(path=None):
     """Транспорт совета: chat(model, system, prompt) -> text. Резолвит id рецензента из
     _COUNCIL_SPEC по ключам kiborg. Неизвестная/без-ключа модель -> raise (рецензент падает,
-    совет продолжает с остальными). None, если ни одного рецензента с ключом нет.
-
-    Особенность gemini: при первом geoblock (HTTP 400 "User location is not supported")
-    gemini временно отключается (файл .gemini.disabled), автоматически включается обратно
-    при успешном вызове. Это позволяет переключаться между VPN и основным провайдером
-    без ручного удаления файла.
-    """
+    совет продолжает с остальными). None, если ни одного рецензента с ключом нет."""
     keys = load_keys(path)
     live = {rid: spec for rid, spec in _COUNCIL_SPEC.items() if keys.get(spec[0]) and rid not in _COUNCIL_DISABLED}
     if not live:
@@ -182,37 +173,9 @@ def make_council_chat(path=None):
             raise RuntimeError("council: no key/endpoint for reviewer " + str(model))
         key_name, url, default_model = spec
         real_model = str(model).split(":", 1)[1] if ":" in str(model) else default_model
-
         # Жёсткий wall-clock потолок: slow-loris эндпоинт не заморозит совет (сокет-таймаут его
         # не ловит). Бросок → рецензент выпадает из голосования, совет судит остальными.
-        def _call():
-            return _with_deadline(lambda: _openai_chat(url, keys[key_name], real_model, system, prompt))
-
-        # Обработка gemini: авто-включение/отключение на основе успеха вызова
-        if rid == "gemini":
-            try:
-                result = _call()
-                # Успешный вызов → удаляем флаг отключения (включаем обратно)
-                gemini_disabled_file = os.path.join(_CY, ".gemini.disabled")
-                if os.path.exists(gemini_disabled_file):
-                    try:
-                        os.remove(gemini_disabled_file)
-                    except Exception:
-                        pass  # игнорируем ошибки удаления — важен факт, что вызов успешен
-                return result
-            except Exception as e:
-                # Ошибка (включая geoblock) → временно отключаем gemini (если это не уже отключено)
-                gemini_disabled_file = os.path.join(_CY, ".gemini.disabled")
-                if not os.path.exists(gemini_disabled_file):
-                    try:
-                        with open(gemini_disabled_file, "w", encoding="utf-8") as f:
-                            f.write(f"disabled at {time.time()}\n")
-                    except Exception:
-                        pass  # не критично, если не удалось создать файл
-                # Повторяем вызов без gemini (рецензент выпадает из голосования)
-                raise RuntimeError(f"council: gemini temporarily disabled due to network error: {str(e)[:100]}")
-        else:
-            return _call()
+        return _with_deadline(lambda: _openai_chat(url, keys[key_name], real_model, system, prompt))
 
     return chat
 
