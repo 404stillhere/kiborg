@@ -82,10 +82,53 @@ class TestNewSources(unittest.TestCase):
         self.assertFalse(out["degraded"])
         titles = [it["title"] for it in out["items"]]
         self.assertIn("Show HN: local-first thing", titles)
-        self.assertNotIn("", titles)  # пост без title отброшен
+        self.assertNotIn("", titles)  # пост без title отбрасывается
         self.assertEqual(len(out["items"]), 2)  # 3 id, один без title
         self.assertTrue(all(it["source"] == "hn" for it in out["items"]))
         self.assertEqual(out["items"][0]["id"], 101)  # id проброшен из item
+
+    def test_hn_show_mix_blends_top_and_show_stories(self):
+        # hn_show_mix=True: половина бюджета из topstories (тренды), половина из showstories
+        # (реальные проекты «Show HN»). Топ HN засорён новостями/некрологами — Show HN даёт
+        # чистое проектное топливо. Без флага — только topstories (старое поведение, см. тест выше).
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "topstories" in url:
+                return [201, 202]
+            if "showstories" in url:
+                return [301, 302]
+            iid = int(url.rsplit("/", 1)[1].split(".")[0])
+            data = {
+                201: {"id": 201, "title": "Trend: SIMD tricks", "url": "https://h/201"},
+                202: {"id": 202, "title": "Trend: tokenization speedup", "url": "https://h/202"},
+                301: {"id": 301, "title": "Show HN: my CLI tool", "url": "https://h/301"},
+                302: {"id": 302, "title": "Show HN: tiny CRDT", "url": "https://h/302"},
+            }
+            return data.get(iid, {"id": iid, "title": ""})
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 4, "source": "hn", "hn_show_mix": True})
+        self.assertFalse(out["degraded"])
+        titles = [it["title"] for it in out["items"]]
+        # И тренды, И Show HN — смешано (не только топ)
+        self.assertIn("Trend: SIMD tricks", titles)
+        self.assertIn("Show HN: my CLI tool", titles)
+
+    def test_hn_show_mix_no_showstories_falls_back_to_top(self):
+        # showstories упал/пуст -> не краш, берём сколько есть из топа (degrade, не блок)
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "showstories" in url:
+                raise OSError("show endpoint down")
+            if "topstories" in url:
+                return [201, 202]
+            iid = int(url.rsplit("/", 1)[1].split(".")[0])
+            return {"id": iid, "title": f"Trend {iid}", "url": f"https://h/{iid}"}
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 4, "source": "hn", "hn_show_mix": True})
+        self.assertFalse(out["degraded"])
+        self.assertGreater(len(out["items"]), 0)
 
     def test_reddit_parses_children(self):
         def fake_get(url_or_req, timeout):
@@ -151,6 +194,63 @@ class TestNewSources(unittest.TestCase):
         out = collect_source.run({}, {"n": 5, "source": "gh_trending"})
         self.assertTrue(out["degraded"])
         self.assertNotIn("error", out)
+
+    def test_gh_trending_enrich_adds_description_from_api(self):
+        # gh_enrich=True: после парсинга HTML, для каждого owner/repo тянем описание через
+        # api.github.com/repos/{o}/{r} (JSON через _get). Карточка «octocat/hello-world»
+        # превращается в осмысленную «octocat/hello-world — <description>», а не слепой путь.
+        html = (
+            '<h2 class="lh-condensed"><a href="/octocat/hello-world">octocat / hello-world</a></h2>'
+            '<h2 class="lh-condensed"><a href="/foo/bar">foo / bar</a></h2>'
+        )
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return html.encode("utf-8")
+
+        collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
+
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "octocat/hello-world" in url:
+                return {"full_name": "octocat/hello-world", "description": "A real project that does things"}
+            if "foo/bar" in url:
+                return {"full_name": "foo/bar", "description": ""}
+            return {}
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 5, "source": "gh_trending", "gh_enrich": True})
+        self.assertFalse(out["degraded"])
+        titles = [it["title"] for it in out["items"]]
+        # репо с описанием — обогащено; без описания — как раньше (просто owner/repo)
+        self.assertIn("octocat/hello-world — A real project that does things", titles)
+        self.assertIn("foo/bar", titles)
+
+    def test_gh_trending_enrich_failure_falls_back_to_plain(self):
+        # при лимите/сбое API обогащения — карточка остаётся «owner/repo» (degrade, не краш)
+        html = '<h2 class="lh-condensed"><a href="/octocat/hello-world">octocat / hello-world</a></h2>'
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return html.encode("utf-8")
+
+        collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
+        collect_source._get = lambda url, timeout: (_ for _ in ()).throw(OSError("rate limited"))
+        out = collect_source.run({}, {"n": 5, "source": "gh_trending", "gh_enrich": True})
+        self.assertFalse(out["degraded"])  # HTML дал репо — сырьё есть, enrich не помешал
+        self.assertEqual(out["items"][0]["title"], "octocat/hello-world")
 
     def test_merged_sources_split_budget_and_tag_origin(self):
         def fake_get(url_or_req, timeout):

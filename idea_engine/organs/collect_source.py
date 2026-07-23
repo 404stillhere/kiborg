@@ -27,6 +27,7 @@ import subprocess
 import urllib.request
 
 HN_TOP = "https://hacker-news.firebaseio.com/v0/topstories.json"
+HN_SHOW = "https://hacker-news.firebaseio.com/v0/showstories.json"
 HN_ITEM = "https://hacker-news.firebaseio.com/v0/item/{}.json"
 REDDIT_TOP = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
 LOBSTERS_HOT = "https://lobste.rs/hottest.json"
@@ -46,8 +47,10 @@ def _get(url_or_req, timeout):
         return json.loads(r.read().decode("utf-8"))
 
 
-def _hn(n, timeout, env):
-    ids = _get(HN_TOP, timeout)[:n]
+def _hn_fetch_ids(list_url, n, timeout):
+    """Тянуть n item-id из HN-листа (topstories/showstories) и собрать {title,url,id}. Посты без
+    title отбрасываются. Пусто/сбой -> ValueError (вызывающий решает, как реагировать)."""
+    ids = _get(list_url, timeout)[:n]
     items = []
     for i in ids:
         it = _get(HN_ITEM.format(i), timeout)
@@ -56,6 +59,28 @@ def _hn(n, timeout, env):
     if not items:
         raise ValueError("hn returned empty")
     return items
+
+
+def _hn(n, timeout, env):
+    # hn_show_mix=True: половина бюджета из topstories (тренды/обсуждения), половина из showstories
+    # (Show HN — реальные проекты). Топ HN засорён новостями/некрологами; Show HN — чистое
+    # проектное топливо. Смешивание даёт оба жанра, не теряя тренды. Без флага — только топ (как
+    # раньше). Один источник упал -> берём сколько есть из другого (degrade, не краш).
+    if not env.get("hn_show_mix"):
+        return _hn_fetch_ids(HN_TOP, n, timeout)
+    half = max(1, n // 2)
+    out = []
+    try:
+        out.extend(_hn_fetch_ids(HN_TOP, half, timeout))
+    except Exception:
+        pass
+    try:
+        out.extend(_hn_fetch_ids(HN_SHOW, n - len(out), timeout))
+    except Exception:
+        pass
+    if not out:
+        raise ValueError("hn returned empty")
+    return out[:n]
 
 
 def _reddit(n, timeout, env):
@@ -87,6 +112,15 @@ def _lobsters(n, timeout, env):
     return items
 
 
+def _gh_repo_description(owner, repo, timeout):
+    # GitHub публичный API без токена: 60 запросов/час с IP. /repos/{o}/{r} даёт description,
+    # превращая слепой «owner/repo» (из trending-скрейпа) в осмысленную карточку. Необязательный
+    # enrich — при лимите/сбое вызывающий падает на голый owner/repo. Только stdlib (_get).
+    data = _get(f"https://api.github.com/repos/{owner}/{repo}", timeout)
+    desc = (data.get("description") or "").strip() if isinstance(data, dict) else ""
+    return desc[:180]
+
+
 def _gh_trending(n, timeout, env):
     # официального API нет -> HTML-скрейп; парсим ТЕРПИМО (только class~lh-condensed + href
     # owner/repo), любая непонятная разметка -> ValueError -> честный degrade, не краш.
@@ -99,7 +133,18 @@ def _gh_trending(n, timeout, env):
         m = re.search(r'href="/([^"/?]+)/([^"/?]+)"', b)
         if m:
             owner, repo = m.group(1), m.group(2)
-            items.append({"title": f"{owner}/{repo}", "url": f"https://github.com/{owner}/{repo}",
+            title = f"{owner}/{repo}"
+            # enrich: gh_enrich=True (прод через harvest_env) — тянем description из API. Слепой
+            # «owner/repo» как топливо идей слаб: совет не знает что это за репо. Description даёт
+            # осмысленный заголовок. Неудача (лимит/сеть) — тихо, fallback на голый owner/repo.
+            if env.get("gh_enrich"):
+                try:
+                    desc = _gh_repo_description(owner, repo, timeout)
+                    if desc:
+                        title = f"{owner}/{repo} — {desc}"
+                except Exception:
+                    pass
+            items.append({"title": title, "url": f"https://github.com/{owner}/{repo}",
                           "id": f"{owner}/{repo}"})  # repo сам по себе стабильный id (для дедупа items)
     if not items:
         raise ValueError("gh_trending: no repos parsed")

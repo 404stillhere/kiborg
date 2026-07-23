@@ -53,6 +53,15 @@ def _source_env():
 
     active = _active_sources()
     env = {"n": harvest.SOURCE_N, "sources": active}
+    # gh_enrich: для каждого репо из trending тянем description из api.github.com (60 req/h без
+    # токена). Превращает слепой «owner/repo» в осмысленную карточку — совету есть за что
+    # зацепиться. Включаем, только когда gh_trending реально активен (лишние API-запросы ни к чему).
+    if "gh_trending" in active:
+        env["gh_enrich"] = True
+    # hn_show_mix: половина бюджета HN из showstories (Show HN — реальные проекты), половина из
+    # topstories (тренды). Топ HN засорён новостями/некрологами; Show HN — чистое проектное топливо.
+    if "hn" in active:
+        env["hn_show_mix"] = True
     # Телеграм-креды/каналы — ТОЛЬКО когда telegram реально включён (тумблер в пульте). Иначе
     # env тащил telegram_session даже при выключенной ленте → _collect_locked брал tg-замок (130с
     # таймаут) на прогон, где телеги нет: files-only прогон вис на замке. Нет telegram в active →
