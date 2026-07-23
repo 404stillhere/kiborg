@@ -120,4 +120,9 @@ def _run_collect(inputs, env):
         for it in out["items"]:
             if isinstance(it, dict) and isinstance(it.get("title"), str):
                 it["title"] = wiring.scrub_secrets.scrub_text(it["title"])
+        # КРОСС-ДЕДУП (2026-07-23): один пост может прийти с HN (item id) и Lobsters (short_id)
+        # — в seen_items это два разных ключа, оба проходят → LLM тратится на две похожие идеи.
+        # Уберём дубли ВНУТРИ прогона по нормализованному заголовку (первое вхождение выигрывает),
+        # до ideate. Чистая функция (нет персиста), строгая (точное совпадение, не Jaccard).
+        out["items"] = wiring.seen_items.cross_dedup(out["items"])
     return out

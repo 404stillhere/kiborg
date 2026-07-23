@@ -183,3 +183,42 @@ def mark_seen(items):
             seen[key] = now
     if seen != original:
         _save(seen)
+
+
+def _title_sig(t):
+    """Нормализованная сигнатура заголовка для кросс-источникового дедупа: lower, только буквы/
+    цифры, служебные знаки срезаны, пробелы схлопнуты. «SIMD Tricks!» и «simd tricks» → одна
+    сигнатура. СТРОГАЯ (точное совпадение сигнатуры = дубль), не Jaccard — иначе «SIMD tricks»
+    и «SIMD for collision» схлопнулись бы (это разные посты, похожие слова)."""
+    return " ".join(re.findall(r"[a-zа-яё0-9]+", (t or "").lower()))
+
+
+def cross_dedup(items):
+    """Убрать кросс-источниковые дубли ВНУТРИ одного прогона (чистая функция, без персиста).
+
+    Реальный кейс: один и тот же пост приходит с HN (item id) и Lobsters (short_id) → в
+    seen_items это два разных ключа (hn:1 и lobsters:abc), оба проходят filter_fresh → LLM
+    тратится на две похожие идеи. Здесь — убираем дубль ДО ideate, по нормализованному
+    заголовку: первое вхождение выигрывает, мимо — дубли.
+
+    СТРОГАЯ: только точное совпадение нормализованной сигнатуры (не Jaccard). «SIMD tricks» и
+    «SIMD for collision» — РАЗНЫЕ посты, не схлопываются. Пустой title / без title — пропускаем
+    как есть (не дедупим — лучше показать, чем потерять сырьё). Сохраняет порядок первого
+    вхождения. Не-список → []. Не трогает seen_items.json (чистый read-only вычислитель)."""
+    if not isinstance(items, list):
+        return []
+    out = []
+    seen_sigs = set()
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        sig = _title_sig(it.get("title"))
+        # пустой title (только служебные слова/нет слов) — не дедупим, пропускаем как есть
+        if not sig:
+            out.append(it)
+            continue
+        if sig in seen_sigs:
+            continue
+        seen_sigs.add(sig)
+        out.append(it)
+    return out

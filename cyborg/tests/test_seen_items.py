@@ -211,5 +211,68 @@ class TestSeenItems(unittest.TestCase):
         self.assertEqual(seen_items.load(), {})
 
 
+class TestCrossDedup(unittest.TestCase):
+    """cross_dedup — убирает кросс-источниковые дубли ВНУТРИ одного прогона (чистая функция,
+    без персиста). Реальный кейс: один и тот же пост приходит с HN (item id) и Lobsters
+    (short_id) → два разных source:id ключа в seen_items, оба проходят → LLM тратится на две
+    похожие идеи. cross_dedup нормализует заголовок и оставляет ПЕРВОЕ вхождение, мимо дубли."""
+
+    def test_drops_exact_dup_across_sources(self):
+        items = [
+            {"title": "John C. Dvorak has died", "source": "hn", "id": 1},
+            {"title": "John C. Dvorak has died", "source": "lobsters", "id": "abc"},
+            {"title": "SIMD tricks", "source": "hn", "id": 2},
+        ]
+        out = seen_items.cross_dedup(items)
+        titles = [it["title"] for it in out]
+        self.assertEqual(len(out), 2)  # Дворак-дубль схлопнут, SIMD остался
+        self.assertEqual(titles.count("John C. Dvorak has died"), 1)
+
+    def test_normalizes_case_and_punctuation(self):
+        # «SIMD Tricks!» и «simd tricks» — один и тот же заголовок в разных регистрах/формате
+        items = [
+            {"title": "SIMD Tricks!", "source": "hn", "id": 1},
+            {"title": "simd tricks", "source": "lobsters", "id": 2},
+            {"title": "Unique post", "source": "hn", "id": 3},
+        ]
+        out = seen_items.cross_dedup(items)
+        self.assertEqual(len(out), 2)
+
+    def test_keeps_different_posts_same_source(self):
+        # разные посты (даже одного источника) — НЕ дубли
+        items = [
+            {"title": "Post A", "source": "hn", "id": 1},
+            {"title": "Post B", "source": "hn", "id": 2},
+        ]
+        self.assertEqual(len(seen_items.cross_dedup(items)), 2)
+
+    def test_keeps_similar_but_not_identical(self):
+        # «SIMD tricks» и «SIMD for collision» — РАЗНЫЕ посты (похожие слова, не дубли).
+        # cross_dedup строгий: только ТОЧНОЕ совпадение нормализованной строки, не Jaccard.
+        items = [
+            {"title": "SIMD tricks", "source": "hn", "id": 1},
+            {"title": "SIMD for collision", "source": "lobsters", "id": 2},
+        ]
+        self.assertEqual(len(seen_items.cross_dedup(items)), 2)
+
+    def test_preserves_first_occurrence_order(self):
+        items = [
+            {"title": "Dup", "source": "lobsters", "id": "first"},
+            {"title": "Dup", "source": "hn", "id": "second"},
+        ]
+        out = seen_items.cross_dedup(items)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["id"], "first")  # первое вхождение выигрывает
+
+    def test_empty_or_no_title_passes_through(self):
+        # без заголовка / пустой список — не краш, корректный пропуск
+        self.assertEqual(seen_items.cross_dedup([]), [])
+        out = seen_items.cross_dedup([{"title": "", "source": "hn", "id": 1}])
+        self.assertEqual(len(out), 1)  # пустой title — пропускаем как есть (не дедупим)
+
+    def test_non_list_input_returns_empty(self):
+        self.assertEqual(seen_items.cross_dedup(None), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
