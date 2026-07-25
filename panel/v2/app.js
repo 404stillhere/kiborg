@@ -132,6 +132,13 @@ class Knight {
     this.body = svg ? svg.querySelector('.breath') : null;
     this.heart = svg ? svg.querySelector('.heartbeat') : null;
     this._mode = 'alive';
+    // Вставить SVG-тело рыцаря из bodies.js (определяет window.KNIGHT_BODIES).
+    // В v1 это делалось inline в panel/index.html; в v2 код переехал сюда, но его
+    // забыли — тело оставалось пустым <g>, рыцарь был невидим (баг 2026-07-24).
+    if (this.body && window.KNIGHT_BODIES) {
+      const style = Object.keys(KNIGHT_BODIES)[0] || 'flat';
+      this.body.innerHTML = KNIGHT_BODIES[style] || '';
+    }
   }
 
   setMode(mode) {
