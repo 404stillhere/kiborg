@@ -1305,6 +1305,10 @@ class UIController {
     Renderer.$('#settings-overlay').classList.add('open');
     Renderer.$('#settings-drawer').classList.add('open');
     this._renderSettingsLists();
+    // Восстановить сохранённый порядок блоков (если юзер ранее расставлял мышкой).
+    // После _renderSettingsLists, т.к. тот может перестраивать .list-item внутри секций,
+    // но сами секции .settings-section не пересоздаёт — порядок восстановится корректно.
+    if (ArrangeManager.instance) ArrangeManager.instance.restoreOrder();
   }
   closeSettings() {
     Renderer.$('#settings-overlay').classList.remove('open');
@@ -1656,7 +1660,224 @@ class PollingManager {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   8. INIT — связываем всё вместе после загрузки DOM.
+   8. ArrangeManager — режим расстановки блоков настроек мышкой.
+
+   Рубильник: кнопка «✋ Разместить» в шапке drawer. Клик → body.arrange-mode (блоки
+   можно тягать), повторный клик → режим выкл, порядок ФИКСИРУЕТСЯ (порядок DOM
+   сохранён в localStorage и восстановится при следующем открытии настроек).
+
+   Реализация — MOUSE EVENTS (mousedown/mousemove/mouseup), НЕ HTML5 Drag&Drop.
+   Причина: HTML5 D&D в CSS Grid капризен — drop на пустом месте между секциями
+   игнорируется (target=null → блок «возвращается»), drag-image уплывает как призрак
+   а реальный DOM не меняется, а touch-устройства вообще его не любят. Mouse events
+   дают прямой контроль: блок реально едет за курсором (position:fixed), и при mouseup
+   мы честно вставляем его в DOM относительно секции под курсором.
+   ──────────────────────────────────────────────────────────────────────── */
+class ArrangeManager {
+  static STORAGE_KEY = 'kiborg-settings-order';
+  static instance = null;
+
+  constructor(toasts) {
+    this.toasts = toasts;
+    this.active = false;
+    ArrangeManager.instance = this;
+    this._bindButton();
+    // Состояние активного перетаскивания (одно за раз):
+    this._drag = null;  // {el, startX, startY, offsetX, offsetY, moved, width, height}
+  }
+
+  _bindButton() {
+    const btn = Renderer.$('#btn-arrange');
+    if (!btn) return;
+    btn.onclick = () => this.toggle();
+  }
+
+  toggle() {
+    this.active ? this.deactivate() : this.activate();
+  }
+
+  activate() {
+    this.active = true;
+    document.body.classList.add('arrange-mode');
+    const btn = Renderer.$('#btn-arrange');
+    if (btn) {
+      btn.classList.add('on');
+      btn.textContent = '📌 Зафиксировать';
+    }
+    this._installMouseHandlers();
+    if (this.toasts) this.toasts.show('Расстановка вкл — тягай блоки мышкой. Когда готов — «Зафиксировать»', 'info', 4000);
+  }
+
+  deactivate() {
+    this.active = false;
+    document.body.classList.remove('arrange-mode');
+    const btn = Renderer.$('#btn-arrange');
+    if (btn) {
+      btn.classList.remove('on');
+      btn.textContent = '✋ Разместить';
+    }
+    this._uninstallMouseHandlers();
+    this._cleanupDrag();
+    this._persistOrder();
+    if (this.toasts) this.toasts.show('Порядок блоков сохранён', 'success');
+  }
+
+  _sections() {
+    return Renderer.$$('#settings-body > .settings-section');
+  }
+
+  // Стабильный id секции: оригинальный индекс в DOM (как в HTML), а не текущая позиция.
+  // Размечаем один раз — дальше DOM-порядок мутирует перетаскиванием, но data-orig-id остаётся.
+  _ensureOrigIds() {
+    const sections = this._sections();
+    if (sections[0] && sections[0].dataset.origId !== undefined) return;
+    sections.forEach((s, i) => { s.dataset.origId = String(i); });
+  }
+
+  _installMouseHandlers() {
+    // Делегирование на #settings-body: один mousedown ловит любую секцию.
+    // mousemove/mouseup — на document (курсор может выйти за пределы body при быстром тяге).
+    this._onMouseDown = (e) => {
+      if (e.button !== 0) return;  // только левая кнопка
+      const sec = e.target.closest('#settings-body > .settings-section');
+      if (!sec) return;
+      // НЕ стартуем drag с клика по интерактивным элементам внутри секции (инпуты, кнопки,
+      // тумблеры) — юзер может хотеть пользоваться ими даже в arrange-mode.
+      if (e.target.closest('input, button, .toggle, .check, select, textarea')) return;
+      this._ensureOrigIds();
+      const rect = sec.getBoundingClientRect();
+      this._drag = {
+        el: sec,
+        startX: e.clientX,
+        startY: e.clientY,
+        offsetX: e.clientX - rect.left,   // где внутри секции зажали (для фиксации позиции)
+        offsetY: e.clientY - rect.top,
+        moved: false,
+        width: rect.width,
+        height: rect.height,
+      };
+      e.preventDefault();  // не давать браузеру начать выделение текста
+    };
+    this._onMouseMove = (e) => {
+      if (!this._drag) return;
+      const d = this._drag;
+      // Порог 4px — различаем клик от drag (иначе любой клик по блоку «дёрнет» его).
+      if (!d.moved) {
+        const dx = Math.abs(e.clientX - d.startX);
+        const dy = Math.abs(e.clientY - d.startY);
+        if (dx < 4 && dy < 4) return;
+        d.moved = true;
+        this._beginDrag(d);
+      }
+      // Секция едет за курсором: position:fixed ставит её в viewport-координаты.
+      d.el.style.left = (e.clientX - d.offsetX) + 'px';
+      d.el.style.top = (e.clientY - d.offsetY) + 'px';
+      // Подсветить секцию, над которой курсор (target = верхний элемент под курсором
+      // ИСКЛЮЧАЯ саму перетаскиваемую — иначе всегда подсвечивала бы себя).
+      const under = this._elementUnderPoint(e.clientX, e.clientY, d.el);
+      this._sections().forEach(s => s.classList.toggle('drag-over', s === under && s !== d.el));
+    };
+    this._onMouseUp = (e) => {
+      if (!this._drag) return;
+      const d = this._drag;
+      if (d.moved) {
+        // Вставляем в реальное место DOM: относительно секции под курсором.
+        const under = this._elementUnderPoint(e.clientX, e.clientY, d.el);
+        if (under && under !== d.el) {
+          // По половине цели решаем до/после — плавное «положил сверху/снизу».
+          const rect = under.getBoundingClientRect();
+          const after = (e.clientY - rect.top) > rect.height / 2;
+          if (after) under.insertAdjacentElement('afterend', d.el);
+          else under.insertAdjacentElement('beforebegin', d.el);
+        } else if (!under) {
+          // Бросили в пустое место (между секциями / в конце) — вешаем в конец контейнера.
+          // Это и был главный баг HTML5 D&D: drop на пустоте игнорировался → блок «возвращался».
+          const body = Renderer.$('#settings-body');
+          if (body) body.appendChild(d.el);
+        }
+      }
+      this._cleanupDrag();
+    };
+    const body = Renderer.$('#settings-body');
+    if (body) body.addEventListener('mousedown', this._onMouseDown);
+    document.addEventListener('mousemove', this._onMouseMove);
+    document.addEventListener('mouseup', this._onMouseUp);
+  }
+
+  // Найти секцию под точкой, ИГНОРИРУЯ перетаскиваемый элемент. Используем elementsFromPoint
+  // (возвращает всех под курсором) и берём первую .settings-section — так fixed-блок под
+  // курсором не маскирует цель, и подсветка/вставка работают корректно.
+  _elementUnderPoint(x, y, ignore) {
+    const stack = document.elementsFromPoint(x, y);
+    for (const el of stack) {
+      if (el === ignore) continue;
+      if (el.matches && el.matches('#settings-body > .settings-section')) return el;
+    }
+    return null;
+  }
+
+  // Старт реального перетаскивания: секция снимается с grid-потока и становится floating.
+  _beginDrag(d) {
+    d.el.classList.add('dragging');
+    d.el.style.position = 'fixed';
+    d.el.style.width = d.width + 'px';
+    d.el.style.height = d.height + 'px';
+    d.el.style.zIndex = '1000';
+    d.el.style.left = (d.startX - d.offsetX) + 'px';
+    d.el.style.top = (d.startY - d.offsetY) + 'px';
+    // Плейсхолдер в grid: чтобы остальные секции не схлопнулись, когда эту снимем с потока.
+    // Простой путь — оставить grid-ячейку на её месте через visibility:hidden дубликат? Нет —
+    // проще: перетаскиваемая секция НЕ вынимается из DOM (она остаётся в grid, просто fixed).
+    // Grid всё ещё резервирует под неё место → остальные не прыгают. Ок.
+  }
+
+  _cleanupDrag() {
+    if (!this._drag) return;
+    const d = this._drag;
+    // Снимаем все inline-стили, что ставили — секция возвращается в нормальный grid-поток.
+    d.el.classList.remove('dragging');
+    d.el.style.cssText = d.el.style.cssText
+      .split(';')
+      .filter(p => !/^(position|width|height|z-index|left|top)\s*:/.test(p.trim()))
+      .join(';');
+    this._sections().forEach(s => s.classList.remove('drag-over'));
+    this._drag = null;
+  }
+
+  _uninstallMouseHandlers() {
+    const body = Renderer.$('#settings-body');
+    if (body) body.removeEventListener('mousedown', this._onMouseDown);
+    document.removeEventListener('mousemove', this._onMouseMove);
+    document.removeEventListener('mouseup', this._onMouseUp);
+  }
+
+  _persistOrder() {
+    this._ensureOrigIds();
+    const order = this._sections().map(s => s.dataset.origId);
+    try { localStorage.setItem(ArrangeManager.STORAGE_KEY, JSON.stringify(order)); } catch (_) {}
+  }
+
+  // Восстановить сохранённый порядок при открытии drawer. Вызывается из UIController.openSettings.
+  restoreOrder() {
+    let order;
+    try { order = JSON.parse(localStorage.getItem(ArrangeManager.STORAGE_KEY) || 'null'); } catch (_) {}
+    if (!Array.isArray(order) || !order.length) return;  // ничего не сохранено — порядок по умолчанию
+    this._ensureOrigIds();
+    const body = Renderer.$('#settings-body');
+    if (!body) return;
+    // Размечаем map origId → элемент, потом переставляем по сохранённому порядку.
+    const byId = {};
+    this._sections().forEach(s => { byId[s.dataset.origId] = s; });
+    order.forEach(id => {
+      const el = byId[id];
+      if (el) body.appendChild(el);  // appendChild перемещает существующий узел (не клонирует)
+    });
+  }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────
+   9. INIT — связываем всё вместе после загрузки DOM.
 
    Глобальные обработчики ошибок вешаем ДО init: если что-то упадёт в конструкторе
    State/Renderer/UIController/Poller (например, селектор не найден), ошибка не
@@ -1701,6 +1922,9 @@ function __initKiborgPanel() {
     const renderer = new Renderer(state, knight);
     const ui = new UIController(state, api, knight, toasts);
     const poller = new PollingManager(state, api);
+    // ArrangeManager — режим расстановки блоков настроек мышкой (кнопка «✋ Разместить»).
+    // Вне режима блоки стоят по умолчанию; сохранённый порядок восстанавливается в openSettings.
+    new ArrangeManager(toasts);
 
     poller.start();
     console.log('[kiborg] пульт v2 запущен, поллинг /api/state каждые 5 сек');

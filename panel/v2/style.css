@@ -1479,9 +1479,8 @@ input[type="number"]:focus,
 
 #settings-drawer {
   position: fixed;
-  top: 0; right: 0;
-  width: 420px;
-  max-width: 92vw;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100vw;
   height: 100vh;
   background: var(--yellow);
   border-left: 4px solid var(--ink);
@@ -1518,17 +1517,91 @@ input[type="number"]:focus,
 }
 .settings-close:active { transform: translate(2px, 2px); }
 
+/* Кнопка «✋ Разместить» — рубильник режима расстановки блоков. В шапке drawer (всегда видна).
+   Активный режим (body.arrange-mode): блоки можно тягать мышкой, кнопка светится. */
+.btn-arrange {
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: var(--white);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+}
+.btn-arrange:hover { background: var(--yellow); }
+.btn-arrange:active { transform: translate(1px, 1px); }
+.btn-arrange.on {
+  background: var(--magenta);
+  color: var(--white);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+/* Режим расстановки: каждый блок получает «ручку» и слегка приподнимается — визуальный сигнал
+   «сейчас можно тягать». Вне режима drag отключён — нельзя случайно сдвинуть разметку. */
+body.arrange-mode #settings-body > .settings-section {
+  cursor: grab;
+  outline: 2px dashed var(--ink);
+  outline-offset: 2px;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+body.arrange-mode #settings-body > .settings-section:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+#settings-body > .settings-section.dragging {
+  /* Перетаскиваемый блок: position:fixed ставит JS, здесь — визуал «в руке».
+     Приподнят тенью, слегка наклонён, курсор grabbing — понятно что тащим. */
+  cursor: grabbing !important;
+  opacity: 0.92;
+  transform: rotate(1.5deg);
+  box-shadow: 8px 8px 0 var(--ink);
+  pointer-events: none;  /* elementsFromPoint «видит сквозь» блок под курсором */
+}
+#settings-body > .settings-section.drag-over {
+  outline: 3px solid var(--magenta);
+  outline-offset: 3px;
+  background: var(--paper-3);  /* лёгкая подсветка места вставки */
+}
+
 #settings-body {
   flex: 1;
   overflow-y: auto;
   padding: 18px;
+  /* Полноэкранный drawer: 4 колонки на обычном десктопе. Первый ряд вмещает четыре
+     основные секции; второй — параметры (3 колонки) + оформление. При 1280×720 всё
+     помещается без вертикальной прокрутки. */
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  align-content: start;
+  align-items: start;
+}
+/* Средний экран: 2 колонки. Узкий (мобайл): 1 колонка — всё равно читаемо, просто скролл. */
+@media (max-width: 1180px) {
+  #settings-body { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 1000px) {
+  #settings-body { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  #settings-body { grid-template-columns: 1fr; }
+}
+/* На десктопе параметры занимают 3/4 строки, оформление — оставшуюся колонку. */
+#settings-body > .settings-section.section-wide {
+  grid-column: span 3;
+}
+@media (max-width: 1180px) {
+  #settings-body > .settings-section.section-wide { grid-column: 1 / -1; }
 }
 .settings-section {
   background: var(--white);
   border: var(--border);
   box-shadow: 2px 2px 0 var(--gray);
   padding: 14px 16px;
-  margin-bottom: 16px;
+  margin: 0;
 }
 .settings-section-title {
   font-family: var(--font-display);
@@ -1708,13 +1781,15 @@ input[type="number"]:focus,
 .check.on::before { transform: translate(-50%, -50%) rotate(45deg); }
 .check.on::after  { transform: translate(-50%, -50%) rotate(-45deg); }
 
-/* Футер настроек — кнопка STAMP (малиновая, эффект оттиска) */
+/* Футер настроек — кнопка STAMP (малиновая, эффект оттиска).
+   Полноэкранный drawer: футер прижат к низу, кнопки прижимаем вправо — симметрично правому
+   краю grid-секций. На огромных экранах не уезжает в самый угол. */
 .settings-footer {
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  padding: 16px 18px;
+  padding: 14px 18px;
   background: var(--ink);
   border-top: var(--border);
 }
