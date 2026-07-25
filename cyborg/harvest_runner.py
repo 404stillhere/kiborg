@@ -47,7 +47,7 @@ def main(argv):
     env = harvest._harvest_env()
     mode = (
         (f"идеи={harvest.ask_llm._MODEL}" if harvest.ask_llm.available() else "идеи=stub (ключа нет)")
-        + f" · источники={'+'.join(harvest._active_sources())} (бюджет {harvest.SOURCE_N})"
+        + f" · источники={'+'.join(harvest._active_sources())} (бюджет {env.get('n', harvest.SOURCE_N)})"
         + (" · force" if force else "")
     )
 

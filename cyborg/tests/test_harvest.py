@@ -14,8 +14,11 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import harvest  # noqa: E402
 import seen_items  # noqa: E402
+
+_LIVE_BACKUPS_DIR = os.path.abspath(config.BACKUPS_DIR)
 
 
 @contextlib.contextmanager
@@ -350,15 +353,22 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
 
         self._ic = items_cache
         self._orig_path = items_cache.PATH
-        self.tmp_dir = os.path.join(tempfile.gettempdir(), "kiborg_harvest_ic")
-        os.makedirs(self.tmp_dir, exist_ok=True)
+        self._orig_backups_dir = config.BACKUPS_DIR
+        self._tmp = tempfile.TemporaryDirectory(prefix="kiborg_harvest_runner_")
+        self.tmp_dir = self._tmp.name
         self.cache_file = os.path.join(self.tmp_dir, "ic_integration.json")
         items_cache.PATH = self.cache_file
+        config.BACKUPS_DIR = os.path.join(self.tmp_dir, "backups")
         self._cleanup()
+
+    def test_backup_path_is_not_live_data(self):
+        self.assertNotEqual(os.path.abspath(config.BACKUPS_DIR), _LIVE_BACKUPS_DIR)
 
     def tearDown(self):
         self._ic.PATH = self._orig_path
+        config.BACKUPS_DIR = self._orig_backups_dir
         self._cleanup()
+        self._tmp.cleanup()
 
     def _cleanup(self):
         try:

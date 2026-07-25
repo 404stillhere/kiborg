@@ -503,6 +503,52 @@
       </div>
     </section>
 
+    <!-- Параметры генерации (app.js._renderGenparams синхронизирует значения из S.genparams).
+         section-wide — 3 колонки из 4 на desktop; рядом помещается «Оформление». -->
+    <section class="settings-section section-wide">
+      <div class="settings-section-title">
+        Параметры генерации
+        <button class="btn-mini" id="btn-genparams-reset" title="Сбросить все параметры к значениям по умолчанию">↺ сброс</button>
+      </div>
+      <div class="param-grid">
+        <div class="param-row">
+          <label class="param-label" for="p-gen_k">Идей генерировать</label>
+          <div class="param-ctrl">
+            <input type="range" id="p-gen_k" min="2" max="16" step="1" value="8" data-gp="gen_k">
+            <span class="param-val" id="pv-gen_k">8</span>
+          </div>
+        </div>
+        <div class="param-row">
+          <label class="param-label" for="p-rank_keep">Оставлять после отбора</label>
+          <div class="param-ctrl">
+            <input type="range" id="p-rank_keep" min="1" max="8" step="1" value="3" data-gp="rank_keep">
+            <span class="param-val" id="pv-rank_keep">3</span>
+          </div>
+        </div>
+        <div class="param-row">
+          <label class="param-label" for="p-source_n">Сырья собирать</label>
+          <div class="param-ctrl">
+            <input type="range" id="p-source_n" min="8" max="300" step="1" value="105" data-gp="source_n">
+            <span class="param-val" id="pv-source_n">105</span>
+          </div>
+        </div>
+        <div class="param-row">
+          <label class="param-label" for="p-read_min_score">Порог читаемости (0-10)</label>
+          <div class="param-ctrl">
+            <input type="range" id="p-read_min_score" min="0" max="10" step="0.5" value="8" data-gp="read_min_score">
+            <span class="param-val" id="pv-read_min_score">8.0</span>
+          </div>
+        </div>
+        <div class="param-row">
+          <label class="param-label" for="p-keep_min_score">Мин. балл совета (0-10)</label>
+          <div class="param-ctrl">
+            <input type="range" id="p-keep_min_score" min="0" max="10" step="0.5" value="6" data-gp="keep_min_score">
+            <span class="param-val" id="pv-keep_min_score">6.0</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Оформление -->
     <section class="settings-section">
       <div class="settings-section-title">Оформление</div>

@@ -253,6 +253,71 @@ class TestAutoConfig(unittest.TestCase):
         self.assertTrue(os.path.exists(self.f))
 
 
+class TestGenparamsInState(unittest.TestCase):
+    """Параметры генерации (gen_k/rank_keep/source_n/пороги) — проброс в _api_state и
+    POST/GET /api/genparams. Логика save/reset/clamp покрыта в cyborg/tests/test_genparams.py,
+    здесь — только что serve отдаёт поле genparams в /api/state корректной структуры и что
+    запись через genparams доходит. Раньше параметров не было (хардкод в wiring) — добавлено
+    при выносе в UI drawer «Настройки»."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_gp_")
+        self._orig = serve.genparams.PATH
+        serve.genparams.PATH = os.path.join(self.tmp, "genparams.json")
+
+    def tearDown(self):
+        serve.genparams.PATH = self._orig
+
+    def test_api_state_contains_genparams(self):
+        # _api_state должно нести genparams с meta-полями для UI (min/max/default/value/is_float)
+        st = serve._api_state()
+        self.assertIn("genparams", st)
+        gp = st["genparams"]
+        expected_keys = {"gen_k", "rank_keep", "source_n", "read_min_score", "keep_min_score"}
+        self.assertEqual(set(gp.keys()), expected_keys)
+        for spec in gp.values():
+            for field in ("min", "max", "default", "is_float", "value"):
+                self.assertIn(field, spec)
+
+    def test_genparams_defaults_when_no_file(self):
+        # нет файла → /api/state отдаёт дефолты (юзер ни разу не открывал настройки)
+        st = serve._api_state()
+        gp = st["genparams"]
+        self.assertEqual(gp["gen_k"]["value"], 8)
+        self.assertEqual(gp["source_n"]["value"], 105)
+
+    def test_save_via_genparams_reflects_in_state(self):
+        # roundtrip: genparams.save → следующий _api_state видит новое значение
+        serve.genparams.save({"gen_k": 12, "rank_keep": 5})
+        gp = serve._api_state()["genparams"]
+        self.assertEqual(gp["gen_k"]["value"], 12)
+        self.assertEqual(gp["rank_keep"]["value"], 5)
+        # не тронутые ключи остались дефолтными
+        self.assertEqual(gp["source_n"]["value"], 105)
+
+    def test_reset_reflects_in_state(self):
+        # кнопка «↺ сброс» — reset() возвращает дефолты, видимые в /api/state
+        serve.genparams.save({"gen_k": 16, "rank_keep": 8})
+        serve.genparams.reset()
+        gp = serve._api_state()["genparams"]
+        self.assertEqual(gp["gen_k"]["value"], 8)
+        self.assertEqual(gp["rank_keep"]["value"], 3)
+
+    def test_reset_actually_persists_to_disk(self):
+        # регрессия: роут POST /api/genparams {reset:true} должен ЗВАТЬ genparams.reset(),
+        # а не просто возвращать meta() (которая читает несброшенный файл). Симптом до фикса:
+        # юзер жмёт «сброс», UI показывает дефолты на секунду, но файл не перезаписан →
+        # следующий poll /api/state (5сек) возвращает старые значения. Проверяем что reset
+        # действительно записал дефолты на диск.
+        serve.genparams.save({"gen_k": 16, "source_n": 300})
+        serve.genparams.reset()
+        # файл на диске должен содержать дефолты (не 16/300)
+        with open(serve.genparams.PATH, encoding="utf-8") as f:
+            on_disk = json.load(f)
+        self.assertEqual(on_disk["gen_k"], 8)
+        self.assertEqual(on_disk["source_n"], 105)
+
+
 class TestAutoTick(unittest.TestCase):
     """_auto_tick — один тик авто-петли (вынесен из while-True ради тестируемости 2026-07-15):
     автосбор запускается ТОЛЬКО если автономность вкл + пора по интервалу + прогон не идёт.

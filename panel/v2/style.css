@@ -1553,6 +1553,70 @@ input[type="number"]:focus,
 }
 .settings-row input[type="number"] { width: 90px; }
 
+/* ── Параметры генерации (drawer «Настройки», секция «Параметры генерации») ──
+   Grid 2 колонки — 5 параметров компактно, без вертикальной простыни. Каждый ползунок
+   + значение справа. Кнопка «↺ сброс» в заголовке секции (мини-вариант settings-section-title). */
+.settings-section-title .btn-mini {
+  margin-left: auto;
+  background: var(--white);
+  border: 2px solid var(--ink);
+  padding: 2px 8px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-mono);
+}
+.settings-section-title .btn-mini:hover { background: var(--magenta); color: var(--white); }
+.settings-section-title .btn-mini:active { transform: translate(1px, 1px); }
+
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px 18px;
+}
+/* 5 колонок нужно место — на средних экранах падаем до 3 (3+2), на узких до 2. */
+@media (max-width: 1100px) {
+  .param-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+  .param-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.param-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.param-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink);
+  letter-spacing: 0.2px;
+}
+.param-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.param-ctrl input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--magenta);
+  height: 4px;
+  cursor: pointer;
+}
+.param-val {
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--magenta);
+  padding: 1px 4px;
+  background: var(--paper-3);
+  border: 1px solid var(--ink);
+}
+
 /* list-item (папки/ленты) */
 .list-item {
   display: flex;

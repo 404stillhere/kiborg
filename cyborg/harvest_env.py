@@ -52,7 +52,20 @@ def _source_env():
     import harvest
 
     active = _active_sources()
-    env = {"n": harvest.SOURCE_N, "sources": active}
+    # Параметры генерации из пульта (genparams.json). Все 5 — точка настройки юзера: сколько
+    # идей генерить (gen_k), сколько оставлять после совета (rank_keep), сколько сырья собирать
+    # (source_n), порог читаемости и мин.балл совета. Долетают до wiring_ideate/wiring_council
+    # через env.get(...). source_n сюда вшит намеренно (вместо harvest.SOURCE_N из config) —
+    # теперь юзер правит его в пульте, а не правит код. config.SOURCE_N=105 остаётся как дефолт.
+    gp = harvest.genparams.load()
+    env = {
+        "n": gp["source_n"],  # collect_source делит бюджет между источниками
+        "sources": active,
+        "gen_k": gp["gen_k"],  # wiring_ideate._run_ideate
+        "rank_keep": gp["rank_keep"],  # wiring_council._run_rank
+        "read_min_score": gp["read_min_score"],  # wiring_council._run_readability
+        "keep_min_score": gp["keep_min_score"],  # wiring_council._rank_by_council
+    }
     # gh_enrich: для каждого репо из trending тянем description из api.github.com (60 req/h без
     # токена). Превращает слепой «owner/repo» в осмысленную карточку — совету есть за что
     # зацепиться. Включаем, только когда gh_trending реально активен (лишние API-запросы ни к чему).

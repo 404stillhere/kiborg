@@ -22,6 +22,10 @@ sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
 
+# Роуты гоняются через локальный сервер. Не наследуем системный proxy Windows: на части
+# машин он пытается проксировать даже 127.0.0.1 и даёт ложный ConnectionReset/502.
+_LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 
 class TestServeRoutes(unittest.TestCase):
     @classmethod
@@ -46,12 +50,14 @@ class TestServeRoutes(unittest.TestCase):
             "auto": serve.AUTO_FILE,
             "feeds": serve.feeds.PATH,
             "cc": serve.council_config.PATH,
+            "gp": serve.genparams.PATH,
         }
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
         serve.AUTO_FILE = os.path.join(self.tmp, "auto.json")
         serve.feeds.PATH = os.path.join(self.tmp, "feeds.json")
         serve.council_config.PATH = os.path.join(self.tmp, "council.json")
+        serve.genparams.PATH = os.path.join(self.tmp, "genparams.json")
 
     def tearDown(self):
         serve.folders.PATH = self._saved["fp"]
@@ -59,6 +65,7 @@ class TestServeRoutes(unittest.TestCase):
         serve.AUTO_FILE = self._saved["auto"]
         serve.feeds.PATH = self._saved["feeds"]
         serve.council_config.PATH = self._saved["cc"]
+        serve.genparams.PATH = self._saved["gp"]
 
     def _post(self, path, body=None, ctype="application/json", raw=None):
         data = raw if raw is not None else json.dumps(body).encode("utf-8")
@@ -66,14 +73,14 @@ class TestServeRoutes(unittest.TestCase):
             f"http://127.0.0.1:{self.port}{path}", data=data, headers={"Content-Type": ctype}, method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with _LOCAL_OPENER.open(req, timeout=5) as r:
                 return r.status, json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read().decode("utf-8"))
 
     def _get(self, path):
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as r:
+            with _LOCAL_OPENER.open(f"http://127.0.0.1:{self.port}{path}", timeout=5) as r:
                 return r.status, json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read().decode("utf-8"))
@@ -225,6 +232,18 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/folders", ctype="text/plain", raw=b"paths=1")
         self.assertEqual(code, 415)
 
+    def test_non_object_json_body_rejected(self):
+        code, body = self._post("/api/genparams", ["не", "объект"])
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_genparams_post_enforces_rank_keep_not_above_gen_k(self):
+        code, body = self._post("/api/genparams", {"gen_k": 2, "rank_keep": 8})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["params"]["gen_k"]["value"], 2)
+        self.assertEqual(body["params"]["rank_keep"]["value"], 2)
+
     def test_unknown_route_404(self):
         code, body = self._post("/api/nope", {})
         self.assertEqual(code, 404)
@@ -260,7 +279,7 @@ class TestServeRoutes(unittest.TestCase):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with _LOCAL_OPENER.open(req, timeout=5) as r:
                 code, resp = r.status, json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             code, resp = e.code, json.loads(e.read().decode("utf-8"))

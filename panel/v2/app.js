@@ -66,6 +66,8 @@ class API {
   static setFolders(folders)  { return API._request('POST', '/api/folders',   { folders }); }
   static setFeeds(enabled)    { return API._request('POST', '/api/feeds',     { enabled }); }
   static setCouncil(enabled)  { return API._request('POST', '/api/council',   { enabled }); }
+  static genparams()          { return API._request('GET',  '/api/genparams'); }
+  static setGenparams(p)      { return API._request('POST', '/api/genparams', p); }
   static probeFolders()       { return API._request('GET',  '/api/folders/probe'); }
 }
 
@@ -235,6 +237,7 @@ class Renderer {
     this._renderSources(next);
     this._renderDirection(next);
     this._renderAuto(next);
+    this._renderGenparams(next);
     this._renderIdeas(next);
     this._renderOrgans(next);
     this._renderJournal(next);
@@ -381,6 +384,34 @@ class Renderer {
     if (tgl) tgl.classList.toggle('on', !!auto.on);
     const iv = Renderer.$('#settings-body input[type="number"]');
     if (iv && document.activeElement !== iv) iv.value = auto.interval_min;
+  }
+
+  // ── ПАРАМЕТРЫ ГЕНЕРАЦИИ (drawer «Настройки») ──
+  _renderGenparams(S) {
+    const gp = S.genparams || {};
+    // Для каждого параметра: синхронизируем value из state в range-инпут + текстовое значение.
+    // keep_min_score в env хранится 0..1, в UI показывается 0..10 (×10) — пересчёт здесь.
+    // НЕ затираем инпут, который юзер прямо сейчас правит (activeElement), иначе ползунок
+    // дёргается под пальцем на каждом poll /api/state (5 сек).
+    for (const [key, spec] of Object.entries(gp)) {
+      const input = Renderer.$('#p-' + key);
+      if (!input) continue;
+      const isScore = key.endsWith('_score');
+      let min = spec.min;
+      let max = spec.max;
+      let v = spec.value;
+      if (key === 'keep_min_score') {
+        min *= 10;
+        max *= 10;
+        v *= 10;  // UI 0..10, env 0..1
+      }
+      input.min = String(min);
+      input.max = String(max);
+      v = isScore ? Number(v).toFixed(1) : Math.round(v);
+      if (document.activeElement !== input) input.value = v;
+      const valEl = Renderer.$('#pv-' + key);
+      if (valEl) valEl.textContent = isScore ? Number(v).toFixed(1) : v;
+    }
   }
 
   // ── ИДЕИ ──
@@ -858,6 +889,7 @@ class UIController {
     this._bindTabs();
     this._bindConsole();
     this._bindSettings();
+    this._bindGenparams();
     this._bindDock();
     this._bindIdeasPanelActions();
     this._bindLeftActions();
@@ -1188,6 +1220,78 @@ class UIController {
       });
       this.api.setFeeds(Array.from(enabledFeeds));
     }
+  }
+
+  // ── ПАРАМЕТРЫ ГЕНЕРАЦИИ (drawer «Настройки», секция «Параметры генерации») ──
+  // Ползунки range для gen_k/rank_keep/source_n/read_min_score/keep_min_score.
+  // Применение: мгновенно по change (как Direction/Feeds), но с debounce 300ms, чтобы
+  // протащить ползунок 8→12 одним движением = ОДИН POST, а не 5. Загоняем все 5 значений
+  // одним запросом — атомарно, state.json не дёргаем.
+  _bindGenparams() {
+    this._gpDebounce = null;
+    const inputs = Renderer.$$('#settings-body input[data-gp]');
+    inputs.forEach(inp => {
+      // input event — обновляем только текстовое значение (живой отклик под пальцем),
+      // POST уходит по change (когда юзер отпустил ползунок) + debounce.
+      inp.addEventListener('input', () => this._updateParamValLabel(inp));
+      inp.addEventListener('change', () => this._scheduleGenparamsSave());
+    });
+    const reset = Renderer.$('#btn-genparams-reset');
+    if (reset) reset.onclick = () => {
+      if (!confirm('Сбросить ВСЕ параметры генерации к значениям по умолчанию?')) return;
+      this.api.setGenparams({ reset: true }).then(r => {
+        if (r && r.ok) {
+          this.toasts.show('Параметры сброшены к умолчаниям', 'success');
+          this._refreshSoon();
+        } else {
+          this.toasts.show('Сброс: ' + ((r && r.msg) || 'не вышло'), 'error');
+        }
+      });
+    };
+  }
+
+  _updateParamValLabel(inp) {
+    const key = inp.dataset.gp;
+    const valEl = Renderer.$('#pv-' + key);
+    if (!valEl) return;
+    const v = parseFloat(inp.value);
+    valEl.textContent = key.endsWith('_score') ? v.toFixed(1) : String(Math.round(v));
+    if (key === 'gen_k') {
+      const keep = Renderer.$('#p-rank_keep');
+      const keepLabel = Renderer.$('#pv-rank_keep');
+      if (keep) {
+        const keepMax = Math.min(8, Math.round(v));
+        keep.max = String(keepMax);
+        if (Number(keep.value) > keepMax) keep.value = String(keepMax);
+        if (keepLabel) keepLabel.textContent = String(Math.round(Number(keep.value)));
+      }
+    }
+  }
+
+  _scheduleGenparamsSave() {
+    if (this._gpDebounce) clearTimeout(this._gpDebounce);
+    this._gpDebounce = setTimeout(() => {
+      this._gpDebounce = null;
+      this._saveGenparams();
+    }, 300);
+  }
+
+  _saveGenparams() {
+    // Собираем все 5 значений из DOM. keep_min_score: UI 0..10 → env 0..1 (делим на 10).
+    // Остальные уходят как есть — clamp на стороне genparams.save по диапазонам.
+    const inputs = Renderer.$$('#settings-body input[data-gp]');
+    const payload = {};
+    inputs.forEach(inp => {
+      const key = inp.dataset.gp;
+      let v = parseFloat(inp.value);
+      if (isNaN(v)) return;
+      if (key === 'keep_min_score') v = v / 10;  // UI 0..10 → env 0..1
+      payload[key] = v;
+    });
+    this.api.setGenparams(payload).then(r => {
+      if (!r || !r.ok) this.toasts.show('Параметры: ' + ((r && r.msg) || 'не вышло'), 'error');
+      else this._refreshSoon();
+    });
   }
 
   openSettings() {

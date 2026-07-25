@@ -71,6 +71,7 @@ import council_config  # noqa: E402  (рубильники совета: rank_id
 import direction  # noqa: E402  (руль темы: чтение/запись cyborg/data/direction.json)
 import feeds  # noqa: E402  (ленты-источник: какие ленты включены, тумблеры пульта, cyborg/data/feeds.json)
 import folders  # noqa: E402  (папки-источник: чтение/запись cyborg/data/folders.json)
+import genparams  # noqa: E402  (параметры генерации: gen_k/rank_keep/source_n/пороги, cyborg/data/genparams.json)
 import keychain  # noqa: E402  (живой состав цепочки для шапки: id'ы плеч, БЕЗ значений ключей)
 import lock_monitor  # noqa: E402  (счётчик таймаутов state_lock за час — в /api/health)
 
@@ -540,6 +541,9 @@ def _api_state():
         "folders": folders.load(),
         "feeds": feeds.load(),
         "council": council_config.load(),
+        # Параметры генерации (gen_k/rank_keep/source_n/пороги) — meta() отдаёт min/max/default/
+        # is_float/value для каждого. UI строит range-инпуты по этим данным. Без файла — дефолты.
+        "genparams": genparams.meta()["params"],
         "rejected": rejected.count(),  # сколько идей отклонено «мусором» (учат генератор/судью)
     }
 
@@ -634,6 +638,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"probe": collect_source.probe_paths(folders.all_paths())})
             except Exception as e:
                 self._json({"error": str(e)[:300]}, 500)
+        elif self.path == "/api/genparams":
+            # метаданные параметров генерации (min/max/default/value для каждого) — UI строит
+            # range-инпуты в drawer «Настройки». GET — чтение, POST — save/reset.
+            try:
+                self._json(genparams.meta())
+            except Exception as e:
+                self._json({"error": str(e)[:300]}, 500)
         elif self.path == "/api/health":
             # healthcheck: статус ключевых компонентов для мониторинга/алертинга.
             # ok=True когда LLM-цепочка жива, state.json парсится, и НИ ОДИН источник не упал
@@ -661,6 +672,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
         except Exception:
             self._json({"ok": False, "msg": "плохой JSON"}, 400)
+            return
+        if not isinstance(body, dict):
+            self._json({"ok": False, "msg": "тело должно быть JSON-объектом"}, 400)
             return
         if self.path == "/api/run":
             goal = str(body.get("goal") or "").replace("\n", " ").strip()[:200]
@@ -729,6 +743,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             saved = council_config.save(en)
             self._json({"ok": True, **saved})
+        elif self.path == "/api/genparams":
+            # параметры генерации: либо reset (сброс к дефолтам), либо частичное обновление.
+            # Любой посторонний ключ игнорируется (forward-compat). Clamp по диапазонам — в genparams.
+            if body.get("reset"):
+                genparams.reset()  # перезаписать файл дефолтами, потом отдать meta (с новыми value)
+                self._json({"ok": True, "params": genparams.meta()["params"]})
+                return
+            genparams.save(body)
+            self._json({"ok": True, "params": genparams.meta()["params"]})
         elif self.path == "/api/stop":
             ok = _stop_run()
             self._json({"ok": ok, "msg": "" if ok else "нечего останавливать"})
