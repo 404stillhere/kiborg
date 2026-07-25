@@ -7,7 +7,8 @@
    абстрактный набросок. Структура /api/state:
      S = {
        now, running, run_goal, key:{present,model}, organs:[{name,purpose,role,...}],
-       inbox:{cap,tick,ideas:[{id,title,score,why,brain,source,effort,status,...}],finish,seen_count,error},
+       inbox:{cap,tick,ideas:[{id,title,score,why,brain,source,effort,status,...}],
+              taken:[...],later:[...],rejected:[...],finish,seen_count,error},
        sources:{checked_at, sources:{<name>:{ok,error,items,...}}}|null,
        auto:{on,interval_min}, runs:[{ts,goal,chain,deliverable,value,council,degraded}],
        registry:{total,by_status,by_project,cards:[...],error},
@@ -177,6 +178,8 @@ class Renderer {
     this._lastOrgansSig = null;  // null = «ещё не рендерили» (см. фикс ideas — пустая сигнатура '' легитимна)
     this._lastRunsSig = null;
     this._lastRunLines = -1;
+    this._doneFilter = 'all';
+    this._doneDetailKey = null;
     this._foldProbe = {};        // путь папки → {exists, files, capped} из /api/folders/probe
     this._probeInFlight = false; // анти-спам: один параллельный запрос probe за раз
     // Подписки
@@ -427,17 +430,25 @@ class Renderer {
     if (!panel) return;
     const ideas = (S.inbox && S.inbox.ideas) || [];
     const open = ideas.filter(i => i.status === 'open');
-    // «Разобранные» теперь живут в отдельных мастер-файлах (taken.json/later.json), а не в
-    // ideas[] — ideas[] содержит только open (мастер-разделение 2026-07-22). Собираем done из
-    // inbox.taken + inbox.later; каждая идея уже несёт status и triaged_ts. Сортируем по убыванию
-    // времени разбора (если есть triaged_ts), иначе по id — самые свежие действия сверху.
+    // «Разобранные» живут в отдельных мастер-файлах, а ideas[] содержит только open.
+    // У всех трёх исходов триажа есть свой список: взято, позже и отклонено.
+    // Сортируем по убыванию времени разбора, иначе по id — свежие действия сверху.
     const taken = ((S.inbox && S.inbox.taken) || []).map(i => ({ ...i, status: 'take' }));
     const later = ((S.inbox && S.inbox.later) || []).map(i => ({ ...i, status: 'later' }));
-    const done = [...taken, ...later].sort((a, b) => {
+    const rejected = ((S.inbox && S.inbox.rejected) || []).map(i => ({
+      ...i, status: 'trash', triaged_ts: i.triaged_ts || i.ts || ''
+    }));
+    const sortDone = (items) => items.slice().sort((a, b) => {
       const ta = a.triaged_ts || '', tb = b.triaged_ts || '';
       if (ta !== tb) return ta < tb ? 1 : -1;  // свежие сначала
       return (b.id || 0) - (a.id || 0);  // при равенстве — по id
     });
+    const done = {
+      all: sortDone([...taken, ...later, ...rejected]),
+      take: sortDone(taken),
+      later: sortDone(later),
+      trash: sortDone(rejected),
+    };
 
     // счётчики
     Renderer.$('#ideas-counter').textContent = open.length + ' открыто';
@@ -551,22 +562,98 @@ class Renderer {
     return card;
   }
 
-  _renderDone(done) {
+  _renderDone(groups) {
     const toggle = Renderer.$('#done-toggle');
     const list = Renderer.$('#done-list');
     const countEl = Renderer.$('#done-count');
-    if (countEl) countEl.textContent = String(done.length);
-    if (toggle) toggle.style.display = done.length ? '' : 'none';
+    const buttonToggle = Renderer.$('#btn-done-toggle');
+    const total = groups.all.length;
+    if (countEl) countEl.textContent = String(total);
+    if (toggle) toggle.style.display = total ? '' : 'none';
+    if (buttonToggle) buttonToggle.style.display = total ? '' : 'none';
     if (!list) return;
+    if (!total) {
+      list.classList.remove('open');
+      if (toggle) toggle.classList.remove('open');
+    }
+    if (!groups[this._doneFilter]) this._doneFilter = 'all';
+    const visible = groups[this._doneFilter];
+    if (this._doneDetailKey && !visible.some(i => this._doneItemKey(i) === this._doneDetailKey)) {
+      this._doneDetailKey = null;
+    }
     list.textContent = '';
-    done.forEach(i => {
-      const row = Renderer.el('div', { cls: 'done-row' });
-      const st = Renderer.el('span', { cls: ['done-status', i.status], text: { take: 'взял', later: 'позже', trash: 'мусор' }[i.status] || i.status });
+    const filters = [
+      ['all', 'все'],
+      ['take', 'взятые'],
+      ['later', 'позже'],
+      ['trash', 'отклонённые'],
+    ];
+    const filterBar = Renderer.el('div', { cls: 'done-filters', attrs: { role: 'group', 'aria-label': 'Разобранные идеи' } });
+    filters.forEach(([key, label]) => {
+      const selected = this._doneFilter === key;
+      const button = Renderer.el('button', {
+        cls: ['done-filter', selected ? 'on' : ''],
+        text: label + ' ' + groups[key].length,
+        attrs: { type: 'button', 'aria-pressed': String(selected) },
+        onclick: () => {
+          this._doneFilter = key;
+          list.classList.add('open');
+          if (toggle) toggle.classList.add('open');
+          this._renderDone(groups);
+        },
+      });
+      filterBar.appendChild(button);
+    });
+    list.appendChild(filterBar);
+
+    visible.forEach(i => {
+      const itemKey = this._doneItemKey(i);
+      const expanded = this._doneDetailKey === itemKey;
+      const entry = Renderer.el('div', { cls: ['done-entry', expanded ? 'open' : ''] });
+      const row = Renderer.el('button', {
+        cls: 'done-row',
+        attrs: {
+          type: 'button',
+          'aria-expanded': String(expanded),
+          title: expanded ? 'Скрыть описание' : 'Показать описание',
+        },
+        onclick: () => {
+          this._doneDetailKey = expanded ? null : itemKey;
+          this._renderDone(groups);
+        },
+      });
+      const st = Renderer.el('span', { cls: ['done-status', i.status], text: { take: 'взято', later: 'позже', trash: 'отклонено' }[i.status] || i.status });
       row.appendChild(st);
       row.appendChild(Renderer.el('span', { cls: 'done-title', text: i.title || '' }));
-      row.appendChild(Renderer.el('span', { cls: 'done-id', text: '#' + i.id }));
-      list.appendChild(row);
+      if (i.id != null) row.appendChild(Renderer.el('span', { cls: 'done-id', text: '#' + i.id }));
+      row.appendChild(Renderer.el('span', { cls: 'done-row-caret', text: expanded ? '▾' : '▸', attrs: { 'aria-hidden': 'true' } }));
+      entry.appendChild(row);
+      if (expanded) entry.appendChild(this._doneDetailCard(i));
+      list.appendChild(entry);
     });
+  }
+
+  _doneItemKey(i) {
+    return [i.status || '', i.id ?? '', i.triaged_ts || i.ts || '', i.title || ''].join('\u001f');
+  }
+
+  _doneDetailCard(i) {
+    const card = Renderer.el('article', { cls: ['done-detail', i.status] });
+    card.appendChild(Renderer.el('div', { cls: 'done-detail-label', text: 'О чём идея' }));
+    card.appendChild(Renderer.el('div', {
+      cls: 'done-detail-why',
+      text: i.why || 'Описание для этой идеи не сохранилось.',
+    }));
+
+    const meta = Renderer.el('div', { cls: 'done-detail-meta' });
+    const score = i.score != null ? i.score : i.read_score;
+    if (score != null) meta.appendChild(Renderer.el('span', { text: 'оценка ' + Number(score).toFixed(1) }));
+    if (i.source) meta.appendChild(Renderer.el('span', { text: i.source }));
+    if (i.effort) meta.appendChild(Renderer.el('span', { text: i.effort }));
+    const ts = i.triaged_ts || i.ts;
+    if (ts) meta.appendChild(Renderer.el('span', { text: 'разобрано ' + ts }));
+    if (meta.childElementCount) card.appendChild(meta);
+    return card;
   }
 
   _renderEmptyState(S) {

@@ -426,14 +426,17 @@ def _read_inbox():
         with open(IDEA + "/data/state.json", encoding="utf-8") as f:
             s = json.load(f)
         # state.json хранит только open (мастер-разделение 2026-07-22): take/later/trash физически
-        # перенесены в taken.json / later.json / rejected.json при триаже. Отдаём их пульту отдельными
-        # полями — UI собирает «Разобранные» из этих источников (раньше фильтровал ideas[] по status).
+        # перенесены в taken.json / later.json / rejected.json при триаже. Отдаём все три списка
+        # отдельными полями — UI собирает «Разобранные» из этих источников (раньше фильтровал
+        # ideas[] по status). rejected раньше уходил только числом, поэтому его нельзя было
+        # раскрыть в пульте.
         return {
             "cap": s.get("cap", 0),
             "tick": s.get("tick", 0),
             "ideas": s.get("ideas", []),  # только open (остальные вырезаны при триаже)
             "taken": triage_store.load(triage_store.TAKEN_PATH).get("taken", []),
             "later": triage_store.load(triage_store.LATER_PATH).get("later", []),
+            "rejected": rejected.load().get("rejected", []),
             "finish": s.get("finish"),
             "seen_count": len(s.get("seen", [])),
         }
@@ -445,6 +448,7 @@ def _read_inbox():
             "ideas": [],
             "taken": [],
             "later": [],
+            "rejected": [],
             "finish": None,
             "seen_count": 0,
         }

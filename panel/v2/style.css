@@ -1290,6 +1290,9 @@ input[type="number"]:focus,
   background: var(--paper);
 }
 .done-filter {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
   font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
@@ -1298,15 +1301,25 @@ input[type="number"]:focus,
   background: var(--white);
 }
 .done-filter.on { background: var(--magenta); color: var(--white); }
+.done-entry { border-bottom: 2px solid var(--paper-3); }
+.done-entry:last-child { border-bottom: none; }
 .done-row {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border-bottom: 2px solid var(--paper-3);
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
   font-size: 13px;
 }
-.done-row:last-child { border-bottom: none; }
+.done-row:hover { background: var(--paper); }
+.done-row[aria-expanded="true"] { background: var(--paper-2); }
 .done-status {
   font-family: var(--font-display);
   text-transform: uppercase;
@@ -1325,6 +1338,40 @@ input[type="number"]:focus,
   font-size: 12px;
   color: var(--ink-2);
   flex-shrink: 0;
+}
+.done-row-caret { color: var(--ink-2); flex-shrink: 0; }
+.done-detail {
+  margin: 0 14px 12px;
+  padding: 12px 14px;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  background: var(--paper);
+}
+.done-detail.take { border-left-color: var(--cyan); }
+.done-detail.later { border-left-color: var(--yellow); }
+.done-detail.trash { border-left-color: var(--magenta); }
+.done-detail-label {
+  margin-bottom: 6px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+.done-detail-why { line-height: 1.5; }
+.done-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+.done-detail-meta span {
+  padding: 3px 6px;
+  border: 1px solid var(--ink);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
 }
 
 /* ════════════════════════════════════════════════════════════════════════

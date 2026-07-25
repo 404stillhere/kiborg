@@ -110,6 +110,50 @@ class TestReadSourceStatus(unittest.TestCase):
         self.assertIsNone(serve._read_source_status())
 
 
+class TestReadInbox(unittest.TestCase):
+    """Пульт читает все три исхода триажа отдельными списками."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_inbox_")
+        self.data = os.path.join(self.tmp, "data")
+        os.makedirs(self.data)
+        self._saved = {
+            "idea": serve.IDEA,
+            "taken": serve.triage_store.TAKEN_PATH,
+            "later": serve.triage_store.LATER_PATH,
+            "rejected_path": serve.rejected.PATH,
+            "rejected_data": serve.rejected.DATA,
+        }
+        serve.IDEA = self.tmp
+        serve.triage_store.TAKEN_PATH = os.path.join(self.data, "taken.json")
+        serve.triage_store.LATER_PATH = os.path.join(self.data, "later.json")
+        serve.rejected.DATA = self.data
+        serve.rejected.PATH = os.path.join(self.data, "rejected.json")
+
+    def tearDown(self):
+        serve.IDEA = self._saved["idea"]
+        serve.triage_store.TAKEN_PATH = self._saved["taken"]
+        serve.triage_store.LATER_PATH = self._saved["later"]
+        serve.rejected.PATH = self._saved["rejected_path"]
+        serve.rejected.DATA = self._saved["rejected_data"]
+
+    def test_reads_taken_later_and_rejected_lists(self):
+        with open(os.path.join(self.data, "state.json"), "w", encoding="utf-8") as f:
+            json.dump({"ideas": [{"id": 1, "status": "open"}]}, f)
+        with open(serve.triage_store.TAKEN_PATH, "w", encoding="utf-8") as f:
+            json.dump({"taken": [{"id": 2, "title": "Взятая"}]}, f)
+        with open(serve.triage_store.LATER_PATH, "w", encoding="utf-8") as f:
+            json.dump({"later": [{"id": 3, "title": "Позже"}]}, f)
+        with open(serve.rejected.PATH, "w", encoding="utf-8") as f:
+            json.dump({"rejected": [{"title": "Отклонённая", "ts": "2026-07-25 12:00:00"}]}, f)
+
+        inbox = serve._read_inbox()
+
+        self.assertEqual(inbox["taken"][0]["title"], "Взятая")
+        self.assertEqual(inbox["later"][0]["title"], "Позже")
+        self.assertEqual(inbox["rejected"][0]["title"], "Отклонённая")
+
+
 class TestSetIdeaGate(unittest.TestCase):
     def test_bad_status_rejected_before_subprocess(self):
         # статус вне take|later|trash отбивается ДО запуска CLI (сторонним значениям хода нет)
