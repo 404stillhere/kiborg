@@ -16,6 +16,14 @@ def main(argv):
     # создать data dirs на свежем клоне (до всего остального)
     bootstrap_paths.ensure_data_dirs()
 
+    # Применить пользовательские triage-сигналы ДО нового совета, чтобы следующий отбор
+    # уже использовал свежие адаптивные веса. Best-effort: повреждённый журнал/конфиг
+    # не должен останавливать автосбор.
+    try:
+        harvest.feedback_cortex.main()
+    except Exception as exc:
+        print(f"[feedback_cortex] пропущен: {str(exc)[:160]}")
+
     # АВТО-ВОССТАНОВЛЕНИЕ state.json при повреждении (ДО backup_state, ДО органов).
     # Если state.json битый/отсутствует и есть валидный бэкап — восстанавливаем, шлём
     # CRITICAL-алерт, прогон продолжается как ни в чём не бывало. frozen store.py не трогаем

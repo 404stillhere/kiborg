@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
@@ -136,9 +137,12 @@ class TestHarvestGate(unittest.TestCase):
 
     def test_harvest_env_widens_source(self):
         # КОРЕНЬ узкого источника: env харвеста должен тянуть шире дефолтных 8 заголовков
-        env = harvest._harvest_env()
-        self.assertEqual(env["n"], harvest.SOURCE_N)
-        self.assertGreater(harvest.SOURCE_N, 8)  # шире дефолта органа collect_source
+        params = harvest.genparams.defaults()
+        params["source_n"] = 42
+        with mock.patch.object(harvest.genparams, "load", return_value=params):
+            env = harvest._harvest_env()
+        self.assertEqual(env["n"], 42)
+        self.assertGreater(env["n"], 8)  # шире дефолта органа collect_source
 
     def test_harvest_env_carries_configured_sources(self):
         # env харвеста несёт РОВНО активные источники (_active_sources: включённые ленты + files).
@@ -165,9 +169,11 @@ class TestHarvestGate(unittest.TestCase):
             captured.update(env)
             return {"items": [{"title": "A"}, {"title": "B"}], "degraded": False}
 
-        with _patched_source(fake_run):
+        params = harvest.genparams.defaults()
+        params["source_n"] = 42
+        with mock.patch.object(harvest.genparams, "load", return_value=params), _patched_source(fake_run):
             sig, degraded, fresh_n, status, _out = harvest._source_signature()
-        self.assertEqual(captured.get("n"), harvest.SOURCE_N)  # гейт и прогон смотрят одинаково глубоко
+        self.assertEqual(captured.get("n"), 42)  # гейт и прогон смотрят одинаково глубоко
         self.assertEqual(captured.get("sources"), ["hn", "reddit"])  # и по тому же набору источников
         self.assertIsNotNone(sig)
         self.assertFalse(degraded)
@@ -354,6 +360,13 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
         self._ic = items_cache
         self._orig_path = items_cache.PATH
         self._orig_backups_dir = config.BACKUPS_DIR
+        self._orig_feedback_main = harvest.feedback_cortex.main
+        self.feedback_calls = 0
+
+        def fake_feedback_main():
+            self.feedback_calls += 1
+
+        harvest.feedback_cortex.main = fake_feedback_main
         self._tmp = tempfile.TemporaryDirectory(prefix="kiborg_harvest_runner_")
         self.tmp_dir = self._tmp.name
         self.cache_file = os.path.join(self.tmp_dir, "ic_integration.json")
@@ -367,6 +380,7 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
     def tearDown(self):
         self._ic.PATH = self._orig_path
         config.BACKUPS_DIR = self._orig_backups_dir
+        harvest.feedback_cortex.main = self._orig_feedback_main
         self._cleanup()
         self._tmp.cleanup()
 
@@ -438,6 +452,7 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
         # 2-й прогон: «повтор» теперь в кэше → отфильтрован, «совсем-новое» проходит
         harvest_runner.main([])
         self.assertEqual(captured["items_seen_by_generator"], ["совсем-новое"])  # повтор отрезан
+        self.assertEqual(self.feedback_calls, 2)  # Cortex запускается перед каждым вызовом harvest
 
     def test_cache_check_never_crashes_harvest(self):
         # items_cache.PATH указывает на недоступное место / битый → harvest НЕ падает

@@ -19,7 +19,7 @@
 
 **Два entrypoint'а:**
 
-- `python cyborg/harvest.py [N]` — автоматический прогон (gate skip, N итераций, max 50). Используется cron/Task Scheduler.
+- `python cyborg/harvest.py [N]` — автоматический прогон (gate skip, N итераций, max 50). Перед отбором best-effort применяет новые triage-сигналы через Feedback Cortex. Используется пультом, cron/Task Scheduler.
 - `python cyborg/run.py "<цель>"` — ручной прогон (один проход, полный trace в stdout). Используется пультом (`panel/serve.py`).
 
 **Детали контрактов органов** — см. `cyborg/ORGANS_API.md`.

@@ -59,6 +59,7 @@ except Exception:
 # подмодули через `import harvest`. Потому F401 на каждом. E402 — импорты после sys.path-хака.
 import ask_llm  # noqa: E402,F401  (last_provider мок для provider-проброса в _run_ideate)
 import direction  # noqa: E402,F401  (руль темы: env["direction"] для генератора/судьи)
+import feedback_cortex  # noqa: E402,F401  (применяет новые triage-сигналы перед автосбором)
 import feeds  # noqa: E402,F401  (ленты-источник: какие публичные ленты включены, тумблеры в пульте)
 import folders  # noqa: E402,F401  (папки-источник: env["files_paths"], список правится в пульте)
 import genparams  # noqa: E402,F401  (параметры генерации: env["gen_k"]/["rank_keep"]/... для wiring; правятся в пульте)

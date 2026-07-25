@@ -56,8 +56,11 @@ def run(inputs, env):
     env = env or {}
     ideas = list((inputs or {}).get("ideas") or [])
     keep = int(env.get("keep", 3))
-    if len(ideas) <= keep:
-        return {"ideas_best": ideas}  # отбирать не из чего — отдаём как есть
+    # Изменено: если идей МЕНЬШЕ keep — отдаём как есть (нечего отбрасывать).
+    # Если идей >= keep — всегда зовём модель (если есть), даже при len==keep.
+    # Раньше: len<=keep возвращало как есть БЕЗ модели — workaround для этого был keep=len-1.
+    if len(ideas) < keep:
+        return {"ideas_best": ideas}  # идей меньше чем нужно — отдаём все
     llm = env.get("llm")
     if callable(llm):
         items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')[:100]}" for i, d in enumerate(ideas))

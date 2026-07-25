@@ -90,7 +90,7 @@ def test_advisor_crash_is_abstention_not_fatal():
     v = mind.deliberate("q", OPTS, council)  # упавший советник не роняет совещание
     assert v["choice_id"] == "A"
     assert v["live"] == ["rank_ideas"]
-    assert any("error" in a["reason"] for a in v["abstained"])
+    assert any(a.get("reason_code") == "exception" for a in v["abstained"])
 
 
 def test_single_advisor_decides_alone():
@@ -250,25 +250,35 @@ def test_build_council_shape_and_order():
 
 def test_ask_llm_abstains_without_chain():
     # нет llm_chain в контексте -> интуиция воздерживается (не лезет в сеть)
-    assert advisors.AskLlmAdvisor().opine("q", OPTS, {}) is None
+    op = advisors.AskLlmAdvisor().opine("q", OPTS, {})
+    assert op is not None  # теперь возвращаем opinion с reason_code
+    assert op.get("scores") == {}  # пустой scores = abstention
+    assert op.get("reason_code") == "no_keys"
 
 
 def test_orchestra_abstains_when_off():
     # нет context['orchestra'] -> совет выключен, воздержание
-    assert advisors.OrchestraAdvisor().opine("q", OPTS, {}) is None
+    op = advisors.OrchestraAdvisor().opine("q", OPTS, {})
+    assert op is not None  # теперь возвращаем opinion с reason_code
+    assert op.get("scores") == {}  # пустой scores = abstention
+    assert op.get("reason_code") == "no_keys"
 
 
 def test_rank_ideas_advisor_ranks_by_order_offline():
-    # без llm rank_ideas берёт порядок -> первый вариант получает балл 1.0
+    # без llm rank_ideas берёт порядок -> все идеи ранжируются по fallback-порядку
+    # normalized rank percentile: лучший=1, худший=0
     op = advisors.RankIdeasAdvisor().opine("q", OPTS, {})
     assert op is not None
-    assert op["scores"]["A"] == 1.0 and op["scores"]["B"] == 0.0
+    assert op["scores"]["A"] == 1.0
+    assert op["scores"]["B"] == 0.0
 
 
 def test_rank_ideas_advisor_abstains_on_non_idea_options():
     # варианты без title/text (служебная развилка) — арбитр не к месту, воздержание
     op = advisors.RankIdeasAdvisor().opine("q", [{"id": 1}, {"id": 2}], {})
-    assert op is None
+    assert op is not None  # теперь возвращаем opinion с reason_code
+    assert op.get("scores") == {}  # пустой scores = abstention
+    assert op.get("reason_code") == "not_applicable"
 
 
 def test_council_offline_only_arbiter_alive():
@@ -279,18 +289,66 @@ def test_council_offline_only_arbiter_alive():
     assert v["choice_id"] == "A"
 
 
-def test_orchestra_score_verdicts_normalizes_and_fail_closed():
-    # неизвестный/None вердикт -> 0.0 (fail-closed, как parse_review в organ.py), НЕ нейтральные
-    # 0.5; регистр/пробелы нормализуются, чтобы мис-регистр одобрения не топился вниз.
+def test_orchestra_score_verdicts_normalizes_known_values():
     S = advisors.OrchestraAdvisor._score_verdicts
     assert S(["approve"]) == 1.0
     assert S(["APPROVE"]) == 1.0  # регистр нормализован
     assert S([" blocked "]) == 0.0  # пробелы обрезаны
     assert S(["changes_requested"]) == 0.5
-    assert S(["reject"]) == 0.0  # неизвестный -> fail-closed 0.0 (раньше было бы 0.5)
-    assert S([None]) == 0.0  # None -> fail-closed
-    assert S(["approve", "blocked"]) == 0.5  # среднее двух
+    assert S(["reject"]) == 0.0
+    assert S([None]) == 0.0
+    assert S(["approve", "blocked"]) == 0.5  # простой средний; veto требует evidence
+    assert S(["approve", "changes_requested"]) == 0.75  # среднее approve(1.0) + changes(0.5)
     assert S([]) == 0.0  # пусто -> 0.0, без деления на ноль
+
+
+def test_orchestra_parse_failure_is_abstention_not_veto():
+    reviewers = [
+        {"requested_model": "good", "model": "good", "status": "ok", "verdict": "approve"},
+        # Так внешний organ кодирует неразобранный JSON: status=ok + blocked, но findings нет.
+        {"requested_model": "broken", "model": "broken", "status": "ok", "verdict": "blocked"},
+    ]
+    assert advisors.OrchestraAdvisor._score_reviewers(reviewers, []) == 1.0
+
+
+def test_orchestra_evidenced_blocker_is_veto():
+    reviewers = [
+        {"requested_model": "good", "model": "good", "status": "ok", "verdict": "approve"},
+        {"requested_model": "safety", "model": "safety", "status": "ok", "verdict": "blocked"},
+    ]
+    findings = [{"severity": "critical", "mentioned_by": ["safety"]}]
+    assert advisors.OrchestraAdvisor._score_reviewers(reviewers, findings) == 0.0
+
+
+def test_orchestra_only_unsubstantiated_blocked_has_no_score():
+    reviewers = [{"requested_model": "broken", "model": "broken", "status": "ok", "verdict": "blocked"}]
+    assert advisors.OrchestraAdvisor._score_reviewers(reviewers, []) is None
+
+
+def test_orchestra_partial_option_coverage_abstains():
+    adv = advisors.OrchestraAdvisor(organ_py=__file__)
+    calls = []
+
+    def fake_run(inputs, env):
+        calls.append(inputs["content"])
+        if len(calls) == 1:
+            return {
+                "reviewers": [{"requested_model": "good", "model": "good", "status": "ok", "verdict": "approve"}],
+                "findings": [],
+            }
+        return {
+            "reviewers": [{"requested_model": "broken", "model": "broken", "status": "ok", "verdict": "blocked"}],
+            "findings": [],
+        }
+
+    adv._run = fake_run
+    op = adv.opine(
+        "q",
+        OPTS,
+        {"orchestra": {"models": ["good"], "chat": lambda *args: ""}},
+    )
+    assert op["scores"] == {}
+    assert op["reason_code"] == "incomplete"
 
 
 def test_arbiter_abstains_when_key_present_but_call_fails():
@@ -300,7 +358,9 @@ def test_arbiter_abstains_when_key_present_but_call_fails():
     adv = advisors.RankIdeasAdvisor()
     opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
     op = adv.opine("отбери лучшую", opts, {"content_llm": lambda p: "не json мусор"})
-    assert op is None
+    assert op is not None
+    assert op["scores"] == {}
+    assert op["reason_code"] == "incomplete"
 
 
 def test_arbiter_votes_offline_with_fallback_rationale():
@@ -314,19 +374,15 @@ def test_arbiter_votes_offline_with_fallback_rationale():
     assert "рубрика/llm" not in op["rationale"]
 
 
-def test_intuition_imputes_mean_for_omitted_ids():
-    # модель НЕ вернула балл для id "C" (ошибка форматирования) -> интуиция ставит СРЕДНЕЕ реальных
-    # баллов, а НЕ жёсткий 0 (иначе mind._tally утопил бы вариант, что судья ценит — mind.py:84).
+def test_intuition_no_imputation_for_omitted_ids():
+    # Модель не вернула C: это неполный ответ, а не отрицательная оценка C.
     adv = advisors.AskLlmAdvisor()
     adv._ask = lambda chain, prompt, budget: '{"scores":{"A":80,"B":40}}'  # id C пропущен
     opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
     op = adv.opine("оцени", opts, {"llm_chain": [{"id": "x"}]})
     assert op is not None
-    sc = op["scores"]
-    assert sc["A"] == 0.8 and sc["B"] == 0.4
-    assert "C" in sc  # пропущенный НЕ потерян
-    assert abs(sc["C"] - 0.6) < 1e-9  # среднее (0.8+0.4)/2, НЕ 0
-    assert "2/3" in op["rationale"]  # честно: оценено 2 из 3
+    assert op["scores"] == {}
+    assert op["reason_code"] == "incomplete"
 
 
 def test_intuition_no_imputation_when_all_rated():
@@ -337,10 +393,27 @@ def test_intuition_no_imputation_when_all_rated():
     assert op["scores"] == {"A": 0.8, "B": 0.4, "C": 0.6}
 
 
+def test_intuition_preserves_numeric_option_ids():
+    adv = advisors.AskLlmAdvisor()
+    adv._ask = lambda chain, prompt, budget: '{"scores":{"1":80,"2":40}}'
+    opts = [{"id": 1, "title": "идея А"}, {"id": 2, "title": "идея Б"}]
+    op = adv.opine("оцени", opts, {"llm_chain": [{"id": "x"}]})
+    assert op["scores"] == {1: 0.8, 2: 0.4}
+
+
 def test_arbiter_rationale_honest_on_live():
     # валидный ответ судьи -> rationale честно «llm»
     adv = advisors.RankIdeasAdvisor()
     opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
-    op = adv.opine("отбери лучшую", opts, {"content_llm": lambda p: '{"top":[2,0]}'})
+    op = adv.opine("отбери лучшую", opts, {"content_llm": lambda p: '{"top":[2,0,1]}'})
     assert op is not None
     assert "рубрика/llm" in op["rationale"]
+
+
+def test_arbiter_partial_live_ranking_abstains_instead_of_scoring_fill():
+    adv = advisors.RankIdeasAdvisor()
+    opts = [{"id": "A", "title": "идея А"}, {"id": "B", "title": "идея Б"}, {"id": "C", "title": "идея В"}]
+    op = adv.opine("отбери лучшую", opts, {"content_llm": lambda p: '{"top":[2,0]}'})
+    assert op is not None
+    assert op["scores"] == {}
+    assert op["reason_code"] == "incomplete"
