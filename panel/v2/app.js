@@ -356,12 +356,22 @@ class Renderer {
     const activeFeeds = (S.feeds && S.feeds.enabled) || [];
     const filesOn = ((S.folders && S.folders.paths) || []).length > 0;
     const active = new Set([...activeFeeds, ...(filesOn ? ['files'] : [])]);
-    const NM = { hn: 'HN', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub', telegram: 'Telegram', files: 'Папки' };
-    const keys = Object.keys(s.sources).filter(k => active.has(k));
+    const NM = { hn: 'HN', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub', telegram: 'Telegram', self: 'Сам Киборг', files: 'Папки' };
+    // Активный источник показываем сразу, даже если source_status ещё от прошлого
+    // прогона и записи для нового тумблера пока нет. Иначе «Сам Киборг» исчезает
+    // с дашборда до первого сбора, хотя в настройках уже включён.
+    const keys = Object.keys(NM).filter(k => active.has(k));
     if (!keys.length) { box.textContent = 'источники выключены'; return; }
     box.textContent = '';
     keys.forEach(k => {
       const v = s.sources[k];
+      if (!v) {
+        const chip = Renderer.el('span', { cls: 'src-chip', title: 'ещё не проверен' });
+        chip.appendChild(Renderer.el('span', { cls: 'src-dot' }));
+        chip.appendChild(document.createTextNode(NM[k] || k));
+        box.appendChild(chip);
+        return;
+      }
       const ok = v && v.ok;
       const chip = Renderer.el('span', { cls: ['src-chip', ok ? 'ok' : 'bad'], title: v && v.error ? v.error : '' });
       chip.appendChild(Renderer.el('span', { cls: ['src-dot', ok ? 'ok' : 'bad'] }));
@@ -1487,7 +1497,7 @@ class UIController {
     items.forEach(i => i.remove());
     const all = (feedsData && feedsData.all) || [];
     const enabled = new Set((feedsData && feedsData.enabled) || []);
-    const NM = { hn: 'Hacker News', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub Trending', telegram: 'Telegram' };
+    const NM = { hn: 'Hacker News', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub Trending', telegram: 'Telegram', self: 'Сам Киборг' };
     all.forEach(name => {
       const item = Renderer.el('div', { cls: 'list-item' });
       item.appendChild(Renderer.el('div', { cls: ['toggle', enabled.has(name) ? 'on' : ''], attrs: { 'data-toggle': 'feed' } }));

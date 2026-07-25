@@ -100,6 +100,19 @@ class TestHarvestGate(unittest.TestCase):
         finally:
             harvest.folders.current = orig
 
+    def test_source_env_carries_builtin_self_path_without_enabling_files(self):
+        with _patched_source(feeds=["hn", "self"], folders=[]):
+            env = harvest._source_env()
+        self.assertEqual(env["sources"], ["hn", "self"])
+        self.assertEqual(env["self_path"], config.PROJECT_ROOT)
+        self.assertNotIn("files_paths", env)
+        self.assertNotIn("files", env["sources"])
+
+    def test_source_env_omits_self_path_when_source_disabled(self):
+        with _patched_source(feeds=["hn"], folders=[]):
+            env = harvest._source_env()
+        self.assertNotIn("self_path", env)
+
     def test_telegram_creds_only_when_telegram_active(self):
         # РЕГРЕССИЯ 2026-07-15: telegram-креды/сессию кладём в env ТОЛЬКО если 'telegram' в active.
         # Иначе _collect_locked брал tg-замок (130с таймаут) на files-only прогон → вис (жалоба юзера).

@@ -712,6 +712,40 @@ class TestFilesSource(_TmpDirTest):
             collect_source._FILES_MAX_SCAN = orig
 
 
+class TestSelfSource(_TmpDirTest):
+    """«Сам Киборг» — самостоятельный источник, а не особая настройка обычных папок."""
+
+    _PREFIX = "kiborg_self_"
+
+    def test_reads_fixed_project_path_and_marks_self_reflection(self):
+        self._write(
+            "cyborg/health.py",
+            '"""Проверяет здоровье источников."""\n'
+            "# TODO: отличать сетевой сбой от выключенного источника.\n"
+            "def source_health():\n"
+            "    return {}\n",
+        )
+        out = collect_source.run({}, {"n": 4, "source": "self", "self_path": self.tmp})
+        self.assertFalse(out["degraded"])
+        item = out["items"][0]
+        self.assertEqual(item["source"], "self")
+        self.assertEqual(item["kind"], "self_reflection")
+        self.assertTrue(item["id"].startswith("self:f2:"))
+        self.assertIn("TODO: отличать сетевой сбой", item["context"])
+
+    def test_does_not_require_generic_folders(self):
+        self._write("app.py", '"""Пульт kiborg."""\n')
+        out = collect_source.run({}, {"n": 2, "sources": ["self"], "self_path": self.tmp})
+        self.assertFalse(out["degraded"])
+        self.assertEqual({item["source"] for item in out["items"]}, {"self"})
+
+    def test_missing_project_path_degrades_without_falling_back_to_files(self):
+        out = collect_source.run({}, {"n": 2, "source": "self"})
+        self.assertTrue(out["degraded"])
+        self.assertIn("self_path", out["degraded_reason"])
+        self.assertNotIn("error", out)
+
+
 class TestProbePaths(_TmpDirTest):
     """probe_paths — дешёвая проба папок для пульта: путь существует? сколько ПРИГОДНЫХ
     текстовых файлов? Тот же фильтр _files_is_candidate, что у реального сбора (одна правда)."""

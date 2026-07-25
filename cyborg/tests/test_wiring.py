@@ -137,6 +137,18 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         self.assertEqual(captured["files_paths"], ["M:/projects/kiborg", "C:/notes"])
         self.assertEqual(captured["sources"], ["files"])
 
+    def test_self_path_reaches_collect_source(self):
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            return {"items": [{"title": "x", "source": "self"}], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"n": 30, "sources": ["self"], "self_path": "M:/projects/kiborg"})
+        self.assertEqual(captured["self_path"], "M:/projects/kiborg")
+        self.assertEqual(captured["sources"], ["self"])
+
     def test_source_quality_flags_reach_collect_source(self):
         """Ручной run.py не делает gate-prefetch, поэтому флаги качества обязаны пройти
         через _run_collect сами: иначе фон видит Show HN и GitHub descriptions, а кнопка

@@ -99,6 +99,23 @@ class TestIdeateParse(unittest.TestCase):
         self.assertIn("улучшение существующей системы", seen["p"])
         self.assertTrue(all(i["direction"] == "самоулучшение kiborg" for i in out["ideas"]))
 
+    def test_self_source_is_local_instruction_not_global_direction(self):
+        seen = {}
+        items = [
+            {"title": "Show HN: tiny calendar"},
+            {
+                "title": "cyborg/health.py — Проверяет здоровье источников",
+                "context": "TODO: отличать сетевой сбой от выключенного источника",
+                "kind": "self_reflection",
+            },
+        ]
+        ideate.run({"items": items}, {"k": 2, "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        prompt = seen["p"]
+        self.assertIn("[САМОАНАЛИЗ KIBORG]", prompt)
+        self.assertIn("улучшение самого kiborg", prompt)
+        self.assertIn("- Show HN: tiny calendar", prompt)  # внешнее сырьё осталось обычным
+        self.assertNotIn("НАПРАВЛЕНИЕ", prompt)  # саморефлексия не стала глобальным рулём
+
     def test_stub_records_requested_direction_without_claiming_llm(self):
         out = ideate.run({"items": ITEMS}, {"k": 2, "direction": "самоулучшение kiborg"})
         self.assertTrue(all(i["direction"] == "самоулучшение kiborg" for i in out["ideas"]))

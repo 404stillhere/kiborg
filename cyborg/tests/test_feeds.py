@@ -33,6 +33,10 @@ class TestFeeds(unittest.TestCase):
         feeds.save(["hn", "telegram"])
         self.assertEqual(feeds.enabled(), ["hn", "telegram"])  # канон-порядок ALL_FEEDS
 
+    def test_self_is_a_regular_toggleable_source(self):
+        feeds.save(["self", "hn"])
+        self.assertEqual(feeds.enabled(), ["hn", "self"])
+
     def test_save_persists_to_disk_atomic(self):
         feeds.save(["reddit", "hn"])
         with open(feeds.PATH, encoding="utf-8") as f:

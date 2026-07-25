@@ -117,7 +117,13 @@ def _parse(raw, k):
 
 
 def _format_items(items):
-    """Материалы для промпта: у файлов есть безопасный короткий context, у лент — только title."""
+    """Материалы для промпта.
+
+    У файлов есть безопасный короткий context, у лент — только title. Источник
+    ``self`` помечает свои элементы отдельно: только идеи, взятые из таких
+    материалов, должны улучшать kiborg. Это не превращает весь смешанный прогон
+    в глобальный режим самоулучшения.
+    """
     rows = []
     for item in items or []:
         if not isinstance(item, dict):
@@ -126,7 +132,14 @@ def _format_items(items):
         if not title:
             continue
         context = str(item.get("context") or "").strip()
-        row = "- " + title
+        if item.get("kind") == "self_reflection":
+            row = (
+                "- [САМОАНАЛИЗ KIBORG] "
+                + title
+                + "\n  Задача этого материала: предложить конкретное проверяемое улучшение самого kiborg."
+            )
+        else:
+            row = "- " + title
         if context:
             row += "\n  Фрагмент: " + context
         rows.append(row)

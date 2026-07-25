@@ -1047,7 +1047,7 @@ function renderHeader() {
 }
 
 // ─── SOURCES ───
-const SRC_NM = {hn:'HN', reddit:'Reddit', lobsters:'Lobsters', gh_trending:'GitHub', telegram:'Telegram', files:'Папки'};
+const SRC_NM = {hn:'HN', reddit:'Reddit', lobsters:'Lobsters', gh_trending:'GitHub', telegram:'Telegram', self:'Сам Киборг', files:'Папки'};
 function renderSources() {
   const el = document.getElementById('sources-chips');
   const s = S && S.sources;
@@ -1059,10 +1059,13 @@ function renderSources() {
   const activeFeeds = (S.feeds && S.feeds.enabled) || [];
   const filesOn = (((S.folders && S.folders.paths) || []).length > 0);
   const active = new Set([...activeFeeds, ...(filesOn ? ['files'] : [])]);
-  const keys = Object.keys(SRC_NM).filter(k => s.sources[k] && active.has(k));
+  const keys = Object.keys(SRC_NM).filter(k => active.has(k));
   if (!keys.length) { el.innerHTML = '<span class="src-chip"><span class="src-dot"></span>источники выключены</span>'; return; }
   el.innerHTML = keys.map(k => {
     const v = s.sources[k];
+    if (!v) {
+      return `<span class="src-chip" title="ещё не проверен"><span class="src-dot"></span>${esc(SRC_NM[k])}</span>`;
+    }
     const cls = v.ok ? 'ok' : 'bad';
     const cnt = v.ok && v.items ? ` ${v.items}` : '';
     const title = v.error ? ` title="${esc(v.error)}"` : '';
@@ -1071,8 +1074,8 @@ function renderSources() {
 }
 
 // ─── FEEDS ───
-const FEED_NM = {hn:'HN', reddit:'Reddit', lobsters:'Lobsters', gh_trending:'GitHub', telegram:'Telegram'};
-const FEED_VERIFIED = {telegram: true};
+const FEED_NM = {hn:'HN', reddit:'Reddit', lobsters:'Lobsters', gh_trending:'GitHub', telegram:'Telegram', self:'Сам Киборг'};
+const FEED_VERIFIED = {telegram: true, self: true};
 async function postFeeds(enabled) {
   await fetch('/api/feeds', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled})});
   refresh();

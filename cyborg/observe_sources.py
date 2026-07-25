@@ -43,9 +43,10 @@ WHERE = {
     "lobsters": ("Lobsters", "открываю горячее"),
     "gh_trending": ("GitHub Trending", "смотрю, что в тренде"),
     "telegram": ("Telegram", "захожу в паблик"),
+    "self": ("Сам Киборг", "смотрю на собственный код"),
     "files": ("Папки-источник", "открываю файлы в папках"),
 }
-ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "files"]
+ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "self", "files"]
 
 _ITEM_PAUSE = 0.28  # пауза между постами — чтобы в пульте строки шли живым потоком, не пачкой
 _STEP_PAUSE = 0.35
@@ -78,6 +79,8 @@ def main():
         tail = ""
         if name == "telegram" and tg_channels:
             tail = f" ({', '.join(tg_channels)})"
+        elif name == "self" and base_env.get("self_path"):
+            tail = f" ({base_env['self_path']})"
         elif name == "files" and files_paths:
             tail = f" ({', '.join(files_paths)})"
         say(f"┌─ {human}{tail}")

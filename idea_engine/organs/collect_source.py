@@ -440,6 +440,28 @@ def _files(n, timeout, env):
     return items
 
 
+def _self(n, timeout, env):
+    """Собственный код kiborg как ОТДЕЛЬНЫЙ источник саморефлексии.
+
+    Использует тот же безопасный и ограниченный обход, что ``files``, но не зависит
+    от пользовательского списка папок. ``self_path`` подкладывает слой cyborg.
+    Маркер ``kind`` позволяет генератору отличить самоанализ от обычного локального
+    сырья, когда оба вида материалов смешаны в одном прогоне.
+    """
+    root = env.get("self_path")
+    if not isinstance(root, (str, os.PathLike)) or not os.fspath(root).strip():
+        raise ValueError("self: no kiborg project path configured (env['self_path'])")
+    local_env = dict(env)
+    local_env["files_paths"] = [os.fspath(root)]
+    items = _files(n, timeout, local_env)
+    for item in items:
+        item["kind"] = "self_reflection"
+        # Тот же файл в нейтральном files и в самоанализе — разные смысловые
+        # материалы. Отдельный ID не даёт старому seen-items поглотить новый источник.
+        item["id"] = "self:" + str(item.get("id") or "")
+    return items
+
+
 def probe_paths(paths):
     """Дёшево (без чтения СОДЕРЖИМОГО файлов) оценить папки-источник для пульта: по каждому пути —
     существует ли он и сколько в нём ПРИГОДНЫХ текстовых файлов (тем же фильтром _files_is_candidate,
@@ -477,6 +499,7 @@ _SOURCES = {
     "lobsters": _lobsters,
     "gh_trending": _gh_trending,
     "telegram": _telegram,
+    "self": _self,
     "files": _files,
 }
 

@@ -13,6 +13,8 @@ harvest._load_darbot_tg_creds, harvest._KIBORG_TG_SESSION) долетали до
 
 import os
 
+import config
+
 
 def _active_sources():
     """Источники прогона: включённые в пульте ленты (feeds) + 'files', ЕСЛИ заданы папки
@@ -76,6 +78,11 @@ def _source_env():
     # topstories (тренды). Топ HN засорён новостями/некрологами; Show HN — чистое проектное топливо.
     if "hn" in active:
         env["hn_show_mix"] = True
+    # Встроенный источник «Сам Киборг» не зависит от пользовательских папок:
+    # он всегда смотрит только на корень этого проекта. Это отдельное сырьё,
+    # поэтому обычные ленты продолжают работать и смешиваться с ним.
+    if "self" in active:
+        env["self_path"] = config.PROJECT_ROOT
     # Телеграм-креды/каналы — ТОЛЬКО когда telegram реально включён (тумблер в пульте). Иначе
     # env тащил telegram_session даже при выключенной ленте → _collect_locked брал tg-замок (130с
     # таймаут) на прогон, где телеги нет: files-only прогон вис на замке. Нет telegram в active →

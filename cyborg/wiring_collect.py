@@ -103,6 +103,7 @@ def _run_collect(inputs, env):
         "telegram_session",
         "telegram_python",
         "telegram_timeout",
+        "self_path",
         "files_paths",
         # Качество публичных лент. harvest_gate передаёт весь env, а ручной run.py идёт
         # сюда без prefetched_out: без этого явного проброса ручной запуск терял Show HN

@@ -73,13 +73,14 @@ def run(inputs: dict, env: dict) -> dict:
 - `sources` (list[str]) — активные источники. **Пустой список = нет источников** (не дефолт hn).
 - `timeout` (default 8) — таймаут фетча на источник.
 - keyed/конфиг-источники: `telegram_channels`, `telegram_api_id`, `telegram_api_hash`,
-  `telegram_session`, `telegram_python`, `telegram_timeout`, `files_paths`, `gh_enrich_limit`.
+  `telegram_session`, `telegram_python`, `telegram_timeout`, `self_path`, `files_paths`,
+  `gh_enrich_limit`.
 
 **outputs:**
 ```python
 {
   "items": [{"title": str, "url": str, "id": str, "source": str,
-             "context": str | absent}, ...],
+             "context": str | absent, "kind": str | absent}, ...],
   "source": str,           # label источника (для/logs)
   "degraded": bool,        # True если все упали / сырья нет
   "degraded_reason": str,  # опц. — почему деградировал
@@ -87,7 +88,9 @@ def run(inputs: dict, env: dict) -> dict:
 }
 ```
 
-`context` есть у локального `files`: это ограниченный безопасный фрагмент начала файла.
+`context` есть у локальных `files` и `self`: это ограниченный безопасный фрагмент начала файла.
+`self` всегда смотрит на корень kiborg и ставит `kind="self_reflection"`, чтобы генератор
+предлагал по этим материалам улучшения самого kiborg, не меняя назначение остальных источников.
 
 **Побочный эффект нервом:** `title` и `context` чистятся через `scrub_secrets.scrub_text` ДО
 генерации (защита от утечки секрета в промпт).
