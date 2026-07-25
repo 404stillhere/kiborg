@@ -175,20 +175,25 @@ def _cli(argv):
             # B3: журнал триажа для Feedback Cortex (B4 адаптирует веса/профиль по этим сигналам).
             # Событие = суть действия: что разобрали, как, откуда идея, с каким баллом/судьёй.
             # ts проставляет triage_events.append. Не роняет триаж при ошибке (best-effort).
+            # Фаза 2 Feedback Cortex: breakdown_votes (если есть на карточке — ставит _rank_by_council
+            # Фазы 1) едет в событие → feedback_cortex наказывает/поощряет КОНКРЕТНОГО советника,
+            # а не «всех сразу» по judged. Обратно совместимо: нет поля → не пишем (старые данные ок).
             if ok and victim:
                 try:
                     import triage_events
 
-                    triage_events.append(
-                        {
-                            "idea_id": idea_id,
-                            "action": st,
-                            "title": victim.get("title", ""),
-                            "source_name": victim.get("source_name"),
-                            "score": victim.get("score"),
-                            "judged": victim.get("judged"),
-                        }
-                    )
+                    event = {
+                        "idea_id": idea_id,
+                        "action": st,
+                        "title": victim.get("title", ""),
+                        "source_name": victim.get("source_name"),
+                        "score": victim.get("score"),
+                        "judged": victim.get("judged"),
+                    }
+                    votes = victim.get("breakdown_votes")
+                    if isinstance(votes, dict) and votes:
+                        event["breakdown_votes"] = votes
+                    triage_events.append(event)
                 except Exception:
                     pass  # журнал — best-effort, триаж уже сохранён
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")

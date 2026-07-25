@@ -5,7 +5,13 @@ Feedback Cortex (B4) читает это как сигнал для адапта
 
 Формат события (одна строка JSON на событие):
     {"ts": <iso>, "idea_id": <int>, "action": "take"|"later"|"trash",
-     "title": <str>, "source_name": <str?>, "score": <float?>, "judged": <str?>}
+     "title": <str>, "source_name": <str?>, "score": <float?>, "judged": <str?>,
+     "breakdown_votes": {advisor_name: {"score": 0..1}}?}
+
+breakdown_votes (опционально, с Фазы 2 Feedback Cortex 2026-07-24) — per-advisor голоса
+совета за эту идею. Присутствует только если идея прошла через _rank_by_council (ставит
+поле на карточке). Позволяет feedback_cortex наказывать/поощрять КОНКРЕТНОГО советника,
+а не «всех сразу» по judged. Обратно совместимо: старые события без поля валидны.
 
 Только stdlib. PATH патчится в тестах. append-only (атомарный append одной строки).
 Битый файл при load → graceful (пропускает неразборчивые строки, не роняет).

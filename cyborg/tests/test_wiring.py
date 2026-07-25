@@ -20,6 +20,33 @@ import seen_items  # noqa: E402
 import shadow_metrics  # noqa: E402
 import wiring  # noqa: E402
 
+_ORIGINAL_SHADOW_PATH = None
+_MODULE_SHADOW_PATH = None
+
+
+def setUpModule():
+    """Все wiring-тесты пишут shadow-метрики только во временный файл."""
+    global _ORIGINAL_SHADOW_PATH, _MODULE_SHADOW_PATH
+    _ORIGINAL_SHADOW_PATH = shadow_metrics.PATH
+    fd, _MODULE_SHADOW_PATH = tempfile.mkstemp(prefix="kiborg_wiring_shadow_", suffix=".jsonl")
+    os.close(fd)
+    os.remove(_MODULE_SHADOW_PATH)
+    shadow_metrics.PATH = _MODULE_SHADOW_PATH
+
+
+def tearDownModule():
+    shadow_metrics.PATH = _ORIGINAL_SHADOW_PATH
+    try:
+        os.remove(_MODULE_SHADOW_PATH)
+    except OSError:
+        pass
+
+
+class TestModuleDataIsolation(unittest.TestCase):
+    def test_shadow_metrics_path_is_not_live_data(self):
+        live = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        self.assertNotEqual(os.path.dirname(os.path.abspath(shadow_metrics.PATH)), live)
+
 
 class TestRunCollectPassesEnv(unittest.TestCase):
     def setUp(self):
@@ -625,6 +652,148 @@ class TestRunRankCouncil(unittest.TestCase):
         wiring.mind.deliberate = fake_think
         wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
         self.assertNotIn("направлении", seen["q"])  # без руля вопрос обычный
+
+
+class TestBreakdownVotesAttached(unittest.TestCase):
+    """Фаза 1 Feedback Cortex: после совета каждая карточка-победитель несёт
+    breakdown_votes = {advisor_name: {"score": 0..1}} — проекция verdict["breakdown"]
+    на конкретную идею. Без этого triage не знает, кто из советников как голосовал,
+    и feedback_cortex штрафует «всех сразу» (грубая эвристика по judged).
+
+    breakdown_votes = additive поле (старые тесты/карточки без него не ломаются).
+    Хранится ТОЛЬКО score (why не нужен адаптации, меньше риск + размер).
+    """
+
+    IDEAS = [
+        {"title": "A", "why": "a"},
+        {"title": "B", "why": "b"},
+        {"title": "C", "why": "c"},
+        {"title": "D", "why": "d"},
+        {"title": "E", "why": "e"},
+        {"title": "F", "why": "f"},
+        {"title": "G", "why": "g"},
+    ]
+
+    def setUp(self):
+        self._orig_deliberate = wiring.mind.deliberate
+
+    def tearDown(self):
+        wiring.mind.deliberate = self._orig_deliberate
+
+    def test_card_carries_breakdown_votes_per_advisor(self):
+        # verdict с breakdown → каждая карточка-победитель несёт breakdown_votes с score
+        # по каждому советнику. oid в breakdown = индекс в options = индекс в IDEAS.
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "breakdown": [
+                    {
+                        "name": "rank_ideas",
+                        "weight": 0.41,
+                        "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                        "why": "arb",
+                    },
+                    {
+                        "name": "ask_llm",
+                        "weight": 0.39,
+                        "scores": {0: 0.7, 1: 0.3, 2: 0.6, 3: 0.85, 4: 0.2, 5: 0.65, 6: 0.4},
+                        "why": "int",
+                    },
+                ],
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        # топ-3 по anti-bland баллу: D(0.9/0.85) A(0.8/0.7) F(0.7/0.65) — порядок как в TestRunRankCouncil
+        by_title = {i["title"]: i for i in out["ideas_best"]}
+        for title in ("D", "A", "F"):
+            self.assertIn("breakdown_votes", by_title[title], f"идея {title} без breakdown_votes")
+            votes = by_title[title]["breakdown_votes"]
+            self.assertIsInstance(votes, dict)
+            # оба советника, что голосовали — присутствуют
+            self.assertIn("rank_ideas", votes)
+            self.assertIn("ask_llm", votes)
+            # score — число в [0,1]
+            for name, v in votes.items():
+                self.assertIsInstance(v, dict)
+                self.assertIn("score", v)
+                self.assertIsInstance(v["score"], (int, float))
+                self.assertGreaterEqual(v["score"], 0.0)
+                self.assertLessEqual(v["score"], 1.0)
+
+    def test_breakdown_votes_score_matches_verdict_per_idea(self):
+        # конкретные значения: для идеи D (oid=3) rank_ideas=0.9, ask_llm=0.85
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "breakdown": [
+                    {"name": "rank_ideas", "weight": 0.41, "scores": {3: 0.9}, "why": "x"},
+                    {"name": "ask_llm", "weight": 0.39, "scores": {3: 0.85}, "why": "y"},
+                ],
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        by_title = {i["title"]: i for i in out["ideas_best"]}
+        self.assertAlmostEqual(by_title["D"]["breakdown_votes"]["rank_ideas"]["score"], 0.9)
+        self.assertAlmostEqual(by_title["D"]["breakdown_votes"]["ask_llm"]["score"], 0.85)
+
+    def test_no_breakdown_no_field_but_no_crash(self):
+        # инвариант: deliberate БЕЗ breakdown (как во всех старых тестах/моках) → карточки
+        # без breakdown_votes, но ничего не падает. backward compat.
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "why": "t",  # НЕТ breakdown
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        # карты формируются, отсутствие breakdown_votes — допустимо (не crash)
+        self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "F"])
+        for card in out["ideas_best"]:
+            # поле либо отсутствует, либо пустой dict — но не падает
+            if "breakdown_votes" in card:
+                self.assertEqual(card["breakdown_votes"], {})
+
+    def test_breakdown_votes_has_no_why_field(self):
+        # ТЗ Фазы 1: хранить ТОЛЬКО score, без why. why не нужен адаптации, меньше риск
+        # протащить лишний текст в state.json.
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {3: 0.9},
+                "breakdown": [
+                    {"name": "rank_ideas", "weight": 0.41, "scores": {3: 0.9}, "why": "секретный комментарий"},
+                ],
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        for card in out["ideas_best"]:
+            if "breakdown_votes" in card:
+                for v in card["breakdown_votes"].values():
+                    self.assertNotIn("why", v)
+
+    def test_invalid_breakdown_scores_are_skipped(self):
+        import wiring_council
+
+        for bad_score in (True, -0.01, 1.01, float("nan"), float("inf")):
+            votes = wiring_council._breakdown_to_votes(
+                [{"name": "rank_ideas", "scores": {0: bad_score}}],
+                [0],
+            )
+            self.assertEqual(votes[0], {})
 
 
 class TestDynamicKeepThreshold(unittest.TestCase):

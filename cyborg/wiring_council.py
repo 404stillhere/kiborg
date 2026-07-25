@@ -6,6 +6,8 @@ mind.deliberate, интуиция без потолка токенов, фолб
 читаем через фасад.
 """
 
+import math
+
 import wiring  # noqa: E402  (advisors нужен на module level — base class _IntuitionNoCap)
 from wiring_runtime import _content_llm
 
@@ -226,6 +228,41 @@ def _top_k_from_breakdown(breakdown, name, k):
     return None
 
 
+def _breakdown_to_votes(breakdown, oids):
+    """Feedback Cortex (Фаза 1): проекция verdict["breakdown"] → per-idea голоса советников.
+
+    breakdown = [{name, weight, scores:{oid: 0..1}, why}, ...] (mind.py:219-220, FROZEN).
+    Возвращает {oid: {advisor_name: {"score": float}}} для запрошенных oids. Хранит ТОЛЬКО
+    score (why не нужен адаптации — меньше риск + размер state.json). Нечисловой/отсутствующий
+    score советника по идее → советник пропускается для этого oid (не падает). Битый breakdown
+    (не список / не dict entries) → пустой результат, карточки остаются без breakdown_votes.
+    """
+    out = {oid: {} for oid in oids}
+    if not isinstance(breakdown, list) or not breakdown:
+        return out
+    for entry in breakdown:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        sc = entry.get("scores")
+        if not isinstance(sc, dict):
+            continue
+        for oid in oids:
+            v = sc.get(oid)
+            # oid в breakdown — int (индекс опции), в oids может прийти как int или str-ключ
+            if v is None and isinstance(oid, int):
+                v = sc.get(str(oid))
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            score = float(v)
+            if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+                continue
+            out[oid][name] = {"score": score}
+    return out
+
+
 def _shadow_log_lazy(verdict, orch, n_ideas):
     """C4: замерить overlap rank_ideas×ask_llm и записать в shadow_metrics.jsonl.
 
@@ -341,6 +378,11 @@ def _rank_by_council(inputs, env, keep):
         passing = ranked[:1]  # все слабые — отдаём лучшую по баллу, не пустоту (минимум 1)
     candidates = passing[:keep] if len(passing) <= keep else _mmr_select(passing, orig, scores, keep)
     picked = candidates if len(candidates) <= keep else candidates[:keep]
+    # Feedback Cortex (Фаза 1): проекция verdict["breakdown"] → per-idea голоса советников.
+    # breakdown_votes[oid] = {advisor_name: {"score": 0..1}} — только score (why не нужен
+    # адаптации, меньше риск + размер state.json). Без breakdown (моки/старые данные) → {}:
+    # ничего не падает, поле просто не несёт сигнала, feedback_cortex откатится на judged.
+    votes_by_oid = _breakdown_to_votes(verdict.get("breakdown"), picked)
     best = []
     for oid in picked:
         o = orig[oid]
@@ -351,6 +393,9 @@ def _rank_by_council(inputs, env, keep):
         sc = scores.get(oid)
         if sc is not None:
             card["score"] = round(float(sc) * 10, 1)  # балл совета 0..1 → 0-10 для бейджа «оценка совета» (D6)
+        votes = votes_by_oid.get(oid)
+        if votes:
+            card["breakdown_votes"] = votes  # per-advisor голоса для Feedback Cortex
         best.append(card)
     return {
         "ideas_best": best,

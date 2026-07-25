@@ -7,6 +7,7 @@ Scoped rebind в wiring_council (B2) читает current_weights() только
 """
 
 import json
+import math
 import os
 import sys
 import tempfile
@@ -83,6 +84,44 @@ class TestCouncilWeights(unittest.TestCase):
         w = council_weights.current_weights()
         self.assertNotIn("ghost", w)
         self.assertEqual(set(w.keys()), set(council_weights.ALL_ADVISORS))
+
+    def test_invalid_weights_fall_back_to_defaults(self):
+        """Ручная порча JSON не должна отравлять rebind в живом совете."""
+        council_weights.save(
+            {
+                "enabled": True,
+                "weights": {
+                    "ask_llm": float("nan"),
+                    "orchestra": float("inf"),
+                    "rank_ideas": True,
+                },
+            }
+        )
+        w = council_weights.current_weights()
+        self.assertEqual(w, council_weights.DEFAULT_WEIGHTS)
+        self.assertTrue(all(math.isfinite(value) for value in w.values()))
+
+    def test_invalid_updated_after_is_normalized_on_load_and_save(self):
+        """Infinity/NaN/bool/минус не должны ронять Cortex или сохраняться курсором."""
+        for bad in (float("inf"), float("nan"), True, -7):
+            saved = council_weights.save(
+                {
+                    "enabled": True,
+                    "weights": council_weights.DEFAULT_WEIGHTS,
+                    "updated_after": bad,
+                }
+            )
+            self.assertEqual(saved["updated_after"], 0)
+            self.assertEqual(council_weights.load()["updated_after"], 0)
+
+        council_weights.save(
+            {
+                "enabled": True,
+                "weights": council_weights.DEFAULT_WEIGHTS,
+                "updated_after": "12",
+            }
+        )
+        self.assertEqual(council_weights.load()["updated_after"], 12)
 
 
 if __name__ == "__main__":
