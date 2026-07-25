@@ -539,6 +539,23 @@ class TestFilesSource(_TmpDirTest):
         self.assertTrue(any("README.md" in t and "Киборг" in t for t in titles))
         self.assertTrue(all(it["source"] == "files" for it in out["items"]))
 
+    def test_includes_bounded_context_beyond_headline(self):
+        self._write(
+            "reflect.py",
+            '"""Саморефлексия проекта."""\n'
+            "import os\n"
+            "# Находит слабые места по тестам и журналу решений.\n"
+            "def inspect_failures():\n"
+            "    return []\n",
+        )
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        item = out["items"][0]
+        self.assertIn("Саморефлексия проекта", item["title"])
+        self.assertIn("Находит слабые места", item["context"])
+        self.assertIn("def inspect_failures", item["context"])
+        self.assertNotIn("import os", item["context"])  # импортный шум не кормим модели
+        self.assertLessEqual(len(item["context"]), collect_source._FILES_CONTEXT_CHARS)
+
     def test_skips_secret_files(self):
         self._write("llm_keys.env", "OPENAI_KEY=sk-secret\n")
         self._write("kiborg_tg.session", "session-bytes\n")
@@ -554,12 +571,14 @@ class TestFilesSource(_TmpDirTest):
     def test_skips_junk_dirs_and_binaries(self):
         self._write("src/main.py", '"""главный модуль."""\n')
         self._write("node_modules/lib/index.js", "// dep\n")
+        self._write("handoffs/old.md", "# Устаревший снимок проекта\n")
         self._write("__pycache__/main.cpython-312.pyc", b"\x00\x01bin")
         self._write("logo.png", b"\x89PNG\r\n")
         out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
         titles = " ".join(it["title"] for it in out["items"])
         self.assertIn("main.py", titles)
         self.assertNotIn("node_modules", titles)  # мусорная папка отсечена
+        self.assertNotIn("Устаревший снимок", titles)  # история чатов не забивает код
         self.assertNotIn(".pyc", titles)
         self.assertNotIn(".png", titles)  # бинарь по расширению
 
@@ -599,6 +618,15 @@ class TestFilesSource(_TmpDirTest):
         self.assertEqual(old, moved)
         self.assertNotEqual(moved, changed)
 
+    def test_id_changes_when_visible_context_changes(self):
+        before = collect_source._files_item_id(
+            "M:/projects/kiborg/src/main.py", "M:/projects/kiborg", "запуск", "def old(): pass"
+        )
+        after = collect_source._files_item_id(
+            "M:/projects/kiborg/src/main.py", "M:/projects/kiborg", "запуск", "def improved(): pass"
+        )
+        self.assertNotEqual(before, after)  # изменение ниже шапки снова становится свежим
+
     def test_single_file_path_allowed(self):
         p = self._write("solo.md", "# соло\nтекст\n")
         out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [p]})
@@ -612,6 +640,12 @@ class TestFilesSource(_TmpDirTest):
         out = collect_source.run({}, {"n": 3, "source": "files", "files_paths": [self.tmp]})
         self.assertFalse(out["degraded"])  # источник жив
         self.assertEqual(len(out["items"]), 3)  # 8 файлов -> ровно бюджет n=3
+
+    def test_file_context_has_own_prompt_size_cap(self):
+        for i in range(collect_source._FILES_MAX_ITEMS + 7):
+            self._write(f"f{i}.py", f'"""файл {i}."""\ndef work_{i}(): pass\n')
+        out = collect_source.run({}, {"n": 300, "source": "files", "files_paths": [self.tmp]})
+        self.assertEqual(len(out["items"]), collect_source._FILES_MAX_ITEMS)
 
     def test_merges_with_keyless_sources(self):
         self._write("x.py", '"""икс."""\n')
@@ -643,9 +677,9 @@ class TestFilesSource(_TmpDirTest):
         self._write("deploy.sh", f"#!/bin/sh\nexport AWS_SECRET_ACCESS_KEY={awssec}\n")
         self._write("db.py", f'DATABASE_URL = "postgres://user:{dbpass}@host/db"\n')
         out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
-        blob = " ".join(it["title"] for it in out["items"])
+        blob = " ".join((it["title"] + " " + it.get("context", "")) for it in out["items"])
         for secret in [openai, tgtok, awssec, dbpass]:
-            self.assertNotIn(secret, blob)  # ни одна собранная форма не утекла в заголовок
+            self.assertNotIn(secret, blob)  # ни одна собранная форма не утекла в prompt-поля
         # при этом секрет-строку сменяет следующая чистая строка (докстринг), файл не потерян
         self.assertTrue(any("cfg.py" in it["title"] and "докстринг" in it["title"] for it in out["items"]))
 

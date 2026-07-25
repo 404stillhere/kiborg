@@ -118,14 +118,16 @@ def _run_collect(inputs, env):
     # чтобы метафора не врала (смотреть ≠ помнить).
     out = _collect_locked(inputs, e)  # под замком tg-сессии, если телеграм в игре
     # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести секрет в
-    # ЗАГОЛОВКЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ из gitignored
-    # gemini.md). Заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. scrub downstream
-    # (перед deliver) ПОЗДНО — промпт уже ушёл. Чистим заголовки ЗДЕСЬ, до генерации: scrub_secrets
-    # ловит форматы, что _FILES_SECRET_LINE пропустил (проверено: AQ.-ключ → [REDACTED]).
+    # ЗАГОЛОВКЕ ИЛИ КОНТЕКСТЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ
+    # из gitignored gemini.md). Оба поля уходят в ПРОМПТ генератора → к LLM-провайдеру.
+    # scrub downstream (перед deliver) ПОЗДНО — промпт уже ушёл. Чистим ОБА поля здесь,
+    # до генерации: scrub_secrets ловит форматы, что _FILES_SECRET_LINE пропустил.
     if isinstance(out, dict) and isinstance(out.get("items"), list):
         for it in out["items"]:
-            if isinstance(it, dict) and isinstance(it.get("title"), str):
-                it["title"] = wiring.scrub_secrets.scrub_text(it["title"])
+            if isinstance(it, dict):
+                for field in ("title", "context"):
+                    if isinstance(it.get(field), str):
+                        it[field] = wiring.scrub_secrets.scrub_text(it[field])
         # КРОСС-ДЕДУП (2026-07-23): один пост может прийти с HN (item id) и Lobsters (short_id)
         # — в seen_items это два разных ключа, оба проходят → LLM тратится на две похожие идеи.
         # Уберём дубли ВНУТРИ прогона по нормализованному заголовку (первое вхождение выигрывает),

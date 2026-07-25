@@ -13,8 +13,9 @@ import json
 import re
 
 PROMPT_TMPL = (
-    "Ты генератор проектных идей. На входе свежие внешние заголовки.\n"
-    "Придумай {k} КОНКРЕТНЫХ идей (новый проект / аддон / скилл), которые они наводят,\n"
+    "Ты генератор проектных идей. На входе свежие внешние заголовки или фрагменты локальных файлов.\n"
+    "Придумай {k} КОНКРЕТНЫХ идей (новый проект / аддон / скилл / улучшение существующей системы),\n"
+    "на которые они наводят,\n"
     "но оригинальных — не пересказ заголовка.\n"
     "\n"
     "Поле «why» — это ОПИСАНИЕ карточки, его читают БЕЗ всякого контекста. 4 правила:\n"
@@ -31,7 +32,7 @@ PROMPT_TMPL = (
     "\n"
     "Каждую идею верни ОДНОЙ строкой JSON и ничего лишнего:\n"
     '{{"title":"...","why":"...","effort":"легко|средне|тяжело"}}\n'
-    "Заголовки:\n{items}\n"
+    "Материалы:\n{items}\n"
 )
 
 _EFFORT = ["легко", "средне", "тяжело"]
@@ -115,6 +116,23 @@ def _parse(raw, k):
     return out[:k]
 
 
+def _format_items(items):
+    """Материалы для промпта: у файлов есть безопасный короткий context, у лент — только title."""
+    rows = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        context = str(item.get("context") or "").strip()
+        row = "- " + title
+        if context:
+            row += "\n  Фрагмент: " + context
+        rows.append(row)
+    return "\n".join(rows)
+
+
 def run(inputs, env):
     env = env or {}
     inputs = inputs or {}
@@ -125,7 +143,7 @@ def run(inputs, env):
         op = env.get("on_progress")  # опц. живой суб-прогресс (один вызов, но ~5с — даём знать)
         if callable(op):
             op("генерирую %d идей" % k)
-        prompt = PROMPT_TMPL.format(k=k, items="\n".join("- " + i.get("title", "") for i in items))
+        prompt = PROMPT_TMPL.format(k=k, items=_format_items(items))
         direction = (env.get("direction") or "").strip()
         if direction:  # руль темы — впереди основного запроса
             prompt = _STEER_TMPL.format(direction=direction) + prompt
@@ -134,9 +152,19 @@ def run(inputs, env):
             prompt = _AVOID_TMPL.format(rejected="\n".join("- " + str(r) for r in rejected)) + prompt
         ideas = _parse(llm(prompt), k)
         if ideas:
+            if direction:
+                # Метаданные карточки: позднее видно, под каким рулём её придумали.
+                # Это «запрошенное направление», а не обещание, что модель подчинилась идеально.
+                for idea in ideas:
+                    idea["direction"] = direction
             return {"ideas": ideas}
         # мозг не выдал парсибельного — честно падаем на stub
-    return {"ideas": _stub(items, k)}
+    ideas = _stub(items, k)
+    direction = (env.get("direction") or "").strip()
+    if direction:
+        for idea in ideas:
+            idea["direction"] = direction
+    return {"ideas": ideas}
 
 
 if __name__ == "__main__":

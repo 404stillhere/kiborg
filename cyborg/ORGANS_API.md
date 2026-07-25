@@ -78,7 +78,8 @@ def run(inputs: dict, env: dict) -> dict:
 **outputs:**
 ```python
 {
-  "items": [{"title": str, "url": str, "id": str, "source": str}, ...],
+  "items": [{"title": str, "url": str, "id": str, "source": str,
+             "context": str | absent}, ...],
   "source": str,           # label источника (для/logs)
   "degraded": bool,        # True если все упали / сырья нет
   "degraded_reason": str,  # опц. — почему деградировал
@@ -86,8 +87,10 @@ def run(inputs: dict, env: dict) -> dict:
 }
 ```
 
-**Побочный эффект нервом:** названия items чистятся через `scrub_secrets.scrub_text` ДО генерации
-(защита от утечки секрета в промпт: файл-источник может принести секрет в заголовке).
+`context` есть у локального `files`: это ограниченный безопасный фрагмент начала файла.
+
+**Побочный эффект нервом:** `title` и `context` чистятся через `scrub_secrets.scrub_text` ДО
+генерации (защита от утечки секрета в промпт).
 
 ---
 
@@ -100,7 +103,8 @@ def run(inputs: dict, env: dict) -> dict:
 **env:**
 - `k` (нерв ставит **12**) — сколько идей-кандидатов генерить.
 - `llm` / `content_llm` (callable) — генератор. Нет ключа → stub-болванки (`brain: "stub"`).
-- `direction` (опц.) — руль темы, прокидывается в генератор.
+- `direction` (опц.) — руль темы, прокидывается в генератор и записывается в карточку идеи
+  как метаданные запрошенного направления.
 - `filter_seen_items` (опц., bool) — если True, нерв фильтрует items через `seen_items.filter_fresh`
   («уже видели») и метит виденными после успешной генерации.
 - `on_progress` (опц.) — колбэк суб-прогресса.

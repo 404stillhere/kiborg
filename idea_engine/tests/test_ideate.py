@@ -78,6 +78,32 @@ class TestIdeateParse(unittest.TestCase):
         self.assertIn("железки", seen["p"])
         self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
 
+    def test_file_context_reaches_prompt_and_direction_is_recorded(self):
+        seen = {}
+        items = [
+            {
+                "title": "cyborg/wiring.py — Сборка органов",
+                "context": "def build_organs(): | TODO: убрать дублирование маршрутов",
+            }
+        ]
+        out = ideate.run(
+            {"items": items},
+            {
+                "k": 2,
+                "direction": "самоулучшение kiborg",
+                "llm": lambda p: seen.setdefault("p", p) or ARRAY,
+            },
+        )
+        self.assertIn("Фрагмент:", seen["p"])
+        self.assertIn("TODO: убрать дублирование", seen["p"])
+        self.assertIn("улучшение существующей системы", seen["p"])
+        self.assertTrue(all(i["direction"] == "самоулучшение kiborg" for i in out["ideas"]))
+
+    def test_stub_records_requested_direction_without_claiming_llm(self):
+        out = ideate.run({"items": ITEMS}, {"k": 2, "direction": "самоулучшение kiborg"})
+        self.assertTrue(all(i["direction"] == "самоулучшение kiborg" for i in out["ideas"]))
+        self.assertTrue(all(i["brain"] == "stub" for i in out["ideas"]))
+
     def test_no_direction_no_steer(self):
         # без направления руль в запрос НЕ вставляется (поведение как раньше)
         seen = {}

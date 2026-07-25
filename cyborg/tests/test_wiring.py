@@ -173,14 +173,21 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         wiring._run_collect({}, {"n": 8, "sources": ["hn"]})
         self.assertNotIn("files_paths", captured)
 
-    def test_collect_scrubs_secret_from_item_title(self):
+    def test_collect_scrubs_secret_from_item_prompt_fields(self):
         # БЕЗОПАСНОСТЬ 2026-07-15: файл-источник может принести СЕКРЕТ в заголовке (фильтр _files
         # неполон) — заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. _run_collect чистит
         # заголовки scrub_secrets ДО генерации (downstream-scrub поздно — промпт уже ушёл).
+        title_secret = "AQ." + "FAKEfake1234567890abcdefgh"
+        context_secret = "AQ." + "OTHERfake1234567890abcdefgh"
+
         def fake_run(inputs, env):
             return {
                 "items": [
-                    {"title": "config.py — AQ.FAKEfake1234567890abcdefgh", "source": "files"},
+                    {
+                        "title": "config.py — " + title_secret,
+                        "context": "служебный пароль: " + context_secret,
+                        "source": "files",
+                    },
                     {"title": "обычный заголовок без секрета", "source": "files"},
                 ],
                 "degraded": False,
@@ -188,7 +195,8 @@ class TestRunCollectPassesEnv(unittest.TestCase):
 
         wiring.collect_source.run = fake_run
         out = wiring._run_collect({}, {"sources": ["files"], "files_paths": ["x"]})
-        self.assertNotIn("AQ.FAKEfake1234567890abcdefgh", out["items"][0]["title"])  # секрет НЕ утёк
+        self.assertNotIn(title_secret, out["items"][0]["title"])  # секрет НЕ утёк
+        self.assertNotIn(context_secret, out["items"][0]["context"])
         self.assertEqual(out["items"][1]["title"], "обычный заголовок без секрета")  # чистое не тронуто
 
     def test_no_telegram_keys_when_absent(self):

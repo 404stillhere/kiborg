@@ -207,11 +207,14 @@ def _telegram(n, timeout, env):
 
 # ── Источник «files»: читает ТЕКСТОВЫЕ файлы из заданных папок как ещё одно сырьё для идей ──
 # Смотрит на папку НЕЙТРАЛЬНО — как на чужой проект со стороны (не «свой код», без «чини себя»).
-# Один файл = один «заголовок» {относительный_путь — первая содержательная строка}, дальше та
-# же машина идей, что у лент. Настройки — env["files_paths"] (список папок и/или отдельных
-# файлов); без них честный ValueError -> degrade. БЕЗОПАСНОСТЬ: секреты (*.env/*.session/ключи и
-# имена с secret/token/…) и мусор (.git/venv/node_modules/__pycache__/…) НЕ читаем — иначе ключи
-# утекли бы в промпт LLM. Только текст (код+доки), крупные файлы обрезаны по размеру.
+# Один файл = один item: {относительный_путь — первая содержательная строка} + короткий
+# содержательный фрагмент. Фрагмент нужен для саморефлексии: по одному имени файла и докстрингу
+# модель видела лишь «обложку» проекта и выдумывала проблемы. Контекст жёстко ограничен по числу
+# файлов/строк/символов, иначе широкий source_n раздует промпт. Настройки — env["files_paths"]
+# (список папок и/или отдельных файлов); без них честный ValueError -> degrade.
+# БЕЗОПАСНОСТЬ: секреты (*.env/*.session/ключи и имена с secret/token/…) и мусор
+# (.git/venv/node_modules/__pycache__/…) НЕ читаем. Строки, похожие на креды, выкидываются здесь,
+# а wiring_collect повторно скрабит title+context перед LLM. Только текст (код+доки).
 _FILES_TEXT_EXT = {
     ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php",
     ".c", ".h", ".hpp", ".cpp", ".cc", ".cs", ".swift", ".m", ".mm", ".scala", ".dart",
@@ -222,6 +225,9 @@ _FILES_SKIP_DIRS = {
     ".git", ".hg", ".svn", "venv", ".venv", "env", "node_modules", "__pycache__",
     ".idea", ".vscode", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next",
     ".cache", "dist", "build", "target", "vendor", "coverage", "htmlcov",
+    # История чатов и бэкапы забивают случайную выборку устаревшими снимками. Если они нужны
+    # как сырьё, их можно указать отдельным корнем: _files_walk не отбрасывает сам root.
+    "handoffs", "backups",
 }
 _FILES_SECRET_EXT = {".env", ".session", ".key", ".pem", ".pfx", ".p12", ".crt",
                      ".cer", ".keystore", ".jks", ".ppk"}
@@ -229,6 +235,10 @@ _FILES_SECRET_HINTS = ("secret", "password", "credential", "token", "apikey",
                        "api_key", "id_rsa", ".htpasswd")
 _FILES_MAX_BYTES = 256 * 1024   # крупные файлы не тянем (заголовок всё равно берём из «шапки»)
 _FILES_HEAD_BYTES = 4096        # хватает на первую содержательную строку
+_FILES_CONTEXT_BYTES = 16 * 1024  # читаем только начало: докстринг, контракты, первые функции
+_FILES_CONTEXT_CHARS = 700      # один файл не может захватить весь промпт
+_FILES_CONTEXT_LINES = 12       # разнообразие сигналов важнее длинного куска одной функции
+_FILES_MAX_ITEMS = 48           # 48×700 ≈ 34k символов контекста — безопасный потолок прогона
 _FILES_MAX_SCAN = 20000         # предохранитель: осматриваем не больше стольких файлов за прогон —
                                 # ошибочно заданный диск-корень («M:/») не заставит обойти весь диск
                                 # и подвесить тик автосбора (реальному проекту 20k файлов с запасом)
@@ -291,6 +301,56 @@ def _files_headline(path):
     return ""
 
 
+def _files_context(path, headline=""):
+    """Короткий безопасный фрагмент файла для генератора идей.
+
+    Берём несколько первых содержательных строк, но выкидываем импортный шум, одиночные
+    скобки/разделители и строки с признаками секретов. Это не полный code review: контекст
+    лишь даёт модели факты о назначении, контрактах, TODO и первых функциях файла.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(_FILES_CONTEXT_BYTES)
+    except OSError:
+        return ""
+
+    headline_norm = re.sub(r"\s+", " ", str(headline or "")).strip().casefold()
+    lines, seen = [], set()
+    total = 0
+    for raw in head.decode("utf-8-sig", errors="replace").splitlines():
+        s = raw.strip().lstrip("﻿").strip()
+        if not s or _FILES_SECRET_LINE.search(s):
+            continue
+        low = s.casefold()
+        if (
+            low.startswith(("#!", "<?xml", "<!doctype", "import ", "from ", "package ", "use ", "#include", "using "))
+            or (low.startswith("#") and ("-*-" in low or "coding:" in low or "coding=" in low))
+        ):
+            continue
+        # Снимаем только декоративные обёртки. Сам код/сигнатуры оставляем: они и есть факты.
+        clean = s.strip('"').strip("'").strip("`").strip()
+        clean = re.sub(r"\s+", " ", clean)
+        if not clean or clean in {"{", "}", "[", "]", "(", ")", ");", "};", "---", "***"}:
+            continue
+        # Первая смысловая строка уже есть в title — не тратим на неё второй раз бюджет.
+        comparable = clean.lstrip("#/*-;%=<>! \t").strip().casefold()
+        if headline_norm and comparable == headline_norm:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        room = _FILES_CONTEXT_CHARS - total
+        if room <= 0:
+            break
+        piece = clean[: min(220, room)]
+        lines.append(piece)
+        total += len(piece) + (3 if len(lines) > 1 else 0)
+        if len(lines) >= _FILES_CONTEXT_LINES:
+            break
+    return " | ".join(lines)[:_FILES_CONTEXT_CHARS]
+
+
 def _files_is_candidate(path):
     """Файл годится как текстовое сырьё: имя не секрет, текстовое расширение, в пределах размера.
     ЕДИНЫЙ фильтр для _files (реальный сбор) и probe_paths (счётчик пульта) — одна правда, без
@@ -316,7 +376,7 @@ def _files_walk(root):
             yield (os.path.join(dirpath, fn), root)
 
 
-def _files_item_id(path, base, headline):
+def _files_item_id(path, base, headline, context=""):
     """Непрозрачный v2-id файла для seen_items.
 
     Внутри одного корня различаем ОТНОСИТЕЛЬНЫЙ путь, поэтому main.py из двух
@@ -332,7 +392,9 @@ def _files_item_id(path, base, headline):
     else:
         rel = norm_path.rsplit("/", 1)[-1]
     root_label = norm_base.rsplit("/", 1)[-1] if norm_base else ""
-    identity = f"{root_label}/{rel}\n{headline or ''}".casefold()
+    # Контекст входит в ID: изменение кода ниже неизменной первой строки должно снова стать
+    # «свежим» сырьём. Иначе seen_items навсегда скрывал бы доработанный файл от саморефлексии.
+    identity = f"{root_label}/{rel}\n{headline or ''}\n{context or ''}".casefold()
     return "f2:" + hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
 
 
@@ -359,16 +421,22 @@ def _files(n, timeout, env):
                 found.append((p, base))
     if not found:
         raise ValueError("files: no readable text files in configured folders")
-    # папка шире бюджета n -> случайная выборка (ротация, как у telegram): за разные прогоны
-    # смотрим разные файлы, а не всегда первые n
-    if len(found) > n:
-        found = random.sample(found, n)
+    # Папка шире бюджета -> случайная выборка (ротация, как у telegram): за разные прогоны
+    # смотрим разные файлы. Отдельный потолок не даёт source_n=300 превратить контекст файлов
+    # в стотысячный промпт.
+    take_n = min(max(1, int(n)), _FILES_MAX_ITEMS)
+    if len(found) > take_n:
+        found = random.sample(found, take_n)
     items = []
     for p, base in found:
         rel = os.path.relpath(p, base) if base else os.path.basename(p)
         headline = _files_headline(p)
         title = (f"{rel} — {headline}" if headline else rel)[:200]
-        items.append({"title": title, "url": "", "id": _files_item_id(p, base, headline)})
+        context = _files_context(p, headline)
+        item = {"title": title, "url": "", "id": _files_item_id(p, base, headline, context)}
+        if context:
+            item["context"] = context
+        items.append(item)
     return items
 
 
