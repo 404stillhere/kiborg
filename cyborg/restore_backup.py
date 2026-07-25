@@ -146,7 +146,11 @@ def _interactive():
         print(f"нужно число (1..{len(names)})")
         return
     name = names[idx - 1]
-    confirm = input(f"перезаписать ТЕКУЩИЕ state.json/seen_items.json из {name}? [y/N]: ").strip().lower()
+    try:
+        confirm = input(f"перезаписать ТЕКУЩИЕ state.json/seen_items.json из {name}? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\nотмена")
+        return
     if confirm != "y":
         print("отмена")
         return
