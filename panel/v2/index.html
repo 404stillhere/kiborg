@@ -6,6 +6,14 @@
 <title>kiborg — пульт</title>
 <meta name="description" content="Пульт автономного агента kiborg — живой статус, идеи, источники">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<script>
+  /* Ставим сохранённую тему до первого кадра, чтобы тёмный Aether не мигал бумагой. */
+  (() => {
+    const saved = localStorage.getItem('kiborg-theme');
+    const theme = ['risograph', 'industrial', 'aether'].includes(saved) ? saved : 'risograph';
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -551,11 +559,37 @@
     </section>
 
     <!-- Оформление -->
-    <section class="settings-section">
-      <div class="settings-section-title">Оформление</div>
-      <div class="settings-row">
-        <span class="settings-label">Тема: <strong id="theme-name">Risograph</strong></span>
-        <div class="toggle on" data-toggle="theme"></div>
+    <section class="settings-section settings-theme-section">
+      <div class="settings-section-title">
+        <span>Оформление</span>
+        <span class="theme-current">сейчас · <strong id="theme-name">Risograph</strong></span>
+      </div>
+      <div class="theme-picker" role="group" aria-label="Тема интерфейса">
+        <button class="theme-option" type="button" data-theme-value="risograph" aria-pressed="true">
+          <span class="theme-preview preview-risograph" aria-hidden="true"></span>
+          <span class="theme-copy">
+            <strong>Risograph</strong>
+            <small>бумага и краска</small>
+          </span>
+          <span class="theme-check" aria-hidden="true">✓</span>
+        </button>
+        <button class="theme-option" type="button" data-theme-value="industrial" aria-pressed="false">
+          <span class="theme-preview preview-industrial" aria-hidden="true"></span>
+          <span class="theme-copy">
+            <strong>Industrial</strong>
+            <small>цех и терминал</small>
+          </span>
+          <span class="theme-check" aria-hidden="true">✓</span>
+        </button>
+        <button class="theme-option" type="button" data-theme-value="aether" aria-pressed="false">
+          <span class="theme-preview preview-aether" aria-hidden="true"></span>
+          <span class="theme-copy">
+            <strong>Aether</strong>
+            <small>нейронная ночь</small>
+          </span>
+          <span class="theme-new">новая</span>
+          <span class="theme-check" aria-hidden="true">✓</span>
+        </button>
       </div>
     </section>
 

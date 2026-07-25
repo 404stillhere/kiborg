@@ -21,6 +21,23 @@
 
 'use strict';
 
+const THEMES = Object.freeze({
+  risograph: { name: 'Risograph' },
+  industrial: { name: 'Industrial' },
+  aether: { name: 'Aether' },
+});
+
+function normalizeTheme(theme) {
+  return Object.prototype.hasOwnProperty.call(THEMES, theme) ? theme : 'risograph';
+}
+
+function applyTheme(theme) {
+  const next = normalizeTheme(theme);
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('kiborg-theme', next);
+  return next;
+}
+
 /* ────────────────────────────────────────────────────────────────────────
    1. API — тонкий клиент к серверу. AbortController на каждом запросе —
       чтобы смена вкладки/прогон не копила висящие fetch'и.
@@ -1093,11 +1110,13 @@ class UIController {
     const body = Renderer.$('#settings-body');
     if (body) {
       body.addEventListener('click', (e) => {
+        const theme = e.target.closest('.theme-option[data-theme-value]');
         const tgl = e.target.closest('.toggle');
         const chk = e.target.closest('.check');
         const rm = e.target.closest('.list-item-rm');
         const addBtn = e.target.closest('.list-add-row .btn-mini');
-        if (tgl) this._onSettingsToggle(tgl);
+        if (theme) this._setTheme(theme.dataset.themeValue);
+        else if (tgl) this._onSettingsToggle(tgl);
         else if (chk) this._onCouncilToggle(chk);
         else if (rm) this._onRemoveListItem(rm);
         else if (addBtn) this._onAddFolder(addBtn);
@@ -1132,16 +1151,6 @@ class UIController {
         }
         this._refreshSoon();
       });
-    } else if (what === 'theme') {
-      const cur = document.documentElement.getAttribute('data-theme') || 'risograph';
-      const next = cur === 'risograph' ? 'industrial' : 'risograph';
-      // Сохраняем и применяем
-      localStorage.setItem('kiborg-theme', next);
-      document.documentElement.setAttribute('data-theme', next);
-      tgl.classList.toggle('on', next === 'risograph');
-      const nm = Renderer.$('#theme-name');
-      if (nm) nm.textContent = next === 'risograph' ? 'Risograph' : 'Industrial';
-      this.toasts.show('Тема: ' + (next === 'risograph' ? 'Risograph' : 'Industrial'), 'success');
     } else if (what === 'feed') {
       // какой фид переключили — найдём по пути в DOM
       const row = tgl.closest('.list-item');
@@ -1189,6 +1198,24 @@ class UIController {
         });
       }
     }
+  }
+
+  _setTheme(theme) {
+    const next = applyTheme(theme);
+    this._syncThemePicker(Renderer.$('#settings-body'));
+    this.toasts.show('Тема: ' + THEMES[next].name, 'success');
+  }
+
+  _syncThemePicker(root) {
+    if (!root) return;
+    const current = normalizeTheme(document.documentElement.getAttribute('data-theme'));
+    Renderer.$$('.theme-option[data-theme-value]', root).forEach(option => {
+      const active = option.dataset.themeValue === current;
+      option.classList.toggle('active', active);
+      option.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const name = root.querySelector('#theme-name');
+    if (name) name.textContent = THEMES[current].name;
   }
 
   _onCouncilToggle(chk) {
@@ -1403,13 +1430,14 @@ class UIController {
   }
 
   _renderSettingsLists() {
+    const body = Renderer.$('#settings-body');
+    if (!body) return;
+    this._syncThemePicker(body);
     const S = this.state.data;
     if (!S) return;
     // Папки
     const folderHost = Renderer.$('#settings-body .settings-section:nth-of-type(2) .list-item');
     // Простой подход: перерисуем секции папок/лент/совета из state
-    const body = Renderer.$('#settings-body');
-    if (!body) return;
     // Папки
     const foldersSection = this._findSection(body, 'Папки');
     if (foldersSection) this._renderFoldersList(foldersSection, S.folders);
@@ -1420,15 +1448,6 @@ class UIController {
     const councilSection = this._findSection(body, 'совет');
     if (councilSection) this._renderCouncilList(councilSection, S.council);
 
-    // Синхронизация тумблера темы с текущей темой.
-    // Условный язык: on = risograph (по умолчанию), off = industrial.
-    const themeToggle = body.querySelector('.toggle[data-toggle="theme"]');
-    if (themeToggle) {
-      const cur = document.documentElement.getAttribute('data-theme') || 'risograph';
-      themeToggle.classList.toggle('on', cur === 'risograph');
-      const nm = body.querySelector('#theme-name');
-      if (nm) nm.textContent = cur === 'risograph' ? 'Risograph' : 'Industrial';
-    }
   }
 
   _findSection(body, titleSub) {
@@ -2002,9 +2021,8 @@ function __initKiborgPanel() {
     const demoToasts = Renderer.$$('#toasts .toast');
     demoToasts.forEach(t => t.remove());
 
-    // Применяем сохранённую тему (по умолчанию — risograph)
-    const savedTheme = localStorage.getItem('kiborg-theme') || 'risograph';
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    // Применяем сохранённую тему (по умолчанию — risograph).
+    applyTheme(localStorage.getItem('kiborg-theme') || 'risograph');
 
     const renderer = new Renderer(state, knight);
     const ui = new UIController(state, api, knight, toasts);
