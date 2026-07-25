@@ -67,6 +67,17 @@ class TestHarvestGate(unittest.TestCase):
         finally:
             harvest.direction.current = orig
 
+    def test_source_env_caps_github_enrichment_for_minimum_auto_interval(self):
+        orig_feeds, orig_folders = harvest.feeds.enabled, harvest.folders.current
+        harvest.feeds.enabled = lambda: ["gh_trending"]
+        harvest.folders.current = lambda: []
+        try:
+            env = harvest._source_env()
+            self.assertTrue(env["gh_enrich"])
+            self.assertEqual(env["gh_enrich_limit"], 5)
+        finally:
+            harvest.feeds.enabled, harvest.folders.current = orig_feeds, orig_folders
+
     def test_source_env_carries_files_paths_when_folders_set(self):
         # заданы папки -> источник-файлы получает их через env ОБЕИХ кнопок (_source_env),
         # и 'files' попадает в список активных источников
@@ -290,7 +301,11 @@ class TestDegradeNote(unittest.TestCase):
         self.assertEqual(harvest._degrade_note({"degraded": False, "dropped_stub": 0}), "")
 
     def test_degraded_source(self):
-        self.assertEqual(harvest._degrade_note({"degraded": True}), "источник в фолбэке")
+        self.assertEqual(harvest._degrade_note({"degraded": True}), "источники недоступны — идей нет")
+
+    def test_sources_explicitly_disabled_not_reported_as_network_failure(self):
+        note = harvest._degrade_note({"degraded": True, "degraded_reason": "нет источников: всё выключено"})
+        self.assertEqual(note, "источники выключены — идей нет")
 
     def test_dropped_stub(self):
         self.assertEqual(harvest._degrade_note({"dropped_stub": 3}), "stub-отсеяно=3")
@@ -309,13 +324,13 @@ class TestDegradeNote(unittest.TestCase):
 
     def test_both_flags(self):
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2})
-        self.assertIn("источник в фолбэке", note)
+        self.assertIn("источники недоступны — идей нет", note)
         self.assertIn("stub-отсеяно=2", note)
 
     def test_all_three_flags(self):
         # все три сигнала деградации в одной строке, разделены · (provider не передан → нет флага модели)
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2, "dropped_dup": 1})
-        self.assertEqual(note, "источник в фолбэке · stub-отсеяно=2 · дубликатов=1")
+        self.assertEqual(note, "источники недоступны — идей нет · stub-отсеяно=2 · дубликатов=1")
 
     def test_provider_flagged_always(self):
         # реш. юзера 2026-07-21: провайдер генератора светится ВСЕГДА (id модели, что ответила),
@@ -331,7 +346,7 @@ class TestDegradeNote(unittest.TestCase):
     def test_provider_with_other_flags(self):
         # модель встаёт в общую строку деградации рядом с источником/дубликатами
         note = harvest._degrade_note({"degraded": True, "provider": "deepseek", "dropped_dup": 1})
-        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · модель=deepseek")
+        self.assertEqual(note, "источники недоступны — идей нет · дубликатов=1 · модель=deepseek")
 
 
 class TestHarvestRunnerGracefulShutdown(unittest.TestCase):

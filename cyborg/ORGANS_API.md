@@ -73,14 +73,14 @@ def run(inputs: dict, env: dict) -> dict:
 - `sources` (list[str]) — активные источники. **Пустой список = нет источников** (не дефолт hn).
 - `timeout` (default 8) — таймаут фетча на источник.
 - keyed/конфиг-источники: `telegram_channels`, `telegram_api_id`, `telegram_api_hash`,
-  `telegram_session`, `telegram_python`, `telegram_timeout`, `files_paths`.
+  `telegram_session`, `telegram_python`, `telegram_timeout`, `files_paths`, `gh_enrich_limit`.
 
 **outputs:**
 ```python
 {
   "items": [{"title": str, "url": str, "id": str, "source": str}, ...],
   "source": str,           # label источника (для/logs)
-  "degraded": bool,        # True если все упали / фолбэк на хардкод-заголовки
+  "degraded": bool,        # True если все упали / сырья нет
   "degraded_reason": str,  # опц. — почему деградировал
   "partial_errors": [str], # опц. — упавшие источники ("name: error")
 }

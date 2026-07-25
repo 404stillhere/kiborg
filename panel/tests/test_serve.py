@@ -510,6 +510,8 @@ class TestHealth(unittest.TestCase):
         self._orig_state = serve.config.IE_STATE_JSON
         self._orig_cyborg = serve.CYBORG  # _read_source_status читает {CYBORG}/data/source_status.json
         self._orig_recent = serve.lock_monitor.recent_timeouts
+        self._orig_feeds_enabled = serve.feeds.enabled
+        self._orig_folders_current = serve.folders.current
         self.tmp = tempfile.mkdtemp(prefix="serve_h_")
         serve.CYBORG = self.tmp
         os.makedirs(os.path.join(self.tmp, "data"), exist_ok=True)
@@ -521,12 +523,16 @@ class TestHealth(unittest.TestCase):
         serve.ask_llm.available = lambda: True
         # По умолчанию таймаутов state_lock не было — пульт должен показывать 0.
         serve.lock_monitor.recent_timeouts = lambda minutes=60: 0
+        serve.feeds.enabled = lambda: ["telegram", "reddit"]
+        serve.folders.current = lambda: []
 
     def tearDown(self):
         serve.ask_llm.available = self._orig_avail
         serve.config.IE_STATE_JSON = self._orig_state
         serve.CYBORG = self._orig_cyborg
         serve.lock_monitor.recent_timeouts = self._orig_recent
+        serve.feeds.enabled = self._orig_feeds_enabled
+        serve.folders.current = self._orig_folders_current
 
     def _write_source_status(self, sources_dict):
         """Положить source_status.json в {CYBORG}/data/ для теста источников."""
@@ -568,6 +574,20 @@ class TestHealth(unittest.TestCase):
         self.assertFalse(h["ok"])
         self.assertIn("reddit", h["sources"]["down"])
         self.assertNotIn("telegram", h["sources"]["down"])
+
+    def test_disabled_source_error_does_not_make_health_red(self):
+        # source_status хранит прошлый обход. После выключения ленты её старая ошибка
+        # остаётся в файле, но не должна делать /api/health красным.
+        serve.feeds.enabled = lambda: ["hn"]
+        self._write_source_status(
+            {
+                "hn": {"ok": True, "error": None},
+                "reddit": {"ok": False, "error": "HTTP Error 403: Blocked"},
+            }
+        )
+        h = serve._health()
+        self.assertTrue(h["ok"])
+        self.assertEqual(h["sources"]["down"], [])
 
     def test_no_source_status_file_is_ok(self):
         # Нет source_status.json (ещё не гоняли) → sources.down пуст, ok=True (если LLM+state ок)

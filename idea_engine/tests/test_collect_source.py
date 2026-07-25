@@ -1,8 +1,8 @@
 """Тест collect_source: честный degrade без ложного ключа 'error'.
 
-При обрыве сети орган отдаёт фолбэк-сэмпл и помечает degraded=True + degraded_reason — но НЕ
-'error' (ключ 'error' в контракте киборга = «орган упал, переизбрать/заблокировать»; здесь орган
-УСПЕШНО отдал сырьё через резерв, блокировать его нельзя).
+При обрыве сети орган отдаёт пустой список и помечает degraded=True + degraded_reason — но НЕ
+'error' (ключ 'error' в контракте киборга = «орган упал, переизбрать/заблокировать»; здесь
+достаточно честно остановить генерацию и повторить сбор на следующем тике).
 """
 
 import json
@@ -25,13 +25,13 @@ class TestCollectSource(unittest.TestCase):
     def tearDown(self):
         collect_source.urllib.request.urlopen = self._orig
 
-    def test_degrade_on_network_fail_no_false_error(self):
+    def test_degrade_on_network_fail_returns_no_fake_items(self):
         def boom(*a, **k):
             raise OSError("network down")
 
         collect_source.urllib.request.urlopen = boom
         out = collect_source.run({}, {"n": 4, "source": "hn"})
-        self.assertTrue(out["items"])  # резерв отдан
+        self.assertEqual(out["items"], [])  # сырья нет, придумывать его нельзя
         self.assertTrue(out["degraded"])
         self.assertIn("degraded_reason", out)  # причина сохранена для диагностики
         self.assertNotIn("error", out)  # но НЕ ложный 'error' (иначе киборг зря блокирует)
@@ -43,7 +43,7 @@ class TestCollectSource(unittest.TestCase):
 
     def test_empty_sources_collects_nothing_not_hn(self):
         # D7 (аудит 2026-07-17): все ленты выключены + папок нет → sources=[] (ЯВНО пусто).
-        # Орган НЕ дефолтит на hn и НЕ выдаёт _FALLBACK — честно пусто + degraded, пульт предупредит.
+        # Орган НЕ дефолтит на hn — честно пусто + degraded, пульт предупредит.
         def boom(*a, **k):
             raise AssertionError("не должен ходить в сеть при пустом списке источников")
 
@@ -232,6 +232,39 @@ class TestNewSources(unittest.TestCase):
         self.assertIn("octocat/hello-world — A real project that does things", titles)
         self.assertIn("foo/bar", titles)
 
+    def test_gh_trending_enrich_limit_bounds_api_calls(self):
+        html = "".join(f'<h2 class="lh-condensed"><a href="/org/repo{n}">org / repo{n}</a></h2>' for n in range(3))
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return html.encode("utf-8")
+
+        calls = []
+        collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
+
+        def fake_get(url_or_req, timeout):
+            calls.append(url_or_req)
+            return {"description": "useful description"}
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 3, "source": "gh_trending", "gh_enrich": True, "gh_enrich_limit": 2})
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(
+            [it["title"] for it in out["items"][:2]],
+            [
+                "org/repo0 — useful description",
+                "org/repo1 — useful description",
+            ],
+        )
+        self.assertEqual(out["items"][2]["title"], "org/repo2")
+
     def test_gh_trending_enrich_failure_falls_back_to_plain(self):
         # при лимите/сбое API обогащения — карточка остаётся «owner/repo» (degrade, не краш)
         html = '<h2 class="lh-condensed"><a href="/octocat/hello-world">octocat / hello-world</a></h2>'
@@ -282,13 +315,13 @@ class TestNewSources(unittest.TestCase):
         self.assertIn("partial_errors", out)
         self.assertTrue(any("lobsters" in e for e in out["partial_errors"]))
 
-    def test_all_sources_down_degrades_with_fallback(self):
+    def test_all_sources_down_degrades_without_fake_items(self):
         def boom(*a, **k):
             raise OSError("network down")
 
         collect_source._get = boom
         out = collect_source.run({}, {"n": 4, "sources": ["reddit", "lobsters"]})
-        self.assertTrue(out["items"])
+        self.assertEqual(out["items"], [])
         self.assertTrue(out["degraded"])
         self.assertIn("degraded_reason", out)
         self.assertNotIn("error", out)
@@ -548,10 +581,23 @@ class TestFilesSource(_TmpDirTest):
         p = self._write("m.py", "#!/usr/bin/env python\nimport os\n# настоящий смысл файла\ncode\n")
         self.assertEqual(collect_source._files_headline(p), "настоящий смысл файла")
 
-    def test_id_is_abspath_for_dedup(self):
-        self._write("a.py", '"""a."""\n')
+    def test_ids_keep_same_basenames_in_different_folders_distinct(self):
+        # Раньше item id был абсолютным путём, а seen_items сворачивал его до basename:
+        # сотни разных main.py из M:/projects считались одним уже виденным файлом.
+        self._write("left/main.py", '"""левая программа."""\n')
+        self._write("right/main.py", '"""правая программа."""\n')
         out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
-        self.assertTrue(all(os.path.isabs(it["id"]) for it in out["items"]))
+        ids = [it["id"] for it in out["items"]]
+        self.assertEqual(len(ids), 2)
+        self.assertEqual(len(set(ids)), 2)
+        self.assertTrue(all(i.startswith("f2:") for i in ids))
+
+    def test_id_stays_stable_after_project_move_but_changes_with_visible_headline(self):
+        old = collect_source._files_item_id("C:/old/kiborg/src/main.py", "C:/old/kiborg", "запуск")
+        moved = collect_source._files_item_id("D:/new/kiborg/src/main.py", "D:/new/kiborg", "запуск")
+        changed = collect_source._files_item_id("D:/new/kiborg/src/main.py", "D:/new/kiborg", "другая суть")
+        self.assertEqual(old, moved)
+        self.assertNotEqual(moved, changed)
 
     def test_single_file_path_allowed(self):
         p = self._write("solo.md", "# соло\nтекст\n")
@@ -564,7 +610,7 @@ class TestFilesSource(_TmpDirTest):
         for i in range(8):
             self._write(f"f{i}.py", f'"""файл {i}."""\n')
         out = collect_source.run({}, {"n": 3, "source": "files", "files_paths": [self.tmp]})
-        self.assertFalse(out["degraded"])  # источник жив (не фолбэк-заглушка)
+        self.assertFalse(out["degraded"])  # источник жив
         self.assertEqual(len(out["items"]), 3)  # 8 файлов -> ровно бюджет n=3
 
     def test_merges_with_keyless_sources(self):

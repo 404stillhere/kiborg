@@ -13,9 +13,10 @@ TTL_DAYS (90) — иначе рос бы без огранички (263 запи
 load() на каждом тике автосбора начал бы тормозить). Страховочный MAX_RECORDS (5000) — если
 TTL не спасёт при массовом притоке, обрежем по самым свежим. Файл атомарен через .tmp+rename.
 
-Стабилизация ключей: files:* хранит ХЕШ basename, а не абсолютный путь (M:\\projects\\kiborg\\
-умирает при переносе проекта → ключ инвалидируется → тот же файл снова «свежий» → двойная
-генерация). basename стабилен при перемещении; хеш — короткий и без спецсимволов в JSON.
+Стабилизация ключей: collect_source выдаёт files:* версионированный `f2:`-id из имени корня,
+относительного пути и видимого заголовка. Он переживает перенос корня, различает одноимённые
+файлы в разных папках и замечает изменение сырья, которое увидит LLM. Старые пути и хеши
+basename изолируются под `legacy-`: потерянный каталог восстановить уже нельзя.
 Для источников со стабильным id (hn/lobsters/gh_trending/reddit) — id как есть, без хеша.
 
 Персист: cyborg/data/seen_items.json.
@@ -34,6 +35,27 @@ TTL_DAYS = 90  # запись старше 90 дней выкидывается 
 MAX_RECORDS = 5000  # жёсткий потолок размера (страховка, если TTL не справится)
 
 
+_FILES_V2_PREFIX = "f2:"
+_FILES_LEGACY_PREFIX = "legacy-"
+_FILES_LEGACY_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+def _legacy_files_token(value):
+    """Старый files-id → отдельное legacy-пространство.
+
+    Прошлая схема сжимала абсолютный путь до basename и уже потеряла каталог.
+    Восстановить эту информацию нельзя; отделяем старые ключи от v2, чтобы они
+    больше не подавляли сотни разных файлов с одним именем.
+    """
+    raw = str(value).replace("\\", "/")
+    basename = raw.rsplit("/", 1)[-1]
+    if _FILES_LEGACY_HASH_RE.match(basename):
+        digest = basename
+    else:
+        digest = hashlib.sha1(basename.encode("utf-8")).hexdigest()[:12]
+    return _FILES_LEGACY_PREFIX + digest
+
+
 def _item_key(it):
     if not isinstance(it, dict):
         return None
@@ -41,17 +63,13 @@ def _item_key(it):
     if iid in (None, ""):
         return None  # без id дедуп невозможен — пропускаем как «всегда свежий», не теряем сырьё
     src = it.get("source", "?")
-    # files: id = абсолютный путь к файлу — НЕстабилен (перенос проекта инвалидирует все ключи
-    # разом → весь архив снова «свежий» → двойная генерация). Хешируем BASENAME (только имя
-    # файла, без каталогов) — стабилен при перемещении проекта. Риск коллизии: два файла с
-    # одинаковым basename в разных папках дадут один ключ — редкий случай для нашей схемы
-    # источников (папки тематические, имена файлов уникальны внутри). Для источников со
-    # стабильным id (hn/lobsters/gh_trending/reddit/telegram) — id как есть, без хеша.
+    # files: v2-id приходит от collect_source как хеш имени корня + относительного пути +
+    # видимого headline. Не сжимаем его до basename: M:/projects содержит сотни main.py,
+    # и старое сжатие теряло до четверти файлов. Старые пути/хеши держим отдельно в legacy,
+    # чтобы новый точный id не наследовал их необратимые коллизии.
     if src == "files":
-        # КРОСС-ПЛАТФОРМЕННАЯ СТАБИЛЬНОСТЬ: см. _normalize_key — Windows-пути с '\\' на Linux
-        # дают другой basename. Нормализуем '\\' → '/' перед basename, чтобы хеш был одинаковый.
-        iid_norm = str(iid).replace("\\", "/")
-        iid = hashlib.sha1(os.path.basename(iid_norm).encode("utf-8")).hexdigest()[:12]
+        raw = str(iid)
+        iid = raw if raw.startswith(_FILES_V2_PREFIX) else _legacy_files_token(raw)
     return f"{src}:{iid}"
 
 
@@ -64,23 +82,12 @@ def _ttl_cutoff():
 
 
 def _normalize_key(k):
-    """Перевести ключ в канонический вид. files:* в старом формате хранил ПОЛНЫЙ путь
-    (files:M:\\projects\\kiborg\\README.md) — нестабильно при переносе проекта. Новый формат
-    хеширует basename. Эту нормализацию надо применить и к СУЩЕСТВУЮЩИМ ключам при миграции
-    (иначе старые files-ключи останутся с путями, а новые будут хеши — два формата в одном
-    файле, дедуп ломается: один и тот же файл = два разных ключа)."""
+    """Перевести старые files-ключи в явное legacy-пространство, v2 не трогать."""
     if isinstance(k, str) and k.startswith("files:"):
-        # вытаскиваем путь после префикса; если это уже хеш (12 hexchar) — оставляем как есть
         rest = k[len("files:") :]
-        if re.match(r"^[0-9a-f]{12}$", rest):
-            return k  # уже нормализован
-        # КРОСС-ПЛАТФОРМЕННАЯ СТАБИЛЬНОСТЬ (баг всплыл на CI 2026-07-21): os.path.basename
-        # на Linux НЕ понимает обратные слеши (считает разделителем только '/') — для путей
-        # с '\\' (Windows-прогон создал ключ) возвращает весь путь целиком, basename не
-        # выделяется → хеш разный между платформами. Нормализуем '\\' → '/' ПЕРЕД basename,
-        # тогда обе платформы дают один и тот же basename и тот же хеш.
-        rest = rest.replace("\\", "/")
-        return "files:" + hashlib.sha1(os.path.basename(rest).encode("utf-8")).hexdigest()[:12]
+        if rest.startswith(_FILES_V2_PREFIX) or rest.startswith(_FILES_LEGACY_PREFIX):
+            return k
+        return "files:" + _legacy_files_token(rest)
     return k
 
 

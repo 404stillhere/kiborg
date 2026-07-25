@@ -1373,7 +1373,7 @@ function renderRuns() {
     let warn = '';
     if (r.degraded) {
       // норм. гигиена памяти (дедуп/stub-фильтр) = не авария → серый «·», без красного ⚠;
-      // настоящий сбой (источник в фолбэке / мозг недоступен) → янтарный ⚠
+      // настоящий сбой (источники недоступны / мозг недоступен) → янтарный ⚠
       const benign = /дубликат|stub/.test(r.degraded) && !/фолбэк|недоступен/.test(r.degraded);
       warn = `<div style="font-size:11px; color:${benign ? 'var(--ink3)' : 'var(--amber)'}; margin-top:2px;">`
            + `${benign ? '·' : '⚠'} ${esc(r.degraded)}</div>`;

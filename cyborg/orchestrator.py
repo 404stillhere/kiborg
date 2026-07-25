@@ -81,6 +81,7 @@ class Cyborg:
             # маркеры нужны логгеру/панели, чтобы юзер не думал, что сломалось, когда
             # просто упала сеть или идеи дубликаты).
             "degraded": bool(mem.data.get("degraded")),
+            "degraded_reason": mem.data.get("degraded_reason") or "",
             "dropped_stub": int(mem.data.get("dropped_stub") or 0),
             "dropped_dup": int(mem.data.get("dropped_dup") or 0),
             # секретов вычищено скрабом из идей перед доставкой (0 = чисто). >0 = АНОМАЛИЯ

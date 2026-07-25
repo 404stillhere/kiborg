@@ -60,7 +60,7 @@ class TestOrchestrator(unittest.TestCase):
         # root #1: degraded из источника выходит В ВЫХЛОП (не тонет в mem.data), а dropped_stub
         # без доставки = 0 (не падает). Так лог/пульт могут показать сбой, а не «доставлено N».
         def src_degraded(inputs, env):
-            return {"items": [1, 2], "degraded": True}
+            return {"items": [1, 2], "degraded": True, "degraded_reason": "no source data"}
 
         organs = [
             Organ(
@@ -83,6 +83,7 @@ class TestOrchestrator(unittest.TestCase):
         ]
         out = Cyborg(organs, max_steps=6).run("приноси свежие идеи", env={})
         self.assertTrue(out["degraded"])
+        self.assertEqual(out["degraded_reason"], "no source data")
         self.assertEqual(out["dropped_stub"], 0)
 
     def test_dropped_dup_surfaces_in_output(self):

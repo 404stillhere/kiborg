@@ -1,8 +1,8 @@
 """Тесты трекера «уже видели» (по ID сырых items, не по тексту сгенерированных идей).
 
-Формат хранения (с 2026-07-21): dict[str, int] (ключ → ts), TTL=90 дней, cap=5000, files:*
-стабилизированы хешем basename. Старые тесты (контракт filter_fresh/mark_seen/count_fresh/load)
-остаются зелёными — формат под капотом, сигнатуры публичных функций не поменялись.
+Формат хранения: dict[str, int] (ключ → ts), TTL=90 дней, cap=5000. Новые files:* несут
+версионированный id относительного пути + видимого заголовка, поэтому разные main.py не
+схлопываются, а изменение сырья замечается. Старые basename-хеши мигрируются в legacy-пространство.
 """
 
 import json
@@ -82,7 +82,7 @@ class TestSeenItems(unittest.TestCase):
         self.assertIn("hn:2", seen_items.load())
         self.assertEqual(seen_items.filter_fresh(items, mark=False), [])  # теперь всё виденное
 
-    # --- новый формат (2026-07-21): dict[str,int], TTL, cap, files-хеш, миграция ---
+    # --- dict[str,int], TTL, cap, files-v2, миграция ---
 
     def test_load_returns_dict_with_ts(self):
         # формат dict[str,int]: ключ → ts последнего видения
@@ -135,29 +135,13 @@ class TestSeenItems(unittest.TestCase):
         finally:
             seen_items.MAX_RECORDS = orig_max
 
-    def test_files_key_is_hashed_basename(self):
-        # files:* — id=абсолютный путь. Ключ должен быть ХЕШОМ basename, а не самим путём
-        # (перенос проекта не должен инвалидировать все files-ключи разом).
-        import hashlib
-
-        key = seen_items._item_key({"source": "files", "id": "M:\\projects\\kiborg\\notes.md"})
-        expected = "files:" + hashlib.sha1(b"notes.md").hexdigest()[:12]
-        self.assertEqual(key, expected)
-        # в ключе нет абсолютного пути (нет M:\, нет слэшей) — структура каталогов не утекает
-        self.assertNotIn("M:", key)
-        self.assertNotIn("\\", key)
-        self.assertNotIn("projects", key)
-
-    def test_files_key_stable_across_path_move(self):
-        # тот же файл, перенесённый в другой каталог (перенос проекта) → Тот ЖЕ ключ:
-        # хеш берётся от basename, а не от полного пути. Раньше (старый формат) перенос
-        # инвалидировал ВСЕ files-ключи разом → весь архив снова становился «свежим».
-        k1 = seen_items._item_key({"source": "files", "id": "C:\\old\\proj\\notes.md"})
-        k2 = seen_items._item_key({"source": "files", "id": "D:\\new\\location\\notes.md"})
-        self.assertEqual(k1, k2)  # один basename → один ключ
-        # а вот разные basename — разные ключи (не коллидируют)
-        k3 = seen_items._item_key({"source": "files", "id": "C:\\old\\proj\\other.md"})
-        self.assertNotEqual(k1, k3)
+    def test_files_v2_key_preserves_distinct_items(self):
+        # Новый id уже не путь и не basename: генератор дал ему уникальную стабильную форму.
+        k1 = seen_items._item_key({"source": "files", "id": "f2:aaa111"})
+        k2 = seen_items._item_key({"source": "files", "id": "f2:bbb222"})
+        self.assertEqual(k1, "files:f2:aaa111")
+        self.assertEqual(k2, "files:f2:bbb222")
+        self.assertNotEqual(k1, k2)
 
     def test_migrate_legacy_list_format(self):
         # старый формат (list[str], до 2026-07-21) должен мигрировать в dict[str,int]
@@ -171,14 +155,12 @@ class TestSeenItems(unittest.TestCase):
             self.assertIsInstance(v, int)
             self.assertGreater(v, 0)
 
-    def test_migrate_normalizes_legacy_files_keys(self):
-        # КРИТИЧНО: старые files:* ключи хранили ПОЛНЫЙ путь (files:M:\\...\\README.md). При
-        # миграции они должны перехешироваться до basename — иначе в файле окажется два
-        # формата одновременно (старые с путём + новые с хешем), и дедуп сломается: тот же
-        # файл даст два разных ключа. Нормализация единая для list и dict исходников.
+    def test_migrate_legacy_files_keys_keeps_them_separate_from_v2(self):
+        # Старые пути и basename-хеши нельзя честно сопоставить с v2 (старый формат потерял
+        # каталог), поэтому сохраняем их отдельно: новые точные ids не наследуют старые коллизии.
         import hashlib
 
-        expected = "files:" + hashlib.sha1(b"README.md").hexdigest()[:12]
+        expected = "files:legacy-" + hashlib.sha1(b"README.md").hexdigest()[:12]
         # list-форма
         with open(seen_items.PATH, "w", encoding="utf-8") as f:
             json.dump(["files:M:\\projects\\kiborg\\README.md"], f)
@@ -186,12 +168,12 @@ class TestSeenItems(unittest.TestCase):
         # dict-форма (тоже может быть с legacy-ключами)
         with open(seen_items.PATH, "w", encoding="utf-8") as f:
             json.dump({"files:C:\\old\\proj\\notes.md": 12345}, f)
-        expected_notes = "files:" + hashlib.sha1(b"notes.md").hexdigest()[:12]
+        expected_notes = "files:legacy-" + hashlib.sha1(b"notes.md").hexdigest()[:12]
         self.assertEqual(set(seen_items.load().keys()), {expected_notes})
-        # уже-нормализованный files-хеш НЕ должен дважды хешироваться (idempotent)
+        # уже мигрированный legacy и новый v2-ключи остаются как есть (idempotent)
         with open(seen_items.PATH, "w", encoding="utf-8") as f:
-            json.dump({expected: 12345}, f)
-        self.assertEqual(set(seen_items.load().keys()), {expected})
+            json.dump({expected: 12345, "files:f2:stable": 12345}, f)
+        self.assertEqual(set(seen_items.load().keys()), {expected, "files:f2:stable"})
 
     def test_migrate_already_new_format_passes_through(self):
         # уже новый формат dict[str,int] проходит как есть

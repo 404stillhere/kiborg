@@ -125,7 +125,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
     def test_files_paths_reach_collect_source(self):
         # РЕГРЕССИЯ 2026-07-15: тот же класс, что telegram — 'files' в sources есть, но files_paths
         # НЕ прокидывался через _run_collect → _files давал «no folders configured», весь прогон
-        # уходил в 4 захардкоженных заголовка (degraded=True), папка юзера НЕ читалась.
+        # честно деградировал в пустое сырьё, а папка юзера НЕ читалась.
         captured = {}
 
         def fake_run(inputs, env):
@@ -136,6 +136,30 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         wiring._run_collect({}, {"n": 30, "sources": ["files"], "files_paths": ["M:/projects/kiborg", "C:/notes"]})
         self.assertEqual(captured["files_paths"], ["M:/projects/kiborg", "C:/notes"])
         self.assertEqual(captured["sources"], ["files"])
+
+    def test_source_quality_flags_reach_collect_source(self):
+        """Ручной run.py не делает gate-prefetch, поэтому флаги качества обязаны пройти
+        через _run_collect сами: иначе фон видит Show HN и GitHub descriptions, а кнопка
+        «Принеси идеи» — только topstories и голые owner/repo."""
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            return {"items": [], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect(
+            {},
+            {
+                "sources": ["hn", "gh_trending"],
+                "hn_show_mix": True,
+                "gh_enrich": True,
+                "gh_enrich_limit": 5,
+            },
+        )
+        self.assertTrue(captured["hn_show_mix"])
+        self.assertTrue(captured["gh_enrich"])
+        self.assertEqual(captured["gh_enrich_limit"], 5)
 
     def test_no_files_paths_when_absent(self):
         # без files_paths в env — не плодим ключ (не None), поведение не-files прогонов не меняем
@@ -270,6 +294,26 @@ class TestRunIdeateFilterSeenItems(unittest.TestCase):
         self.assertEqual(out1["n_in"], 2)  # первый раз — оба новые
         out2 = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
         self.assertEqual(out2["n_in"], 0)  # второй раз — те же items, уже видели
+
+
+class TestRunIdeateDegradedInput(unittest.TestCase):
+    def test_degraded_source_never_reaches_generator(self):
+        def boom(inputs, env):
+            raise AssertionError("generator must not invent ideas without source material")
+
+        orig = wiring.ideate.run
+        wiring.ideate.run = boom
+        try:
+            out = wiring._run_ideate(
+                {"items": [], "degraded": True, "degraded_reason": "hn: network down"},
+                {"content_llm": lambda prompt: "invented idea"},
+            )
+        finally:
+            wiring.ideate.run = orig
+
+        self.assertEqual(out["ideas"], [])
+        self.assertTrue(out["degraded"])
+        self.assertEqual(out["degraded_reason"], "hn: network down")
 
 
 class TestRunIdeateRankForcing(unittest.TestCase):

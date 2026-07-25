@@ -15,10 +15,11 @@ Telegram-каналы ("telegram", см. _telegram) — читается чер�
 (смотрит на них нейтрально, как на чужой проект; секреты и мусорные папки пропускает сам).
 env["source"] — один источник, env["sources"] — список (тогда бюджет env["n"] делится
 между ними и сырьё СМЕШИВАЕТСЯ в одном ответе — межисточниковые дубли режет downstream-
-дедуп в harvest). Неизвестный источник или сетевой сбой -> честный fallback на встроенный
-сэмпл, degraded=True. Один источник упал, но другие дали сырьё -> НЕ degraded (сырьё есть),
+дедуп в harvest). Неизвестный источник или сетевой сбой -> честный пустой список,
+degraded=True. Один источник упал, но другие дали сырьё -> НЕ degraded (сырьё есть),
 но ошибка видна в partial_errors — для диагностики, без блокировки органа.
 """
+import hashlib
 import json
 import os
 import random
@@ -33,14 +34,7 @@ REDDIT_TOP = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
 LOBSTERS_HOT = "https://lobste.rs/hottest.json"
 GH_TRENDING = "https://github.com/trending"
 _UA = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
-
-_FALLBACK = [
-    {"title": "Show HN: local-first sync engine in Rust", "url": "", "id": 0},
-    {"title": "Ask HN: how do you run agents unattended?", "url": "", "id": 0},
-    {"title": "A tiny CRDT in 200 lines", "url": "", "id": 0},
-    {"title": "Building a personal search engine over your notes", "url": "", "id": 0},
-]
-
+_GH_ENRICH_DEFAULT_LIMIT = 5  # GitHub без токена: максимум 60 API-запросов/час
 
 def _get(url_or_req, timeout):
     with urllib.request.urlopen(url_or_req, timeout=timeout) as r:
@@ -129,6 +123,10 @@ def _gh_trending(n, timeout, env):
         html = r.read().decode("utf-8", errors="replace")
     blocks = re.findall(r'<h2[^>]*class="[^"]*lh-condensed[^"]*"[^>]*>(.*?)</h2>', html, re.DOTALL)
     items = []
+    try:
+        enrich_left = max(0, int(env.get("gh_enrich_limit", _GH_ENRICH_DEFAULT_LIMIT)))
+    except (TypeError, ValueError):
+        enrich_left = _GH_ENRICH_DEFAULT_LIMIT
     for b in blocks[:n]:
         m = re.search(r'href="/([^"/?]+)/([^"/?]+)"', b)
         if m:
@@ -137,7 +135,8 @@ def _gh_trending(n, timeout, env):
             # enrich: gh_enrich=True (прод через harvest_env) — тянем description из API. Слепой
             # «owner/repo» как топливо идей слаб: совет не знает что это за репо. Description даёт
             # осмысленный заголовок. Неудача (лимит/сеть) — тихо, fallback на голый owner/repo.
-            if env.get("gh_enrich"):
+            if env.get("gh_enrich") and enrich_left:
+                enrich_left -= 1
                 try:
                     desc = _gh_repo_description(owner, repo, timeout)
                     if desc:
@@ -317,6 +316,26 @@ def _files_walk(root):
             yield (os.path.join(dirpath, fn), root)
 
 
+def _files_item_id(path, base, headline):
+    """Непрозрачный v2-id файла для seen_items.
+
+    Внутри одного корня различаем ОТНОСИТЕЛЬНЫЙ путь, поэтому main.py из двух
+    папок не сливаются. Имя корня + относительный путь переживают перенос самого
+    проекта на другой диск. Видимый headline входит в отпечаток: если именно то
+    сырьё, которое увидит LLM, изменилось, файл честно становится новым.
+    """
+    norm_path = str(path).replace("\\", "/")
+    norm_base = str(base or "").replace("\\", "/").rstrip("/")
+    low_path, low_base = norm_path.casefold(), norm_base.casefold()
+    if low_base and low_path.startswith(low_base + "/"):
+        rel = norm_path[len(norm_base) + 1 :]
+    else:
+        rel = norm_path.rsplit("/", 1)[-1]
+    root_label = norm_base.rsplit("/", 1)[-1] if norm_base else ""
+    identity = f"{root_label}/{rel}\n{headline or ''}".casefold()
+    return "f2:" + hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
+
+
 def _files(n, timeout, env):
     roots = list(env.get("files_paths") or [])
     if not roots:
@@ -349,7 +368,7 @@ def _files(n, timeout, env):
         rel = os.path.relpath(p, base) if base else os.path.basename(p)
         headline = _files_headline(p)
         title = (f"{rel} — {headline}" if headline else rel)[:200]
-        items.append({"title": title, "url": "", "id": os.path.abspath(p)})  # abspath — стабильный id
+        items.append({"title": title, "url": "", "id": _files_item_id(p, base, headline)})
     return items
 
 
@@ -400,8 +419,8 @@ def run(inputs, env):
     timeout = float(env.get("timeout", 8))
     sources = env.get("sources")
     if sources is not None and not sources:
-        # ЯВНО пустой список (все ленты выключены в пульте И папок нет) — НЕ дефолтим на hn и НЕ
-        # выдаём _FALLBACK. Контракт harvest._active_sources: пусто → не собираем, пульт предупреждает.
+        # ЯВНО пустой список (все ленты выключены в пульте И папок нет) — НЕ дефолтим на hn.
+        # Контракт harvest._active_sources: пусто → не собираем, пульт предупреждает.
         # Иначе выключение всех тумблеров молча тащило бы HN, вопреки им (аудит 2026-07-17, D7).
         return {"items": [], "source": "", "degraded": True,
                 "degraded_reason": "нет источников: включи ленту в пульте или добавь папку"}
@@ -426,9 +445,9 @@ def run(inputs, env):
 
     label = "+".join(names)
     if not items:
-        # ни один источник не дал сырья -> честный резерв. degrade — это УСПЕХ с резервом,
-        # а НЕ краш: НЕ ключ "error" (иначе киборг зря пометит источник сдохшим и заблокирует).
-        return {"items": list(_FALLBACK[:n]), "source": label, "degraded": True,
+        # ни один источник не дал сырья -> честно пусто, без подмены демо-заголовками. Это
+        # деградация, но не краш: НЕ ключ "error", чтобы сбор повторился на следующем тике.
+        return {"items": [], "source": label, "degraded": True,
                 "degraded_reason": "; ".join(errors) or "no items"}
 
     out = {"items": items, "source": label, "degraded": False}

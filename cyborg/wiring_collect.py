@@ -92,10 +92,10 @@ def _run_collect(inputs, env):
     if env.get("timeout"):
         e["timeout"] = env["timeout"]
     # keyed/конфиг-источники читают свои данные из env по своим ключам — их тоже надо ПРОКИНУТЬ,
-    # иначе источник в списке sources есть, а данных для него нет → тихо падает в фолбэк/partial_errors.
+    # иначе источник в списке sources есть, а данных для него нет → честно попадает в partial_errors.
     # telegram: креды/каналы. files: files_paths (папки-источник) — БЕЗ него _files даёт «no folders
-    # configured», весь прогон уходит в 4 захардкодированных заголовка и degraded=True, а папка юзера НЕ
-    # читается (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
+    # configured», прогон честно вернёт пустое сырьё и degraded=True, а папка юзера НЕ читается
+    # (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
     for k in (
         "telegram_channels",
         "telegram_api_id",
@@ -104,6 +104,12 @@ def _run_collect(inputs, env):
         "telegram_python",
         "telegram_timeout",
         "files_paths",
+        # Качество публичных лент. harvest_gate передаёт весь env, а ручной run.py идёт
+        # сюда без prefetched_out: без этого явного проброса ручной запуск терял Show HN
+        # и описания GitHub-репозиториев, хотя фон видел их правильно.
+        "hn_show_mix",
+        "gh_enrich",
+        "gh_enrich_limit",
     ):
         if env.get(k) is not None:
             e[k] = env[k]

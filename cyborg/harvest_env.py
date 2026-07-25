@@ -66,11 +66,12 @@ def _source_env():
         "read_min_score": gp["read_min_score"],  # wiring_council._run_readability
         "keep_min_score": gp["keep_min_score"],  # wiring_council._rank_by_council
     }
-    # gh_enrich: для каждого репо из trending тянем description из api.github.com (60 req/h без
-    # токена). Превращает слепой «owner/repo» в осмысленную карточку — совету есть за что
-    # зацепиться. Включаем, только когда gh_trending реально активен (лишние API-запросы ни к чему).
+    # gh_enrich: description из api.github.com превращает слепой «owner/repo» в осмысленную
+    # карточку. Без токена GitHub даёт 60 req/h, а автоцикл разрешён от 5 минут: максимум 5
+    # enrich-вызовов за прогон удерживает потолок. Остальные репо остаются обычными title.
     if "gh_trending" in active:
         env["gh_enrich"] = True
+        env["gh_enrich_limit"] = 5
     # hn_show_mix: половина бюджета HN из showstories (Show HN — реальные проекты), половина из
     # topstories (тренды). Топ HN засорён новостями/некрологами; Show HN — чистое проектное топливо.
     if "hn" in active:

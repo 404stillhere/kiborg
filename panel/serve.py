@@ -384,6 +384,19 @@ def _read_source_status():
         return None
 
 
+def _active_source_names():
+    """Текущий набор источников, включённых пользователем.
+
+    source_status — это снимок прошлого фонового обхода. Тумблер ленты меняется
+    мгновенно, сам файл статуса — только на следующем обходе, поэтому health обязан
+    смотреть на НЫНЕШНИЙ набор, а не ругать выключенный вчера Reddit/Telegram.
+    """
+    active = list(feeds.enabled())
+    if folders.current():
+        active.append("files")
+    return active
+
+
 def _health():
     """Healthcheck для мониторинга/алертинга: статус ключевых компонентов в одном JSON.
 
@@ -400,12 +413,14 @@ def _health():
             json.load(f)
     except Exception as e:
         state_err = str(e)[:200]
-    # Источники: per-source статус из source_status.json (если есть). Упавший = есть error.
+    # Источники: per-source статус из source_status.json (если есть). Упавший = есть error,
+    # но только для ленты, включённой ПРЯМО СЕЙЧАС: файл статуса может помнить старый обход.
     sources = _read_source_status()
     src_down = []
+    active_sources = set(_active_source_names())
     if isinstance(sources, dict):
         for name, st in (sources.get("sources") or {}).items():
-            if isinstance(st, dict) and st.get("error"):
+            if name in active_sources and isinstance(st, dict) and st.get("error"):
                 src_down.append(name)
     ok = bool(llm_ok and state_err is None and not src_down)
     # Таймауты state_lock за последний час (после stale-lock-cleanup это РЕДКОСТЬ —
