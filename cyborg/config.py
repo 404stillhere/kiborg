@@ -247,5 +247,12 @@ PANEL_HEALTH_LOCK_WINDOW_MINUTES = 60
 MAX_FOLDERS = 40
 # Максимальная длина одного пути папки (символов). Длиннее — обрезается.
 MAX_FOLDER_PATH_LEN = 400
+# === РУЛЬ НАПРАВЛЕНИЯ (direction) ===
+# Дефолтный список пресетов тем, когда файла настроек ещё нет.
+DEFAULT_DIRECTION_PRESETS = ["дев-тулзы", "железки", "для родителей", "игры", "здоровье", "бизнес"]
+# Максимальная длина строки темы (символов). Длиннее — обрезается.
+MAX_DIRECTION_THEME_LEN = 120
+# Максимальное число пресетов. Больше — мусор/раздувание списка.
+MAX_DIRECTION_PRESETS = 40
 # Feature-lab статус фич (внутренний). Патчится в тестах: `serve.LAB_ROUTER = tmp`.
 LAB_ROUTER_FILE = os.path.join(PROJECT_ROOT, ".feature-lab", "router.json")

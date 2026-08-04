@@ -10,14 +10,15 @@ current="" (пусто) = БЕЗ направления — генерим ка�
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "direction.json")
 
 # стартовый набор — юзер правит на панели (это лишь дефолт, когда файла ещё нет)
-_DEFAULT_PRESETS = ["дев-тулзы", "железки", "для родителей", "игры", "здоровье", "бизнес"]
-_MAX_LEN = 120  # руль — короткая тема, не полотно
-_MAX_PRESETS = 40  # список кнопок; больше — мусор
+_DEFAULT_PRESETS = list(config.DEFAULT_DIRECTION_PRESETS)
+_MAX_LEN = config.MAX_DIRECTION_THEME_LEN
+_MAX_PRESETS = config.MAX_DIRECTION_PRESETS
 
 
 def _clean(s):
