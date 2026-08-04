@@ -153,7 +153,7 @@ def main(argv):
     if out.get("dropped_dup"):
         print(f"♻️ Отклонено дубликатов: {out['dropped_dup']} (идеи уже были в пуле)", flush=True)
     _log_run(out)
-    print("след прогона ->", os.path.join(DATA, "runs.md"))
+    print("след прогона ->", config.RUNS_MD)
 
 
 if __name__ == "__main__":

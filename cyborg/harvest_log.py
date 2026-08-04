@@ -80,7 +80,7 @@ def _log(goal, out):
     if dn:
         line += f" | ⚠ {dn}"  # деградация видна в истории пульта, не только в консоли
     line += "\n"
-    runs_path = os.path.join(harvest.DATA, "runs.md")
+    runs_path = config.RUNS_MD
     with open(runs_path, "a", encoding="utf-8") as f:
         f.write(harvest.scrub_secrets.scrub_text(line))
     _rotate_if_needed(runs_path)
