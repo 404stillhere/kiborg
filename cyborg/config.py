@@ -277,6 +277,12 @@ AUTO_INTERVAL_DEFAULT_MINUTES = 30
 AUTO_LOOP_SLEEP_SECONDS = 30
 # Окно lock-monitor в /api/health (минуты). Сколько времени считаем "недавними" таймауты state_lock.
 PANEL_HEALTH_LOCK_WINDOW_MINUTES = 60
+# === SEEN ITEMS (дедуп сырых заголовков) ===
+# Время жизни записи "source:id" → unix-ts (дней). Старше — выкидывается при mark_seen/_save.
+SEEN_ITEMS_TTL_DAYS = 90
+# Жёсткий потолок числа записей. Если TTL не справится с массовым притоком, обрезаем по свежим.
+SEEN_ITEMS_MAX_RECORDS = 5000
+
 # === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
 # Максимальное число папок-источников. Больше — мусор/раздувание списка.
 MAX_FOLDERS = 40

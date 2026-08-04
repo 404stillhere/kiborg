@@ -26,13 +26,24 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+# path-bootstrap: seen_items.py импортируется из run.py как скрипт (cyborg/ в path),
+# из тестов как модуль (project-root в path), и из harvest_* подмодулей как сосед.
+# Единый хак: гарантируем, что project-root на пути, чтобы `from cyborg import config` работал.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from cyborg import config
+
+DATA = os.path.join(_HERE, "data")
 PATH = os.path.join(DATA, "seen_items.json")
 
-TTL_DAYS = 90  # запись старше 90 дней выкидывается при ближайшем mark_seen/_save
-MAX_RECORDS = 5000  # жёсткий потолок размера (страховка, если TTL не справится)
+TTL_DAYS = config.SEEN_ITEMS_TTL_DAYS
+MAX_RECORDS = config.SEEN_ITEMS_MAX_RECORDS
 
 
 _FILES_V2_PREFIX = "f2:"
