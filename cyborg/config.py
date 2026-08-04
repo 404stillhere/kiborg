@@ -151,6 +151,9 @@ HTTP_MEDIA_TYPE_JSON = "application/json"
 HTTP_CHARSET_UTF8 = "utf-8"
 HTTP_MEDIA_TYPE_JSON_UTF8 = f"{HTTP_MEDIA_TYPE_JSON}; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8 = f"text/plain; charset={HTTP_CHARSET_UTF8}"
+HTTP_MEDIA_TYPE_TEXT_HTML_UTF8 = f"text/html; charset={HTTP_CHARSET_UTF8}"
+HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8 = f"text/javascript; charset={HTTP_CHARSET_UTF8}"
+HTTP_MEDIA_TYPE_OCTET_STREAM = "application/octet-stream"
 HTTP_CACHE_CONTROL_NO_STORE = "no-store"
 
 # --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------

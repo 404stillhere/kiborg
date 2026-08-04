@@ -652,7 +652,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, f"нет файла: {filename}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
             return
         ctype, _ = mimetypes.guess_type(path)
-        ctype = ctype or "application/octet-stream"
+        ctype = ctype or config.HTTP_MEDIA_TYPE_OCTET_STREAM
         # На этапе активной разработки v2 отдаём всё без кеша: иначе у пользователя
         # залипает старая версия после правок и он видит «декоративные» кнопки,
         # потому что app.js не обновился (баг 2026-07-22).
@@ -681,15 +681,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             try:
                 with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
-                    self._send(200, f.read(), f"text/html; charset={config.HTTP_CHARSET_UTF8}")
+                    self._send(200, f.read(), config.HTTP_MEDIA_TYPE_TEXT_HTML_UTF8)
             except Exception as e:
                 self._send(500, f"index.html не читается: {e}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
         elif self.path == "/bodies.js":
             try:
                 with open(os.path.join(HERE, "bodies.js"), encoding="utf-8") as f:
-                    self._send(200, f.read(), f"text/javascript; charset={config.HTTP_CHARSET_UTF8}")
+                    self._send(200, f.read(), config.HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8)
             except Exception as e:
-                self._send(500, f"// bodies.js: {e}", f"text/javascript; charset={config.HTTP_CHARSET_UTF8}")
+                self._send(500, f"// bodies.js: {e}", config.HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8)
         elif self.path == "/api/state":
             try:
                 self._json(_api_state())
