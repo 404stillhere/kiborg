@@ -9,13 +9,57 @@
 
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 ORACLES_DIR = DATA_DIR / "oracles"
 INBOX_PATH = DATA_DIR / "inbox.md"
 INDEX_PATH = ORACLES_DIR / "index.md"
+
+# План с той же целью/проектом, созданный не позднее этого окна, считается дубликатом.
+DEDUP_WINDOW_HOURS = 24
+
+
+def _slug(text):
+    base = os.path.basename(text) or "oracle"
+    base = re.sub(r"[^\w\-]+", "-", base)
+    base = base.strip("-").lower()
+    return base or "oracle"
+
+
+def _goal_fingerprint(goal):
+    """Нормализованная цель для сравнения: нижний регистр, только буквы/цифры/пробелы."""
+    return re.sub(r"[^\w\s]+", " ", goal.lower()).strip()
+
+
+def _find_duplicate(slug, goal, since):
+    """Найти существующий план с тем же slug и похожей целью, созданный после since."""
+    plan_dir = ORACLES_DIR / slug
+    if not plan_dir.is_dir():
+        return None
+    goal_fp = _goal_fingerprint(goal)
+    best = None
+    for path in plan_dir.glob("*.md"):
+        if not path.is_file():
+            continue
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime)
+        except OSError:
+            continue
+        if mtime < since:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"\*\*Цель:\*\*\s*(.+?)(?:\r?\n|\r)", text)
+        if not m:
+            continue
+        existing_fp = _goal_fingerprint(m.group(1))
+        if existing_fp == goal_fp:
+            return path
+        # если не точное совпадение — запоминаем самый свежий для возможного перезаписи
+        if best is None or mtime > best[1]:
+            best = (path, mtime)
+    return best[0] if best else None
 
 
 def run(inputs, env):
@@ -36,6 +80,12 @@ def run(inputs, env):
     os.makedirs(DATA_DIR, exist_ok=True)
 
     text = _render_plan(plan, goal, project)
+
+    since = now - timedelta(hours=DEDUP_WINDOW_HOURS)
+    duplicate = _find_duplicate(slug, goal, since)
+    if duplicate:
+        plan_path = duplicate
+
     _atomic_write(plan_path, text)
 
     index_entry = _index_entry(slug, plan, goal, plan_path)
@@ -49,14 +99,8 @@ def run(inputs, env):
         "index_path": str(INDEX_PATH),
         "inbox_card": inbox_ok,
         "slug": slug,
+        "replaced": duplicate is not None,
     }
-
-
-def _slug(text):
-    base = os.path.basename(text) or "oracle"
-    base = re.sub(r"[^\w\-]+", "-", base)
-    base = base.strip("-").lower()
-    return base or "oracle"
 
 
 def _render_plan(plan, goal, project):
