@@ -133,7 +133,7 @@ def main(argv):
                 line += " SKIP:" + t["skipped"]
         print(line)
     r = out["result"]
-    print("РЕЗУЛЬТАТ:", (str(r)[:900] if r is not None else "(нет)"))
+    print("РЕЗУЛЬТАТ:", (str(r)[: config.RUN_RESULT_MAX_CHARS] if r is not None else "(нет)"))
     note = harvest.council_note(out)
     if note:
         print("СОВЕТ НА ОТБОРЕ:", note)

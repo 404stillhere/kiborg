@@ -405,6 +405,8 @@ MIND_EXCEPTION_MAX_CHARS = 80
 # === RUN (run.py) ===
 # Сколько символов ошибки загрузки каталога печатать в режиме ручного прогона.
 RUN_CATALOG_ERROR_MAX_CHARS = 30
+# Сколько символов результата печатать в консоль в режиме ручного прогона.
+RUN_RESULT_MAX_CHARS = 900
 
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
