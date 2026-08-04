@@ -294,6 +294,15 @@ ITEMS_CACHE_TTL_SEC = 30 * 60  # 30 минут — типичный интерв
 # а не прямо вытекающей из заголовка источника.
 PROVENANCE_JACCARD_THRESHOLD = 0.2
 
+# === СОВЕТ НА ОТБОРЕ ИДЕЙ (wiring_council) ===
+# Вес anti-bland: итоговый балл = AVG_WEIGHT × weighted_avg + MAX_WEIGHT × max(advisor scores).
+# Балл важнее, но max-компонент спасает поляризующие идеи.
+COUNCIL_AVG_WEIGHT = 0.7
+COUNCIL_MAX_WEIGHT = 0.3
+# MMR lambda: релевантность = λ × score − (1−λ) × max_sim_to_selected.
+# Балл важнее разнообразия, но diversity имеет голос.
+COUNCIL_MMR_LAMBDA = 0.7
+
 # === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
 # Максимальное число папок-источников. Больше — мусор/раздувание списка.
 MAX_FOLDERS = 40

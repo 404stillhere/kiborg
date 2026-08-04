@@ -53,7 +53,8 @@ def _anti_bland_scores(scores, breakdown):
     """
     if not isinstance(breakdown, list) or not breakdown:
         return scores  # нет breakdown → ничего не пересчитываем (как было)
-    _AVG_W, _MAX_W = 0.7, 0.3  # балл важнее, но max-компонент спасает поляризующие
+    _AVG_W = config.COUNCIL_AVG_WEIGHT  # балл важнее, но max-компонент спасает поляризующие
+    _MAX_W = config.COUNCIL_MAX_WEIGHT
     # собираем валидные голоса советников: [(weight, scores_dict)]
     voices = []
     for entry in breakdown:
@@ -110,7 +111,7 @@ def _mmr_select(candidates, orig, scores, keep):
     """
     from wiring_ideate import _jaccard, _prov_tokens
 
-    _MMR_LAMBDA = 0.7  # 0.7 = балл важнее, но diversity имеет голос (0.3 × max_sim)
+    _MMR_LAMBDA = config.COUNCIL_MMR_LAMBDA  # балл важнее, но diversity имеет голос
     if not candidates:
         return []
     # токены каждой идеи (один проход, не O(n²) парсингов)
