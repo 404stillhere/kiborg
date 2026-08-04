@@ -149,7 +149,7 @@ def _ask_advisor(adv, name, question, opts, context):
     try:
         op = adv.opine(question, opts, context or {})
     except Exception as e:                        # советник упал — воздержание, цикл живёт
-        return None, {"reason_code": "exception", "reason": f"краш: {str(e)[:80]}"}
+        return None, {"reason_code": "exception", "reason": f"краш: {str(e)[: config.MIND_EXCEPTION_MAX_CHARS]}"}
     if not op or not op.get("scores"):
         # opinion вернул None или пустые scores — abstention, но сохраняем reason_code
         code = op.get("reason_code") if isinstance(op, dict) and op.get("reason_code") else "unknown"

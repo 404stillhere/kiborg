@@ -398,6 +398,10 @@ OBSERVE_DEGRADED_MAX_CHARS = 80
 # Сколько символов заголовка item'а печатать в консоль (после scrub_secrets).
 OBSERVE_TITLE_MAX_CHARS = 72
 
+# === MIND (mind.py) ===
+# Сколько символов исключения советника показывать в reason при краше.
+MIND_EXCEPTION_MAX_CHARS = 80
+
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500
