@@ -12,11 +12,11 @@ import os
 
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
 
-# Цепочка ИНТУИЦИИ (ask_llm): id, имя ключа, endpoint (полный chat-completions URL), модель.
-# Реш. юзера 2026-07-20: интуиция — meta/muse-spark-1.1 через closerouter; fallback на deepseek-
-# v4-pro и nvidia nemotron-3-ultra (тоже через closerouter, тот же ключ CLOSEROUTER_API_KEY).
-# Одна цепочка free-first: muse-spark (бесплатный tier) → deepseek-v4-pro → nemotron-3-ultra.
-# Порядок = приоритет. Mistral и все остальные — в СОВЕТ.
+# Цепочка ИНТУИЦИИ (ask_llm) — fallback после z.ai. Основной провайдер z.ai (glm-5.2,
+# Anthropic endpoint) живёт в отдельном модуле zai_ask.py, потому что DarBench/organ.js
+# говорит только OpenAI /chat/completions. Fallback-цепочка здесь — closerouter:
+# muse-spark → deepseek-v4-pro → nemotron-3-ultra. Порядок = приоритет.
+# Mistral и все остальные — в СОВЕТ.
 _CR_URL = "https://api.closerouter.dev/v1/chat/completions"
 _SPEC = [
     ("muse-spark", "CLOSEROUTER_API_KEY", _CR_URL, "meta/muse-spark-1.1"),
