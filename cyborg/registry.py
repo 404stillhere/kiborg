@@ -8,7 +8,9 @@
 
 import json
 
-DEFAULT_CATALOG = "M:/projects/_shared/organs.json"
+import config
+
+DEFAULT_CATALOG = config.ORGANS_CATALOG
 
 
 class OrganCard:

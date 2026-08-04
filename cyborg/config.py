@@ -61,11 +61,11 @@ IE_STATE_JSON = os.path.join(IDEA_ENGINE_DATA_DIR, "state.json")  # Store idea_e
 
 # === ВНЕШНИЕ АРТЕФАКТЫ (только на прод-машине юзера; на CI их нет,代码 ловит исключения) ===
 # Backlog проектов для finish_step «доделай». Читается wiring_finish → finish_step.run(recon_path=...).
-RECON_FILE = os.path.join("M:", "projects", "panelofprojects", "recon.json")
+RECON_FILE = os.path.join("M:/", "projects", "panelofprojects", "recon.json")
 # Каталог органов (89 карточек) — информационный слой для registry/serve. На CI нет.
-ORGANS_CATALOG = os.path.join("M:", "projects", "_shared", "organs.json")
+ORGANS_CATALOG = os.path.join("M:/", "projects", "_shared", "organs.json")
 # Чужой .env darbot — TG_API_ID/TG_API_HASH оттуда (read-only, не трогаем чужой файл).
-DARBOT_ENV = os.path.join("M:", "projects", "darbot", ".env")
+DARBOT_ENV = os.path.join("M:/", "projects", "darbot", ".env")
 # Путь к файлу LLM-ключей по умолчанию (не в repo; должен быть в .gitignore).
 DEFAULT_LLM_KEYS_FILE = os.path.join(PROJECT_ROOT, "llm_keys.env")
 
