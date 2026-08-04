@@ -226,7 +226,7 @@ def _auto_tick():
     st = _load_auto()
     if not st["on"]:
         return False
-    if time.time() - _AUTO["last"] < st["interval_min"] * 60:
+    if time.time() - _AUTO["last"] < st["interval_min"] * config.SECONDS_PER_MINUTE:
         return False
     with _LOCK:
         busy = RUN["running"]
