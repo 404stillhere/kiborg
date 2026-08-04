@@ -370,6 +370,10 @@ NOTIFY_MAX_TITLES = 10
 # Дефолтный таймаут одного варианта при orchestra review (сек).
 ORCHESTRA_TIMEOUT_SEC = 180
 
+# === WIRING_COUNCIL (wiring_council.py) ===
+# Дефолтный таймаут одной идеи при orchestra-голосовании в council (сек).
+WIRING_COUNCIL_ORCHESTRA_TIMEOUT_SEC = 45
+
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500

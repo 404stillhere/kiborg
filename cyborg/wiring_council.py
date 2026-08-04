@@ -331,7 +331,11 @@ def _rank_by_council(inputs, env, keep):
     # кладём в cfg здесь — keychain/advisors их принимают, но сами не трогаются.
     orch = env.get("orchestra")
     if isinstance(orch, dict) and orch.get("models"):
-        orch = {**orch, "max_workers": len(orch["models"]), "timeout_sec": int(env.get("orchestra_timeout_sec", 45))}
+        orch = {
+            **orch,
+            "max_workers": len(orch["models"]),
+            "timeout_sec": int(env.get("orchestra_timeout_sec", config.WIRING_COUNCIL_ORCHESTRA_TIMEOUT_SEC)),
+        }
     context = {
         "content_llm": _content_llm(env),  # оживляет арбитра живой моделью (иначе фолбэк-порядок)
         "llm_chain": env.get("llm_chain"),  # оживляет интуицию (цепочка провайдеров с ключами)
