@@ -100,7 +100,7 @@ def _attach_provenance(ideas, items):
             continue
         # Старый фолбэк теперь знает и короткий context: модель видит оба поля.
         context = str(it.get("context") or "")
-        toks = _prov_tokens(title + " " + context[:500])
+        toks = _prov_tokens(title + " " + context[: config.PROVENANCE_CONTEXT_MAX_CHARS])
         if not toks:
             continue
         pool.append((toks, it))

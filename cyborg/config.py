@@ -370,6 +370,10 @@ NOTIFY_MAX_TITLES = 10
 # Дефолтный таймаут одного варианта при orchestra review (сек).
 ORCHESTRA_TIMEOUT_SEC = 180
 
+# === PROVENANCE (wiring_ideate.py) ===
+# Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
+PROVENANCE_CONTEXT_MAX_CHARS = 500
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90
