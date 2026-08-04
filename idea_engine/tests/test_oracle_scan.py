@@ -71,3 +71,23 @@ def test_extensions_histogram():
     ext = out["project_map"]["extensions"]
     assert ext.get(".py") == 2
     assert ext.get(".md") == 1
+
+
+def test_noise_files_filtered():
+    root = _make_project()
+    # шумовые файлы, которые не должны попасть в карту
+    os.makedirs(os.path.join(root, "data", "oracles"))
+    with open(os.path.join(root, "data", "oracles", "plan.md"), "w", encoding="utf-8") as f:
+        f.write("# plan\n")
+    with open(os.path.join(root, "serve.log"), "w", encoding="utf-8") as f:
+        f.write("log\n")
+    with open(os.path.join(root, "main.py.bak-2026-01-01"), "w", encoding="utf-8") as f:
+        f.write("# TODO: old\n")
+    out = oracle_scan.run({}, {"oracle_project": root})
+    assert out["ok"] is True
+    files = set(out["project_map"]["files"])
+    assert "data/oracles/plan.md" not in files
+    assert "serve.log" not in files
+    assert "main.py.bak-2026-01-01" not in files
+    # TODO из бэкапа не должен попасть в маркеры
+    assert "main.py.bak-2026-01-01" not in out["project_map"]["markers"]

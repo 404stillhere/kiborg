@@ -73,7 +73,7 @@ def test_llm_wrapped_in_markdown():
     )
     out = oracle_plan.run(
         {"project_map": MAP},
-        {"oracle_goal": "x", "llm": lambda p: raw},
+        {"oracle_goal": "add basic auth flow", "llm": lambda p: raw},
     )
     assert out["ok"] is True
     assert out["plan"]["brain"] == "llm"
@@ -102,7 +102,7 @@ def test_missing_file_goes_to_warnings():
     )
     out = oracle_plan.run(
         {"project_map": MAP},
-        {"oracle_goal": "x", "llm": lambda p: raw},
+        {"oracle_goal": "add basic auth flow", "llm": lambda p: raw},
     )
     plan = out["plan"]
     assert "ghost.py" not in plan["steps"][0]["files"]
@@ -132,7 +132,7 @@ def test_invalid_effort_normalized():
     )
     out = oracle_plan.run(
         {"project_map": MAP},
-        {"oracle_goal": "x", "llm": lambda p: raw},
+        {"oracle_goal": "add basic auth flow", "llm": lambda p: raw},
     )
     assert out["plan"]["steps"][0]["effort"] == "M"
 
@@ -140,7 +140,28 @@ def test_invalid_effort_normalized():
 def test_unparseable_llm_falls_to_stub():
     out = oracle_plan.run(
         {"project_map": MAP},
-        {"oracle_goal": "x", "llm": lambda p: "не json"},
+        {"oracle_goal": "add basic auth flow", "llm": lambda p: "не json"},
     )
     assert out["ok"] is True
     assert out["plan"]["brain"] == "stub"
+
+
+def test_rejects_vague_goal():
+    for bad in ("test", "fix bug", "run"):
+        out = oracle_plan.run(
+            {"project_map": MAP},
+            {"oracle_goal": bad, "llm": lambda p: "{}"},
+        )
+        assert out["ok"] is False, f"goal {bad!r} should be rejected"
+        assert "абстрактная" in out["error"] or "короткая" in out["error"]
+
+
+def test_accepts_specific_goal():
+    out = oracle_plan.run(
+        {"project_map": MAP},
+        {
+            "oracle_goal": "добавить авторизацию в API",
+            "llm": lambda p: '{"title":"Auth","summary":"x","steps":[],"risks":[],"warnings":[]}',
+        },
+    )
+    assert out["ok"] is True

@@ -62,3 +62,37 @@ def test_deliver_creates_plan_and_index():
 def test_deliver_missing_plan():
     out = deliver_oracle.run({}, {})
     assert out["ok"] is False
+
+
+def test_deliver_dedups_same_goal_within_window():
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = os.path.join(tmp, "data")
+        os.makedirs(data_dir)
+        orig_data = deliver_oracle.DATA_DIR
+        orig_inbox = deliver_oracle.INBOX_PATH
+        orig_index = deliver_oracle.INDEX_PATH
+        orig_oracles = deliver_oracle.ORACLES_DIR
+        deliver_oracle.DATA_DIR = Path(data_dir)
+        deliver_oracle.INBOX_PATH = Path(data_dir) / "inbox.md"
+        deliver_oracle.INDEX_PATH = Path(data_dir) / "oracles" / "index.md"
+        deliver_oracle.ORACLES_DIR = Path(data_dir) / "oracles"
+        try:
+            out1 = deliver_oracle.run(
+                {"plan": PLAN},
+                {"oracle_project": "M:/projects/note-bot", "oracle_goal": "add Telegram auth"},
+            )
+            plan1 = out1["plan_path"]
+            out2 = deliver_oracle.run(
+                {"plan": PLAN},
+                {"oracle_project": "M:/projects/note-bot", "oracle_goal": "add Telegram auth"},
+            )
+            assert out2["replaced"] is True
+            assert out2["plan_path"] == plan1
+            # новых файлов не появилось
+            plan_dir = Path(plan1).parent
+            assert len(list(plan_dir.glob("*.md"))) == 1
+        finally:
+            deliver_oracle.DATA_DIR = orig_data
+            deliver_oracle.INBOX_PATH = orig_inbox
+            deliver_oracle.INDEX_PATH = orig_index
+            deliver_oracle.ORACLES_DIR = orig_oracles

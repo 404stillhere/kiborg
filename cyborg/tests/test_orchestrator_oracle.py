@@ -19,11 +19,11 @@ def test_oracle_mode_runs_chain():
 
         cy = Cyborg([])
         out = cy.run(
-            "oracle: add auth",
+            "oracle: add basic auth",
             env={
                 "mode": "oracle",
                 "oracle_project": proj,
-                "oracle_goal": "add auth",
+                "oracle_goal": "add basic auth",
             },
         )
         assert out["mode"] == "oracle"
@@ -43,11 +43,11 @@ def test_oracle_mode_ignores_ideas_organs():
         with open(os.path.join(proj, "main.py"), "w", encoding="utf-8") as f:
             f.write("# TODO: x\n")
         out = cy.run(
-            "oracle: fix todo",
+            "oracle: fix todo marker",
             env={
                 "mode": "oracle",
                 "oracle_project": proj,
-                "oracle_goal": "fix todo",
+                "oracle_goal": "fix todo marker",
             },
         )
         assert out["mode"] == "oracle"

@@ -28,7 +28,7 @@ def test_oracle_cli_success():
         os.makedirs(proj)
         with open(os.path.join(proj, "main.py"), "w", encoding="utf-8") as f:
             f.write("print('hello')\n")
-        r = _run(["--project", proj, "--goal", "add auth", "--root", tmp])
+        r = _run(["--project", proj, "--goal", "add basic auth", "--root", tmp])
         assert r.returncode == 0, r.stderr
         assert "План сохранён" in r.stdout, r.stdout
         assert "oracle_scan" in r.stdout
