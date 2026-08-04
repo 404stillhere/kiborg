@@ -437,14 +437,14 @@ def _health():
     ok = bool(llm_ok and state_err is None and not src_down)
     # Таймауты state_lock за последний час (после stale-lock-cleanup это РЕДКОСТЬ —
     # значит живой конкурент реально держал лок >130с). Счётчик per-process in-memory.
-    recent = lock_monitor.recent_timeouts(60)
+    recent = lock_monitor.recent_timeouts(config.PANEL_HEALTH_LOCK_WINDOW_MINUTES)
     return {
         "ok": ok,
         "llm": {"available": llm_ok},
         "state_json": {"ok": state_err is None, "error": state_err},
         "sources": {"down": src_down, "status": sources},
         "last_run": {"rc": RUN.get("rc"), "running": RUN.get("running")},
-        "locks": {"recent_timeouts": recent, "window_minutes": 60},
+        "locks": {"recent_timeouts": recent, "window_minutes": config.PANEL_HEALTH_LOCK_WINDOW_MINUTES},
     }
 
 
