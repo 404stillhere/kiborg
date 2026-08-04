@@ -78,7 +78,7 @@ class RankIdeasAdvisor:
 
     def _load(self):
         if self._run is None:
-            _idea = "M:/projects/kiborg/idea_engine"
+            _idea = config.IDEA_ENGINE_DIR
             if _idea not in sys.path:
                 sys.path.insert(0, _idea)
             from organs import rank_ideas          # noqa
