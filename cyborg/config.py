@@ -312,6 +312,11 @@ OBSERVE_STEP_PAUSE = 0.35
 OBSERVE_SOURCE_N = 6
 OBSERVE_SOURCE_TIMEOUT = 7
 
+# === KEYCHAIN / COUNCIL REVIEWER ===
+# Сокет-таймаут одного OpenAI-совместимого вызова (сек). Эндпоинт, что вообще молчит, падает тут.
+# Slow-loris добивается отдельным wall-clock deadline в make_council_chat.
+KEYCHAIN_OPENAI_CHAT_TIMEOUT = 40
+
 # === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
 # Максимальное число папок-источников. Больше — мусор/раздувание списка.
 MAX_FOLDERS = 40

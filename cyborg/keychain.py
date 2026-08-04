@@ -199,10 +199,10 @@ def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):
     return box.get("r", "")
 
 
-def _openai_chat(url, key, model, system, prompt, timeout=40):
+def _openai_chat(url, key, model, system, prompt, timeout=config.KEYCHAIN_OPENAI_CHAT_TIMEOUT):
     """Один OpenAI-совместимый вызов chat/completions. Текст ответа. Бросает при сбое
     (контракт review_content: chat должен бросать, чтобы рецензент ушёл в фолбэк).
-    timeout=40с — сокет-таймаут (эндпоинт, что вообще молчит, падает тут). Slow-loris (сыплет по
+    timeout — сокет-таймаут (эндпоинт, что вообще молчит, падает тут). Slow-loris (сыплет по
     капле) сокет не ловит — его добивает жёсткий _with_deadline в make_council_chat (2026-07-14)."""
     import json as _json
     import urllib.request
