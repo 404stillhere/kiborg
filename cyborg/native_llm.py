@@ -1,0 +1,75 @@
+"""Нативные OpenAI-совместимые fallback-провайдеры для интуиции.
+
+Пробуем mistral → openrouter → groq (при наличии ключей). Только stdlib (urllib/json).
+Контракт: ask(prompt, timeout_ms=None, max_tokens=8192, temperature=0.9) -> text | "".
+"""
+
+import json
+import os
+import urllib.request
+
+import keychain
+
+_TIMEOUT = int(os.environ.get("KIBORG_NATIVE_LLM_TIMEOUT_MS", "120000"))
+
+# Порядок = приоритет. Только провайдеры, НЕ входящие в closerouter-цепочку.
+_NATIVE_SPEC = [
+    ("mistral", "MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"),
+    ("openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free"),
+    ("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
+]
+
+
+def _api_key(key_name):
+    env = os.environ.get(key_name, "")
+    if env:
+        return env
+    return keychain.load_keys().get(key_name, "")
+
+
+def available():
+    return any(_api_key(spec[1]) for spec in _NATIVE_SPEC)
+
+
+def _call(spec, prompt, timeout_ms, max_tokens, temperature):
+    pid, key_name, url, model = spec
+    key = _api_key(key_name)
+    if not key:
+        return ""
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        return data["choices"][0]["message"]["content"] or ""
+    except Exception:
+        return ""
+
+
+def ask(prompt, timeout_ms=None, max_tokens=8192, temperature=0.9):
+    """Пройти по нативным провайдерам, вернуть первый непустой ответ."""
+    timeout_ms = timeout_ms or _TIMEOUT
+    per_provider_ms = max(5000, timeout_ms // len(_NATIVE_SPEC))
+    for spec in _NATIVE_SPEC:
+        out = _call(spec, prompt, per_provider_ms, max_tokens, temperature)
+        if out:
+            return out
+    return ""
+
+
+if __name__ == "__main__":
+    if not available():
+        print("SMOKE SKIP: нет нативных ключей")
+    else:
+        out = ask('Верни РОВНО одну строку JSON: {"ok":true}')
+        print("SMOKE", "OK" if '"ok"' in out else "FAIL", "|", repr(out[:160]))

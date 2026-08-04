@@ -1,14 +1,14 @@
 """ask_llm — речевой центр генератора идей.
 
-Интуиция сначала пробует z.ai (Anthropic endpoint /api/anthropic/v1/messages,
-модель glm-5.2, ключ ZAI_API_KEY) через лёгкий stdlib-транспорт zai_ask.py. Если
-z.ai недоступен/сбой/нет ключа — падает на DarBench/organ.js-цепочку closerouter
-(muse-spark → deepseek-v4-pro → nemotron-3-ultra), как было раньше.
+Интуиция идёт по трём уровням fallback:
+1. z.ai (Anthropic endpoint /api/anthropic/v1/messages, glm-5.2, ZAI_API_KEY).
+2. Нативные OpenAI-совместимые провайдеры: mistral → openrouter → groq.
+3. DarBench/organ.js-цепочка closerouter (muse-spark → deepseek-v4-pro → nemotron-3-ultra).
 
 Контракт для органов НЕ изменился: env['llm'] = callable(prompt:str) -> str. При любой
-ошибке (нет ключа / сеть / пустой ответ) -> "" -> вызыватель (ideate) честно падает на stub.
+ошибке (нет ключа / сеть / пустой ответ) -> "" -> вызыватель (ideate) честно падает on stub.
 Значение ключа НИКОГДА не логируем и не возвращаем.
-Только stdlib (subprocess/json/urllib) + keychain + zai_ask.
+Только stdlib (subprocess/json/urllib) + keychain + zai_ask + native_llm.
 """
 
 import json
@@ -16,6 +16,7 @@ import os
 import subprocess
 
 import keychain
+import native_llm
 import zai_ask
 
 _NODE_EXE = os.environ.get("KIBORG_NODE_EXE", "node")
@@ -25,7 +26,7 @@ _TIMEOUT_MS = int(os.environ.get("KIBORG_ASK_LLM_TIMEOUT_MS", "120000"))
 # Ярлык для пульта/логов (serve.py, harvest.py, run.py читают ask_llm._MODEL). Реальная
 # модель — первая живая в цепочке; тут статичное человекочитаемое имя провайдера.
 # 2026-08-03: интуиция — z.ai glm-5.2 → closerouter (muse-spark → deepseek-v4-pro → nemotron-3-ultra).
-_MODEL = "zai glm-5.2 → muse→deepseek→nemotron (closerouter)"
+_MODEL = "zai glm-5.2 → mistral/openrouter/groq → closerouter"
 
 # Какой провайдер РЕАЛЬНО ответил в последнем ask() — id из organ.js result.provider
 # или "zai" для z.ai. Диагностика: видно, кто сработал (первичная или фолбэк).
@@ -39,8 +40,8 @@ def _chain():
 
 
 def available():
-    """Жив ли генератор — есть ли ключ z.ai ИЛИ хоть один провайдер fallback-цепочки."""
-    return zai_ask.available() or len(_chain()) > 0
+    """Жив ли генератор — есть ли ключ z.ai / нативный / closerouter."""
+    return zai_ask.available() or native_llm.available() or len(_chain()) > 0
 
 
 def _strip_fence(t):
@@ -100,7 +101,15 @@ def ask(prompt, timeout_ms=None, temperature=0.9):
             return _strip_fence(out)
         last_provider = ""
 
-    # 2. Fallback на closerouter-цепочку.
+    # 2. Нативные OpenAI-совместимые провайдеры (Mistral/OpenRouter/Groq).
+    if native_llm.available():
+        out = native_llm.ask(prompt, timeout_ms=timeout_ms, temperature=temperature)
+        if out:
+            last_provider = "native"
+            return _strip_fence(out)
+        last_provider = ""
+
+    # 3. Fallback на closerouter-цепочку.
     chain = _chain()
     if not chain:
         return ""
