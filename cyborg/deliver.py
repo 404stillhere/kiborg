@@ -12,6 +12,8 @@ import importlib.util
 import os
 import sys
 
+import notify
+
 # idea_engine/ — родственный пакет (store.Store, run._write_inbox). Раньше был захардкожен
 # абсолютным Windows-путём (M:/projects/kiborg/idea_engine) — ломал CI на Linux. Относительно
 # __file__: cyborg/../idea_engine. Прод-машину не ломаем: на ней этот путь resolving'ся в тот же файл.
@@ -76,6 +78,9 @@ def run(inputs, env):
                 dropped_dup += 1  # идея отклонена как дубликат
         store.save()
         ie._write_inbox(store)
+    if added > 0:
+        titles = [str(i.get("title", "(без названия)")) for i in ideas if isinstance(i, dict)]
+        notify.notify_delivered(added, titles[:added])
     return {
         "delivered": added,
         "inbox": ie.INBOX,
