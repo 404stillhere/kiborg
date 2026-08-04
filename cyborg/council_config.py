@@ -14,12 +14,13 @@
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "council.json")
 
-ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
-DEFAULT_ENABLED = ["rank_ideas", "ask_llm", "orchestra"]
+ALL_ADVISORS = list(config.ALL_ADVISORS)
+DEFAULT_ENABLED = list(config.DEFAULT_ADVISORS_ENABLED)
 
 
 def load():

@@ -82,6 +82,12 @@ DEFAULT_PROJECTS_ROOT = os.path.join("M:/", "projects")
 # Больше и разнообразнее сырья для ideate, глубже churn для гейта. Режим «максимум качества».
 SOURCE_N = 105
 
+# === СОВЕТ СОВЕТНИКОВ (council_config) ===
+# Доступные советники при отборе идей. Порядок важен для фильтрации "unknown" в save().
+ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
+# Какие советники включены по умолчанию (когда файла настроек ещё нет).
+DEFAULT_ADVISORS_ENABLED = ["rank_ideas", "ask_llm", "orchestra"]
+
 # === ПАРАМЕТРЫ ГЕНЕРАЦИИ ИДЕЙ (genparams) ===
 # Дефолтные значения, которые юзер может переопределить в пульте. Централизовано,
 # чтобы не дублировать литералы в genparams.py, wiring_ideate.py, wiring_council.py.
