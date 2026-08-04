@@ -94,7 +94,7 @@ def _source_env():
             env["telegram_api_id"] = api_id
             env["telegram_api_hash"] = api_hash
             env["telegram_session"] = harvest._KIBORG_TG_SESSION
-            env["telegram_timeout"] = 90  # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
+            env["telegram_timeout"] = config.TELEGRAM_FETCH_TIMEOUT  # 21 канал × 5 постов — глубже фетч, шире таймаут
     if harvest.ask_llm.available():
         env["content_llm"] = harvest.ask_llm.ask
     d = harvest.direction.current()

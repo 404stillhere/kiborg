@@ -317,6 +317,10 @@ OBSERVE_SOURCE_TIMEOUT = 7
 # Slow-loris добивается отдельным wall-clock deadline в make_council_chat.
 KEYCHAIN_OPENAI_CHAT_TIMEOUT = 40
 
+# === TELEGRAM-ФЕТЧ (collect_tg_news) ===
+# Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
+TELEGRAM_FETCH_TIMEOUT = 90
+
 # === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
 # Максимальное число папок-источников. Больше — мусор/раздувание списка.
 MAX_FOLDERS = 40
