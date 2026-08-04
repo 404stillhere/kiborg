@@ -168,7 +168,9 @@ _COUNCIL_SPEC = {
 _COUNCIL_DISABLED = {"cerebras", "gemini"}
 
 
-_COUNCIL_DEADLINE = int(os.environ.get("KIBORG_COUNCIL_DEADLINE", "50"))  # wall-clock потолок на один вызов рецензента
+_COUNCIL_DEADLINE = int(
+    os.environ.get(config.COUNCIL_DEADLINE_ENV, "50")
+)  # wall-clock потолок на один вызов рецензента
 
 
 def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):

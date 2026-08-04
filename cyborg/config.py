@@ -141,6 +141,7 @@ ALERT_TOKEN_ENV = "KIBORG_ALERT_TOKEN"
 ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
 NOTIFY_TOKEN_ENV = "KIBORG_NOTIFY_TOKEN"
 NOTIFY_CHAT_ENV = "KIBORG_NOTIFY_CHAT_ID"
+COUNCIL_DEADLINE_ENV = "KIBORG_COUNCIL_DEADLINE"
 
 # === АЛЕРТИНГ (опциональный, через Telegram Bot API) ===
 # Если при прогоне случился семантический сбой (out['brain_down'] / много dropped_stub),
