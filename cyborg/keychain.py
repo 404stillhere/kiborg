@@ -148,11 +148,7 @@ def available(path=None):
 _COUNCIL_SPEC = {
     "sambanova": config.LLM_PROVIDER_SAMBANOVA,
     "groq": config.LLM_PROVIDER_GROQ,
-    "gemini": (
-        "GEMINI_API_KEY",
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-        "gemini-2.5-flash",
-    ),
+    "gemini": config.LLM_PROVIDER_GEMINI,
     "mistral": config.LLM_PROVIDER_MISTRAL,
     "openrouter": config.LLM_PROVIDER_OPENROUTER,
     "cohere": config.LLM_PROVIDER_COHERE,

@@ -269,6 +269,12 @@ LLM_PROVIDER_NVIDIA = (
     "meta/llama-3.1-8b-instruct",
 )
 LLM_PROVIDER_CEREBRAS = ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b")
+# Gemini — отключён геоблоком, но спека остаётся (можно вернуть, убрав из _COUNCIL_DISABLED).
+LLM_PROVIDER_GEMINI = (
+    "GEMINI_API_KEY",
+    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "gemini-2.5-flash",
+)
 # Closerouter — прокси-агрегатор для интуиции (muse-spark / deepseek / nemotron).
 # URL вынесен сюда, чтобы не дублировать в keychain.py.
 CLOSEROUTER_API_BASE = "https://api.closerouter.dev/v1/chat/completions"
