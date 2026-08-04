@@ -27,8 +27,16 @@ returns:
     {"items": [{channel, id, date, text, url}], "warnings": [str]}
     items отсортированы хронологически внутри каждого канала.
 """
+
 import datetime
 import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from cyborg import config
 
 
 def _make_client(env):
@@ -68,7 +76,7 @@ def run(inputs: dict, env: dict) -> dict:
     """Механизм. Тот же inputs + тот же env → то же поведение."""
     channels = inputs["channels"]
     cutoff = _parse_since(inputs.get("since"))
-    limit = int(inputs.get("limit_per_channel", 50))
+    limit = int(inputs.get("limit_per_channel", config.TELEGRAM_LIMIT_PER_CHANNEL))
 
     items, warnings = [], []
     client = env.get("client") or _make_client(env)
@@ -86,13 +94,15 @@ def run(inputs: dict, env: dict) -> dict:
                         break
                     text = msg.text or msg.caption
                     if text:
-                        posts.append({
-                            "channel": ch,
-                            "id": msg.id,
-                            "date": msg_date.isoformat() if msg_date else None,
-                            "text": text,
-                            "url": _post_url(ch, msg.id),
-                        })
+                        posts.append(
+                            {
+                                "channel": ch,
+                                "id": msg.id,
+                                "date": msg_date.isoformat() if msg_date else None,
+                                "text": text,
+                                "url": _post_url(ch, msg.id),
+                            }
+                        )
                 items.extend(reversed(posts))
             except Exception as e:
                 warnings.append(f"{ch}: {e}")
@@ -102,6 +112,7 @@ def run(inputs: dict, env: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Мосты для kiborg (НЕ было в оригинале darbot — добавлено при вендоринге)
 # ---------------------------------------------------------------------------
+
 
 def _rpc_main():
     """Режим --rpc: JSON {"inputs":..., "env":...} на stdin -> JSON run() на stdout.
