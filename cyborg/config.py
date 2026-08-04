@@ -329,6 +329,12 @@ INTUITION_TEMPERATURE = 0.9
 # Дефолтный потолок токенов ответа для интуиции.
 INTUITION_MAX_TOKENS = 8192
 
+# === СОВЕТНИК ask_llm (advisors.py) ===
+# Потолок токенов ответа для ask_llm-советника ( scoring вариантов). None = без потолка.
+ASK_LLM_ADVISOR_MAX_TOKENS = 256
+# Температура для ask_llm-советника ( scoring вариантов).
+ASK_LLM_ADVISOR_TEMPERATURE = 0.2
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90

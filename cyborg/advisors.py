@@ -165,7 +165,8 @@ class AskLlmAdvisor:
     Воздерживается, если в context нет 'llm_chain' (ключей нет) или ответ не распарсился.
     """
     name = "ask_llm"
-    _MAX_TOKENS = 256          # потолок ответа модели в payload; None = без потолка (см. _IntuitionNoCap)
+    _MAX_TOKENS = config.ASK_LLM_ADVISOR_MAX_TOKENS
+    _TEMPERATURE = config.ASK_LLM_ADVISOR_TEMPERATURE
 
     def __init__(self, organ_js=None, node_exe=None):
         self._js = organ_js or _ASK_LLM_JS
@@ -180,7 +181,7 @@ class AskLlmAdvisor:
             return None
         n = max(1, len(chain))
         per_provider_ms = max(3000, budget_ms // n)     # чтобы медленный провайдер не съел весь бюджет
-        inputs = {"prompt": prompt, "temperature": 0.2}
+        inputs = {"prompt": prompt, "temperature": self._TEMPERATURE}
         if self._MAX_TOKENS is not None:                # None (напр. _IntuitionNoCap) → ключ не кладём
             inputs["max_tokens"] = self._MAX_TOKENS
         payload = {"inputs": inputs,
