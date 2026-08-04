@@ -17,7 +17,7 @@ import keychain
 
 _ZAI_URL = os.environ.get(config.ZAI_URL_ENV, "https://api.z.ai/api/anthropic/v1/messages")
 _MODEL = os.environ.get(config.ZAI_MODEL_ENV, "glm-5.2")
-_TIMEOUT = int(os.environ.get(config.ZAI_TIMEOUT_MS_ENV, "120000"))
+_TIMEOUT = int(os.environ.get(config.ZAI_TIMEOUT_MS_ENV, str(config.DEFAULT_LLM_TIMEOUT_MS)))
 
 
 def _api_key():

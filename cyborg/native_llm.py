@@ -11,7 +11,7 @@ import urllib.request
 import config
 import keychain
 
-_TIMEOUT = int(os.environ.get(config.NATIVE_LLM_TIMEOUT_MS_ENV, "120000"))
+_TIMEOUT = int(os.environ.get(config.NATIVE_LLM_TIMEOUT_MS_ENV, str(config.DEFAULT_LLM_TIMEOUT_MS)))
 
 # Порядок = приоритет. Только провайдеры, НЕ входящие в closerouter-цепочку.
 # Endpoint/model берём из cyborg.config, чтобы не дублировать с keychain.py.

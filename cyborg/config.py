@@ -143,6 +143,10 @@ NOTIFY_TOKEN_ENV = "KIBORG_NOTIFY_TOKEN"
 NOTIFY_CHAT_ENV = "KIBORG_NOTIFY_CHAT_ID"
 COUNCIL_DEADLINE_ENV = "KIBORG_COUNCIL_DEADLINE"
 
+# === LLM / AI ===============================================================
+# Дефолтный таймаут LLM-вызовов (мс). Используется в ask_llm, native_llm, zai_ask.
+DEFAULT_LLM_TIMEOUT_MS = 120000
+
 # === АЛЕРТИНГ (опциональный, через Telegram Bot API) ===
 # Если при прогоне случился семантический сбой (out['brain_down'] / много dropped_stub),
 # harvest_log._log зовёт alerts.maybe_alert(level, msg). Когда в окружении заданы ОБА ENV —
