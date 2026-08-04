@@ -38,6 +38,7 @@ def _run_finish_sink(inputs, env):
 
 
 def _run_scrub(inputs, env):
+    import config
     import wiring
 
     inp = inputs or {}
@@ -55,7 +56,7 @@ def _run_scrub(inputs, env):
             refs = clean.get("source_refs")
             if isinstance(refs, list):
                 safe_refs = []
-                for ref in refs[:4]:
+                for ref in refs[: config.WIRING_SCRUB_MAX_REFS]:
                     if not isinstance(ref, dict):
                         continue
                     safe_ref = dict(ref)

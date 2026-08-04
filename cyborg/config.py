@@ -436,6 +436,10 @@ RANK_IDEAS_VERIFICATION_MAX_CHARS = 180
 # Сколько символов title/path/id одного source_ref в тексте варианта.
 RANK_IDEAS_REF_TITLE_MAX_CHARS = 100
 
+# === WIRING_SCRUB (wiring_scrub.py) ===
+# Сколько source_refs сканируем на утечку секретов при финальной чистке идей.
+WIRING_SCRUB_MAX_REFS = 4
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90
