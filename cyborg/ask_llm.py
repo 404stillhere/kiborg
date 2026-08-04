@@ -87,7 +87,7 @@ def _run_chain(chain, prompt, timeout_ms, temperature=config.INTUITION_TEMPERATU
     if not chain or not os.path.exists(_ORGAN_JS):
         return ""
     n = max(1, len(chain))
-    per_provider_ms = max(3000, timeout_ms // n)
+    per_provider_ms = max(config.ASK_LLM_MIN_PER_PROVIDER_MS, timeout_ms // n)
     payload = {
         "inputs": {"prompt": prompt, "temperature": temperature},
         "env": {"chain": chain, "timeout_ms": per_provider_ms},
@@ -101,7 +101,13 @@ def _run_chain(chain, prompt, timeout_ms, temperature=config.INTUITION_TEMPERATU
             text=True,
             encoding="utf-8",
         )
-        stdout, stderr = proc.communicate(input=json.dumps(payload), timeout=max(5, timeout_ms // 1000 + 5))
+        stdout, stderr = proc.communicate(
+            input=json.dumps(payload),
+            timeout=max(
+                config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC,
+                timeout_ms // 1000 + config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC,
+            ),
+        )
     except Exception:
         return ""
     if proc.returncode != 0 and not stdout.strip():

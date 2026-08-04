@@ -342,10 +342,17 @@ ASK_LLM_ADVISOR_MAX_TOKENS = 256
 ASK_LLM_ADVISOR_TEMPERATURE = 0.2
 # Порог разброса топ-2 баллов: меньше — интуиция не уверена, поднимает флаг эскалации.
 ASK_LLM_ESCALATE_GAP = 0.15
+# Минимальный per-provider таймаут (мс) и запас на весь subprocess (сек) в ask_llm-органе.
+ASK_LLM_MIN_PER_PROVIDER_MS = 3000
+ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC = 5
 
 # === РЕДАКТОР ЧИТАЕМОСТИ (wiring_council) ===
 # Температура для детерминированного судейства читаемости (score_llm) — должен парситься в JSON.
 READABILITY_SCORE_TEMPERATURE = 0.2
+
+# === НАТИВНЫЕ LLM (native_llm.py) ===
+# Минимальный per-provider таймаут (мс) при обходе нативных провайдеров.
+NATIVE_LLM_MIN_PER_PROVIDER_MS = 5000
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.

@@ -180,16 +180,18 @@ class AskLlmAdvisor:
         if not os.path.exists(self._js):
             return None
         n = max(1, len(chain))
-        per_provider_ms = max(3000, budget_ms // n)     # чтобы медленный провайдер не съел весь бюджет
+        per_provider_ms = max(config.ASK_LLM_MIN_PER_PROVIDER_MS, budget_ms // n)  # медленный не съест весь бюджет
         inputs = {"prompt": prompt, "temperature": self._TEMPERATURE}
         if self._MAX_TOKENS is not None:                # None (напр. _IntuitionNoCap) → ключ не кладём
             inputs["max_tokens"] = self._MAX_TOKENS
         payload = {"inputs": inputs,
                    "env": {"chain": chain, "timeout_ms": per_provider_ms}}
         try:
-            proc = subprocess.run([self._node, self._js], input=json.dumps(payload),
-                                  capture_output=True, text=True, encoding="utf-8",
-                                  timeout=max(5, budget_ms // 1000 + 5))  # весь бюджет цепочки + запас
+            proc = subprocess.run(
+                [self._node, self._js], input=json.dumps(payload),
+                capture_output=True, text=True, encoding="utf-8",
+                timeout=max(config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC, budget_ms // 1000 + config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC),
+            )  # весь бюджет цепочки + запас
         except Exception:
             return None
         if proc.returncode != 0 and not proc.stdout.strip():
