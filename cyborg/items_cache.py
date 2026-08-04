@@ -24,12 +24,23 @@ always_context (карта проекта/архитектурные опоры)
 import hashlib
 import json
 import os
+import sys
 import time
 
-MAX_RUNS = 3  # храним последние 3 прогона (4-й вытолкнет самый старый)
-TTL_SEC = 30 * 60  # 30 минут — типичный интервал автосбора
+# path-bootstrap: items_cache.py импортируется из run.py как скрипт (cyborg/ в path),
+# из тестов как модуль (project-root в path), и из harvest_* подмодулей как сосед.
+# Единый хак: гарантируем, что project-root на пути, чтобы `from cyborg import config` работал.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+from cyborg import config
+
+MAX_RUNS = config.ITEMS_CACHE_MAX_RUNS
+TTL_SEC = config.ITEMS_CACHE_TTL_SEC
+
+DATA = os.path.join(_HERE, "data")
 PATH = os.path.join(DATA, "items_cache.json")
 
 
