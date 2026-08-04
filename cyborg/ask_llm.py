@@ -50,7 +50,7 @@ def _load_provider():
 def _save_provider(provider):
     """Атомарно сохранить провайдера в файл, чтобы panel/serve.py в другом процессе видел."""
     path = config.LAST_PROVIDER_FILE
-    tmp = path + ".tmp"
+    tmp = path + config.ATOMIC_TMP_SUFFIX
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"provider": provider or "", "ts": time.time()}, f, ensure_ascii=False)

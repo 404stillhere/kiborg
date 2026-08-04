@@ -27,8 +27,10 @@ import datetime
 import json
 import os
 
+import config
+
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-PATH = os.path.join(DATA, "shadow_metrics.jsonl")
+PATH = os.path.join(DATA, config.SHADOW_METRICS_FILE)
 
 
 def append(record):

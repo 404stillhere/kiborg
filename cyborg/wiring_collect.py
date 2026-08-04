@@ -9,6 +9,8 @@
 import os
 import time
 
+import config
+
 
 def _remove_stale_lock(session_path, max_age_seconds):
     """Снести lock-файл tg-сессии, если он «зависший» (старше max_age_seconds).
@@ -29,7 +31,7 @@ def _remove_stale_lock(session_path, max_age_seconds):
     """
     if not session_path:
         return False
-    lock_path = session_path + ".lock"
+    lock_path = session_path + config.TG_LOCK_SUFFIX
     try:
         st = os.stat(lock_path)
     except OSError:
@@ -85,7 +87,7 @@ def _run_collect(inputs, env):
     pf = env.get("prefetched_out")
     if isinstance(pf, dict) and pf.get("items") is not None:
         return pf
-    e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
+    e = {"n": env.get("n", config.COLLECT_DEFAULT_N), "source": env.get("source", config.COLLECT_DEFAULT_SOURCE)}
     if env.get("sources") is not None:
         e["sources"] = env["sources"]  # пробрасываем И пустой список: пусто = «нет источников»,
         #                                 collect_source честно вернёт пусто+degraded, не дефолт hn (D7)

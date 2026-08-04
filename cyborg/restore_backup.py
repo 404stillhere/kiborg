@@ -69,7 +69,7 @@ def _pre_restore_copy(original_path, ts):
     """Скопировать текущий файл в <path>.pre-restore-<TS> перед перезаписью (страховка)."""
     if not os.path.exists(original_path):
         return None
-    backup = f"{original_path}.pre-restore-{ts}"
+    backup = f"{original_path}{config.PRE_RESTORE_PREFIX}{ts}"
     shutil.copy2(original_path, backup)
     return backup
 
@@ -86,7 +86,7 @@ def restore(backup_name):
         "state.json": config.IE_STATE_JSON,
         "seen_items.json": seen_items.PATH,
     }
-    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    ts = datetime.datetime.now().strftime(config.BACKUP_TS_FMT)
 
     # Шаг 1: pre-restore страховка текущих файлов.
     pre_copied = []

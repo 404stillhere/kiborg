@@ -27,6 +27,8 @@ import json
 import os
 import shutil
 
+import config
+
 
 def _is_valid_json(path):
     """True если файл существует и json.load проходит. Иначе False."""
@@ -93,9 +95,9 @@ def auto_recover_state_if_needed(state_path, backups_dir, max_backups=None):
 
     # Сохранить повреждённый файл для разбора (если он существует — при отсутствии
     # сохранять нечего). Имя со таймстемпом, чтобы не затирать предыдущие дампы.
-    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    ts = datetime.datetime.now().strftime(config.BACKUP_TS_FMT)
     if os.path.exists(state_path):
-        corrupted_copy = f"{state_path}.corrupted-{ts}"
+        corrupted_copy = f"{state_path}{config.STATE_CORRUPTED_PREFIX}{ts}"
         try:
             shutil.copy2(state_path, corrupted_copy)
             print(f"[recover] повреждённый state.json сохранён для разбора: {corrupted_copy}")

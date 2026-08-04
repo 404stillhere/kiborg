@@ -220,6 +220,9 @@ TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
 # === ВРЕМЕННЫЕ ФОРМАТЫ ------------------------------------------------------
 # Единый формат меток времени в логах/статусе (runs.md, source_status, rejected, triage_store).
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
+# Формат таймстемпа для каталогов бэкапов / pre-restore копий / corrupted-дампов.
+# Лексикографическая сортировка = хронологическая — удобно для ротации и глаз.
+BACKUP_TS_FMT = "%Y-%m-%d_%H%M%S"
 
 # === HTTP-константы --------------------------------------------------------
 # OpenAI-совместимые провайдеры ждут application/json + Bearer; z.ai — application/json + x-api-key.
@@ -374,6 +377,8 @@ HARVEST_RUNNER_MAX_RUNS = 50
 # === LOCK-MONITOR (lock_monitor.py) ===
 # Окно health-пульта: сколько минут назад считать зафиксированные таймауты state_lock.
 LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES = 60
+# Секунд в минуте — для перевода минутных констант в секунды.
+SECONDS_PER_MINUTE = 60
 
 # === NOTIFY (notify.py) ===
 # Сколько заголовков идей показывать в Telegram-уведомлении (до «и ещё N»).
@@ -564,3 +569,34 @@ MAX_DIRECTION_THEME_LEN = 120
 MAX_DIRECTION_PRESETS = 40
 # Feature-lab статус фич (внутренний). Патчится в тестах: `serve.LAB_ROUTER = tmp`.
 LAB_ROUTER_FILE = os.path.join(PROJECT_ROOT, ".feature-lab", "router.json")
+
+# === ФАЙЛОВЫЕ СУФФИКСЫ / ИМЕНА (живой код + тесты патчат пути, но строковые суффиксы
+# исторически дублировались в 4+ модулях — собраны здесь как единый источник истины) ===
+# Суффикс для атомарной записи (tmp + os.replace — обрыв записи не бьёт существующий файл).
+# Используется в harvest_gate._atomic_write, items_cache._atomic_write, _panel_config,
+# harvest_log._rotate_if_needed, ask_llm._save_provider, seen_items._save.
+ATOMIC_TMP_SUFFIX = ".tmp"
+# Суффикс lock-файла вокруг tg-сессии (wiring_collect._remove_stale_lock + frozen store.state_lock).
+TG_LOCK_SUFFIX = ".lock"
+# Префикс страховочной копии перед restore_backup.restore() — на случай, если восстановили не то.
+PRE_RESTORE_PREFIX = ".pre-restore-"
+# Префикс копии повреждённого state.json перед восстановлением (recover_state.auto_recover_*).
+STATE_CORRUPTED_PREFIX = ".corrupted-"
+# Журнал triage-событий, который читает feedback_cortex.main().
+TRIAGE_EVENTS_FILE = "triage_events.jsonl"
+# Журнал shadow-метрик lazy orchestra (наблюдатель, не меняет поведение).
+SHADOW_METRICS_FILE = "shadow_metrics.jsonl"
+
+# === FEEDBACK_CORTEX (feedback_cortex.py) ===
+# Допуск при проверке сходимости clamp+renormalize (модуль итеративно стабилизирует веса).
+FEEDBACK_CORTEX_CONVERGENCE_EPS = 1e-9
+
+# === SEEN_ITEMS (seen_items.py) ===
+# Секунд в сутках — для перевода TTL_DAYS в cutoff (ранее литерал 86400 был в одном месте).
+SECONDS_PER_DAY = 86400
+
+# === WIRING_COLLECT (wiring_collect.py) ===
+# Дефолтный бюджет и лента для _run_collect, когда env не принёс (например, вызов из теста
+# или прямой запуск старого сценария). Эти же значения покрывают регресс-тест 2026-07-12.
+COLLECT_DEFAULT_N = 8
+COLLECT_DEFAULT_SOURCE = "hn"

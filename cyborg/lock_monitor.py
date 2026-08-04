@@ -48,7 +48,7 @@ def recent_timeouts(minutes=None):
     растёт бесконечно при долгой жизни процесса. Возвращает int-количество.
     """
     minutes = minutes if minutes is not None else config.LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES
-    cutoff = time.time() - minutes * 60
+    cutoff = time.time() - minutes * config.SECONDS_PER_MINUTE
     with _LOCK:
         # in-place filter: оставляем только свежие, устаревшие выкидываем навсегда.
         kept = [t for t in _TIMECTS if t >= cutoff]

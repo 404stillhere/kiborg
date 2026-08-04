@@ -90,7 +90,7 @@ def _now():
 
 
 def _ttl_cutoff():
-    return _now() - TTL_DAYS * 86400
+    return _now() - TTL_DAYS * config.SECONDS_PER_DAY
 
 
 def _normalize_key(k):
@@ -153,7 +153,7 @@ def _save(seen):
     бесконтрольно, даже если mark_seen дёргают часто)."""
     os.makedirs(DATA, exist_ok=True)
     seen = _prune(seen)
-    tmp = PATH + ".tmp"
+    tmp = PATH + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False, sort_keys=True)
     os.replace(tmp, PATH)

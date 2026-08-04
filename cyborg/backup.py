@@ -55,7 +55,7 @@ def backup_state():
     Возвращает путь к созданному бэкапу (для лога) или None при ошибке/отсутствии файлов.
     НЕ выбрасывает — бэкап не должен ронять прогон киборга. Внутри печатает прогресс/причины.
     """
-    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    ts = datetime.datetime.now().strftime(config.BACKUP_TS_FMT)
     target_dir = os.path.join(config.BACKUPS_DIR, ts)
     try:
         os.makedirs(target_dir, exist_ok=True)

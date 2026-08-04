@@ -161,7 +161,7 @@ def enforce_min_weight(weights, floor):
         out = {name: max(out[name], floor) for name in ALL_ADVISORS}
         prev = dict(out)
         out = _renormalize(out)
-        if all(abs(out[name] - prev[name]) < 1e-9 for name in ALL_ADVISORS):
+        if all(abs(out[name] - prev[name]) < config.FEEDBACK_CORTEX_CONVERGENCE_EPS for name in ALL_ADVISORS):
             break
     # финальный clamp (гарантия floor после последней нормировки)
     return {name: max(out[name], floor) for name in ALL_ADVISORS}
@@ -186,9 +186,9 @@ def main(events_path=None):
     # idea_engine/data/triage_events.jsonl (там же где state.json)
     if events_path is None:
         ie_data = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "idea_engine", "data")
-        events_path = os.path.join(ie_data, "triage_events.jsonl")
+        events_path = os.path.join(ie_data, config.TRIAGE_EVENTS_FILE)
     if not os.path.exists(events_path):
-        print("[feedback_cortex] нет triage_events.jsonl — нечего адаптировать")
+        print(f"[feedback_cortex] нет {config.TRIAGE_EVENTS_FILE} — нечего адаптировать")
         return
     idea_engine_dir = os.path.normpath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "idea_engine")

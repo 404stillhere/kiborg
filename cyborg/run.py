@@ -16,10 +16,11 @@ except Exception:
     pass
 
 import ask_llm  # noqa: E402
+import config  # noqa: E402
 import harvest  # noqa: E402  (_source_env + wire_council: единый источник и впайка совета — как у автосбора)
 import keychain  # noqa: E402  (runtime-предупреждение о секретном файле не в .gitignore)
 from orchestrator import Cyborg  # noqa: E402
-from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемся на граф)
+from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемы на граф)
 from registry import load_catalog  # noqa: E402
 from wiring import build_organs  # noqa: E402
 
@@ -27,7 +28,6 @@ from wiring import build_organs  # noqa: E402
 # (run.DATA = tmp в test_scrub) продолжал работать: live-код _log_run читает БЭАР-НЕЙМ `DATA`,
 # патч переписывает module global. `import config` + assignment (не `from config import`) —
 # ruff I001 не схлопывает assignment-строки (см. wiring.py/harvest.py для того же паттерна).
-import config  # noqa: E402  # isort: skip
 
 DATA = config.CYBORG_DATA_DIR  # mutable для тестов (test_scrub патчит на tmp)
 

@@ -81,7 +81,7 @@ def _atomic_write(path, text):
     """Атомарная запись (tmp + os.replace) — образец harvest_gate._atomic_write."""
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = path + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(tmp, path)

@@ -73,7 +73,7 @@ def _atomic_write(path, text):
     import os
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = path + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(tmp, path)

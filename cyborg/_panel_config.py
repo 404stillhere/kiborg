@@ -40,7 +40,9 @@ def atomic_save(path, payload):
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp = path + ".tmp"
+    import config
+
+    tmp = path + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)

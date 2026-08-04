@@ -110,7 +110,7 @@ def _rotate_if_needed(path):
         return
     keep = "".join(lines[-config.MAX_LOG_ENTRIES :])
     # атомарно: во временный рядом + os.replace (обрыв записи НЕ обрежет runs.md)
-    tmp = path + ".tmp"
+    tmp = path + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(keep)
     os.replace(tmp, path)
