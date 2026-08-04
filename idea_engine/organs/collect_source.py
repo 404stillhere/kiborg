@@ -25,7 +25,11 @@ import os
 import random
 import re
 import subprocess
+import sys
 import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cyborg"))
+import config  # noqa: E402
 
 HN_TOP = "https://hacker-news.firebaseio.com/v0/topstories.json"
 HN_SHOW = "https://hacker-news.firebaseio.com/v0/showstories.json"
@@ -154,7 +158,8 @@ def _gh_trending(n, timeout, env):
 # публичный API. pyrogram — НЕ stdlib, поэтому вызываем его отдельным процессом на venv darbot
 # (там уже стоит) в режиме --rpc; сама collect_source.py stdlib-only остаётся (только subprocess).
 # Вендоренный орган: cyborg/organs_vendored/collect_tg_news.py (копия darbot/organ.py, EXTRACT_ORGAN).
-_TG_PYTHON_DEFAULT = "M:/projects/darbot/venv/Scripts/python.exe"
+# Дефолтный путь к Python darbot-venv централизован в cyborg/config.py (единый источник истины).
+_TG_PYTHON_DEFAULT = config.DARBOT_PYTHON
 _TG_RUNNER = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "cyborg", "organs_vendored", "collect_tg_news.py",

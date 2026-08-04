@@ -66,6 +66,8 @@ RECON_FILE = os.path.join("M:/", "projects", "panelofprojects", "recon.json")
 ORGANS_CATALOG = os.path.join("M:/", "projects", "_shared", "organs.json")
 # Чужой .env darbot — TG_API_ID/TG_API_HASH оттуда (read-only, не трогаем чужой файл).
 DARBOT_ENV = os.path.join("M:/", "projects", "darbot", ".env")
+# Чужой Python darbot-venv для запуска collect_tg_news.py (read-only, не трогаем чужой venv).
+DARBOT_PYTHON = os.path.join("M:/", "projects", "darbot", "venv", "Scripts", "python.exe")
 # Путь к файлу LLM-ключей по умолчанию (не в repo; должен быть в .gitignore).
 DEFAULT_LLM_KEYS_FILE = os.path.join(PROJECT_ROOT, "llm_keys.env")
 
