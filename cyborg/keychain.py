@@ -117,6 +117,13 @@ def chain_summary(path=None):
     return ", ".join(f"{c['id']}({c['model']})" for c in build_chain(path)) if build_chain(path) else ""
 
 
+def chain_ids(path=None):
+    """БЕЗОПАСНЫЙ список id провайдеров цепочки, БЕЗ apiKey/baseUrl.
+
+    Для UI/пульта, где нужен только факт наличия плеча и его идентификатор."""
+    return [c["id"] for c in build_chain(path)]
+
+
 def available(path=None):
     """Есть ли хоть один провайдер (жива ли интуиция)."""
     return len(build_chain(path)) > 0

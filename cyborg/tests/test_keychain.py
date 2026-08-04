@@ -219,6 +219,20 @@ def test_with_deadline_kills_slow_loris():
     assert time.time() - t < 5  # уложился в ~1с (deadline), а не ждал 30с
 
 
+def test_chain_ids_has_no_secrets():
+    # chain_ids — только id, без apiKey/baseUrl. Используется в panel/serve.py _key_state().
+    SECRET = "sk-SUPER-SECRET-VALUE-xyz"
+    p = _keys_file(CLOSEROUTER_API_KEY=SECRET)
+    try:
+        ids = keychain.chain_ids(p)
+        assert ids == ["muse-spark", "deepseek", "nemotron"]
+        assert SECRET not in str(ids)
+        assert "https://" not in str(ids)
+        assert keychain.chain_ids(_keys_file()) == []
+    finally:
+        os.remove(p)
+
+
 def test_keys_file_warning_when_not_gitignored():
     # файл ключей не в .gitignore -> предупреждение
     fd, p = tempfile.mkstemp(suffix=".env")
