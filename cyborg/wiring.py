@@ -82,6 +82,8 @@ SKIP_FOLDERS = config.SKIP_FOLDERS
 # не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался. Нет телеграма
 # (нет telegram_session) → без замка, как раньше.
 _TG_LOCK_TIMEOUT = config.TG_LOCK_TIMEOUT  # mutable для тестов (test_wiring ставит 0.2)
+# Период poll при захвате tg-сессии state_lock (сек). Mutable для тестов.
+_TG_LOCK_POLL_INTERVAL = config.TG_LOCK_POLL_INTERVAL
 # Порог протухания lock-файла tg-сессии (СЕКУНДЫ; config хранит в минутах для читаемости).
 # _collect_locked перед захватом зовёт _remove_stale_lock(sess, ...): lock старше порога
 # (зависший после краша) сносится, не тратя TG_LOCK_TIMEOUT на ожидание. Mutable для тестов.

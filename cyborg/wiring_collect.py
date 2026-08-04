@@ -57,7 +57,7 @@ def _collect_locked(inputs, env):
         # Сначала снесём зависший lock (если крашнулся прошлый процесс и оставил труп).
         # Без этого — ждём 130с таймаута; с этим — сразу O_EXCL-захват. Свежий lock не трогаем.
         _remove_stale_lock(sess, wiring._STALE_LOCK_MAX_AGE)
-        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=0.2) as held:
+        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=wiring._TG_LOCK_POLL_INTERVAL) as held:
             if not held:
                 print(
                     f"[warn] state_lock timeout ({wiring._TG_LOCK_TIMEOUT}s) на {sess} — "
