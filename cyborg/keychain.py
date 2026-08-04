@@ -11,6 +11,8 @@
 import os
 from pathlib import Path
 
+import config
+
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
 
 # Цепочка ИНТУИЦИИ (ask_llm) — fallback после z.ai. Основной провайдер z.ai (glm-5.2,
@@ -19,6 +21,13 @@ _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env"
 # muse-spark → deepseek-v4-pro → nemotron-3-ultra. Порядок = приоритет.
 # Mistral и все остальные — в СОВЕТ.
 _CR_URL = "https://api.closerouter.dev/v1/chat/completions"
+# Нативные fallback-провайдеры для интуиции: (id, env-key, baseUrl, model). Дубли URL
+# убран — берём из cyborg.config.LLM_PROVIDER_*.
+_NATIVE_PROVIDERS = [
+    ("mistral",) + config.LLM_PROVIDER_MISTRAL,
+    ("openrouter",) + config.LLM_PROVIDER_OPENROUTER,
+    ("groq",) + config.LLM_PROVIDER_GROQ,
+]
 _SPEC = [
     ("muse-spark", "CLOSEROUTER_API_KEY", _CR_URL, "meta/muse-spark-1.1"),
     ("deepseek", "CLOSEROUTER_API_KEY", _CR_URL, "deepseek/deepseek-v4-pro"),
@@ -138,14 +147,14 @@ def available(path=None):
 # остается на случай смены сети/VPN (вернуть = убрать из _COUNCIL_DISABLED).
 _COUNCIL_SPEC = {
     "sambanova": ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2"),
-    "groq": ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
+    "groq": config.LLM_PROVIDER_GROQ,
     "gemini": (
         "GEMINI_API_KEY",
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
         "gemini-2.5-flash",
     ),
-    "mistral": ("MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"),
-    "openrouter": ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free"),
+    "mistral": config.LLM_PROVIDER_MISTRAL,
+    "openrouter": config.LLM_PROVIDER_OPENROUTER,
     "cohere": ("COHERE_API_KEY", "https://api.cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025"),
     "nvidia": ("NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1/chat/completions", "meta/llama-3.1-8b-instruct"),
     "cerebras": ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b"),

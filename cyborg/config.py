@@ -134,6 +134,13 @@ ALERT_TOKEN_ENV = "KIBORG_ALERT_TOKEN"
 ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
 # Базовый URL Bot API Telegram. Может понадобиться прокси/туннель в корп.сетях.
 TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
+
+# --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------
+# Единый источник endpoint/model для провайдеров, чтобы не дублировать литералы
+# в keychain.py и native_llm.py.
+LLM_PROVIDER_MISTRAL = ("MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest")
+LLM_PROVIDER_OPENROUTER = ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free")
+LLM_PROVIDER_GROQ = ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b")
 # Таймаут HTTP-запроса в TG (алертинг не должен надолго блокировать прогон). При ошибке/timeout
 # молча падает на print — прогон продолжается.
 ALERT_HTTP_TIMEOUT = 10.0

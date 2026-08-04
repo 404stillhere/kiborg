@@ -8,15 +8,17 @@ import json
 import os
 import urllib.request
 
+import config
 import keychain
 
 _TIMEOUT = int(os.environ.get("KIBORG_NATIVE_LLM_TIMEOUT_MS", "120000"))
 
 # Порядок = приоритет. Только провайдеры, НЕ входящие в closerouter-цепочку.
+# Endpoint/model берём из cyborg.config, чтобы не дублировать с keychain.py.
 _NATIVE_SPEC = [
-    ("mistral", "MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"),
-    ("openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free"),
-    ("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
+    ("mistral",) + config.LLM_PROVIDER_MISTRAL,
+    ("openrouter",) + config.LLM_PROVIDER_OPENROUTER,
+    ("groq",) + config.LLM_PROVIDER_GROQ,
 ]
 
 
