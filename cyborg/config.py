@@ -39,7 +39,8 @@ IDEA_ENGINE_DATA_DIR = os.path.join(IDEA_ENGINE_DIR, "data")
 # === DATA-ФАЙЛЫ cyborg/ ===
 # Лог прогонов (append-only) — пишут run.py и harvest_log._log, читает panel/serve._read_runs.
 # Раньше склеивался ВРУЧНУЮ в 3 местах; теперь единая константа.
-RUNS_MD = os.path.join(CYBORG_DATA_DIR, "runs.md")
+RUNS_MD_FILE = "runs.md"
+RUNS_MD = os.path.join(CYBORG_DATA_DIR, RUNS_MD_FILE)
 # Живой per-source статус для пульта — пишет harvest_gate._persist_status, читает serve._read_source_status.
 SOURCE_STATUS_FILE = os.path.join(CYBORG_DATA_DIR, "source_status.json")
 # Gate-отпечаток ленты («есть что новое?») — пишут/читают harvest_gate._save_sig/_last_sig.

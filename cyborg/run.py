@@ -48,7 +48,7 @@ def _log_run(out):
         line += f" | ⚠ {dn}"  # деградация видна в истории (обе кнопки согласованы)
     line += "\n"
     # защита класса: даже если в результат/цель просочился секрет — в лог он не ляжет
-    runs_path = os.path.join(DATA, "runs.md")
+    runs_path = os.path.join(DATA, config.RUNS_MD_FILE)
     with open(runs_path, "a", encoding="utf-8") as f:
         f.write(scrub_secrets.scrub_text(line))
     # ротация: обрезать до config.MAX_LOG_ENTRIES, если вырос (общий хелпер с harvest_log)
