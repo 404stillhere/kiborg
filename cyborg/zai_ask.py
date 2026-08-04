@@ -53,8 +53,8 @@ def ask(prompt, timeout_ms=None, max_tokens=config.INTUITION_MAX_TOKENS, tempera
         data=body,
         headers={
             config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
-            "x-api-key": key,
-            "anthropic-version": "2023-06-01",
+            config.HTTP_HEADER_X_API_KEY: key,
+            config.HTTP_HEADER_ANTHROPIC_VERSION: config.HTTP_ANTHROPIC_VERSION_DATE,
         },
         method="POST",
     )
