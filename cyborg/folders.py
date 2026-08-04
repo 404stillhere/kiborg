@@ -15,12 +15,13 @@
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "folders.json")
 
-_MAX_PATHS = 40  # папок немного; больше — мусор/раздувание
-_MAX_LEN = 400  # путь бывает длинным, но не полотно
+_MAX_PATHS = config.MAX_FOLDERS
+_MAX_LEN = config.MAX_FOLDER_PATH_LEN
 
 
 def _clean_path(p):

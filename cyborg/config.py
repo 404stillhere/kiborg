@@ -242,5 +242,10 @@ AUTO_INTERVAL_DEFAULT_MINUTES = 30
 AUTO_LOOP_SLEEP_SECONDS = 30
 # Окно lock-monitor в /api/health (минуты). Сколько времени считаем "недавними" таймауты state_lock.
 PANEL_HEALTH_LOCK_WINDOW_MINUTES = 60
+# === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
+# Максимальное число папок-источников. Больше — мусор/раздувание списка.
+MAX_FOLDERS = 40
+# Максимальная длина одного пути папки (символов). Длиннее — обрезается.
+MAX_FOLDER_PATH_LEN = 400
 # Feature-lab статус фич (внутренний). Патчится в тестах: `serve.LAB_ROUTER = tmp`.
 LAB_ROUTER_FILE = os.path.join(PROJECT_ROOT, ".feature-lab", "router.json")
