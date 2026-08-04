@@ -6,8 +6,6 @@
 долетают до живого кода. Сам фасад harvest.py вызывает main() в `if __name__ == "__main__"`.
 """
 
-import os
-
 
 def main(argv):
     import bootstrap_paths
@@ -115,11 +113,11 @@ def main(argv):
     if total_dropped:  # шапка выше = конфиг-модель; тут ФАКТ: болванки = ключ есть, но сеть/парс подвели
         line += f" | ⚠ болванок отсеяно (сеть/парс LLM подводили): {total_dropped}"
     print(line)
-    inbox_md = os.path.join(harvest._IE_DATA, "inbox.md")
+    inbox_md = config.INBOX_MD
     try:
         import store as _ie_store  # idea_engine/store.py (idea_engine уже в sys.path через wiring)
 
-        open_n = len(_ie_store.Store(os.path.join(harvest._IE_DATA, "state.json"), cap=0).open_ideas())
+        open_n = len(_ie_store.Store(config.IE_STATE_JSON, cap=0).open_ideas())
         print(f"ВСЕГО в инбоксе (открытых идей): {open_n}")
     except Exception:
         pass
