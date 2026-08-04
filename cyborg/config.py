@@ -358,6 +358,10 @@ NATIVE_LLM_MIN_PER_PROVIDER_MS = 5000
 # Максимальное число прогонов за один вызов harvest_runner.main (предохранитель).
 HARVEST_RUNNER_MAX_RUNS = 50
 
+# === LOCK-MONITOR (lock_monitor.py) ===
+# Окно health-пульта: сколько минут назад считать зафиксированные таймауты state_lock.
+LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES = 60
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90
