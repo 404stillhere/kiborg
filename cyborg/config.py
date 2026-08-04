@@ -230,6 +230,8 @@ BACKUP_TS_FMT = "%Y-%m-%d_%H%M%S"
 ORACLE_PLAN_DATE_FMT = "%Y-%m-%d"
 ORACLE_PLAN_TIME_FMT = "%H-%M-%S"
 ORACLE_PLAN_INDEX_FMT = "%Y-%m-%d %H:%M"
+# Часы пульта (/api/state now) — только время, секунды нужны для live-ощущения.
+PANEL_CLOCK_FMT = "%H:%M:%S"
 
 # === HTTP-константы --------------------------------------------------------
 # OpenAI-совместимые провайдеры ждут application/json + Bearer; z.ai — application/json + x-api-key.

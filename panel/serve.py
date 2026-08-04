@@ -571,7 +571,7 @@ def _read_oracles():
                 path = os.path.join(plan_dir, fname)
                 try:
                     st = os.path.getmtime(path)
-                    ts = datetime.datetime.fromtimestamp(st).strftime("%Y-%m-%d %H:%M")
+                    ts = datetime.datetime.fromtimestamp(st).strftime(config.ORACLE_PLAN_INDEX_FMT)
                 except Exception:
                     ts = fname[:10] + " 00:00"
                 out.append({"slug": slug, "path": path, "ts": ts})
@@ -600,7 +600,7 @@ def _api_state():
     with _LOCK:
         running, run_goal = RUN["running"], RUN["goal"]
     return {
-        "now": time.strftime("%H:%M:%S"),
+        "now": time.strftime(config.PANEL_CLOCK_FMT),
         "running": running,
         "run_goal": run_goal,
         "key": _key_state(),
