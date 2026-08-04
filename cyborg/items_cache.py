@@ -41,7 +41,7 @@ MAX_RUNS = config.ITEMS_CACHE_MAX_RUNS
 TTL_SEC = config.ITEMS_CACHE_TTL_SEC
 
 DATA = os.path.join(_HERE, "data")
-PATH = os.path.join(DATA, "items_cache.json")
+PATH = os.path.join(DATA, config.ITEMS_CACHE_FILE)
 
 
 def _sha256(text):

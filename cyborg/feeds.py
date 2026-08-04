@@ -18,7 +18,7 @@ import _panel_config
 import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "feeds.json")
+PATH = os.path.join(DATA, config.FEEDS_FILE)
 
 # Порядок = порядок показа тумблеров в пульте. Совпадает с collect_source._SOURCES
 # минус 'files' (у папок свой блок). Меняется вместе с составом источников органа.

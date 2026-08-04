@@ -29,7 +29,7 @@ import _panel_config
 import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "genparams.json")
+PATH = os.path.join(DATA, config.GENPARAMS_FILE)
 
 # (min, max, default, is_float) — для clamp при load и как метаданные для UI
 # Диапазоны выбраны осмысленно: gen_k 2..16 (меньше 2 — нет выбора, больше 16 — размытие/долго);

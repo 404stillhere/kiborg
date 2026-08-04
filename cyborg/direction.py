@@ -13,7 +13,7 @@ import _panel_config
 import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "direction.json")
+PATH = os.path.join(DATA, config.DIRECTION_FILE)
 
 # стартовый набор — юзер правит на панели (это лишь дефолт, когда файла ещё нет)
 _DEFAULT_PRESETS = list(config.DEFAULT_DIRECTION_PRESETS)

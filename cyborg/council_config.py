@@ -17,7 +17,7 @@ import _panel_config
 import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "council.json")
+PATH = os.path.join(DATA, config.COUNCIL_CONFIG_FILE)
 
 ALL_ADVISORS = list(config.ALL_ADVISORS)
 DEFAULT_ENABLED = list(config.DEFAULT_ADVISORS_ENABLED)

@@ -26,11 +26,10 @@ import math
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "council_weights.json")
-
-import config
+PATH = os.path.join(DATA, config.COUNCIL_WEIGHTS_FILE)
 
 ALL_ADVISORS = list(config.ALL_ADVISORS)
 # Канон = config.ADVISOR_WEIGHTS (mind.py берёт оттуда же). Копия здесь — чтобы не плодить

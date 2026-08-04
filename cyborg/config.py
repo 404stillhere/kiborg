@@ -482,6 +482,17 @@ TELEGRAM_FETCH_TIMEOUT = 90
 # Потолок сообщений на один ТГ-канал по умолчанию.
 TELEGRAM_LIMIT_PER_CHANNEL = 50
 
+# === ПАНЕЛЬНЫЕ JSON-КОНФИГИ (cyborg/*.py) ===
+# Имена файлов-конфигов пульта (в cyborg/data/). Ссылки через _panel_config.data_dir_for.
+COUNCIL_CONFIG_FILE = "council.json"
+COUNCIL_WEIGHTS_FILE = "council_weights.json"
+DIRECTION_FILE = "direction.json"
+FEEDS_FILE = "feeds.json"
+FOLDERS_FILE = "folders.json"
+GENPARAMS_FILE = "genparams.json"
+ITEMS_CACHE_FILE = "items_cache.json"
+SEEN_ITEMS_FILE = "seen_items.json"
+
 # === TRIAGE_STORE (idea_engine/triage_store.py) ===
 # Имена master-файлов разобранных идей (take / later).
 TAKEN_FILE = "taken.json"

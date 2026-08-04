@@ -40,7 +40,7 @@ if _ROOT not in sys.path:
 from cyborg import config
 
 DATA = os.path.join(_HERE, "data")
-PATH = os.path.join(DATA, "seen_items.json")
+PATH = os.path.join(DATA, config.SEEN_ITEMS_FILE)
 
 TTL_DAYS = config.SEEN_ITEMS_TTL_DAYS
 MAX_RECORDS = config.SEEN_ITEMS_MAX_RECORDS

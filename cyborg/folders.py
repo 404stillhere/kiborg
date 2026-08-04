@@ -18,7 +18,7 @@ import _panel_config
 import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "folders.json")
+PATH = os.path.join(DATA, config.FOLDERS_FILE)
 
 _MAX_PATHS = config.MAX_FOLDERS
 _MAX_LEN = config.MAX_FOLDER_PATH_LEN
