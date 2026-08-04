@@ -141,6 +141,12 @@ TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
 # Единый формат меток времени в логах/статусе (runs.md, source_status, rejected, triage_store).
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 
+# === HTTP-константы --------------------------------------------------------
+# OpenAI-совместимые провайдеры ждут application/json + Bearer; z.ai — application/json + x-api-key.
+HTTP_HEADER_CONTENT_TYPE = "Content-Type"
+HTTP_HEADER_AUTHORIZATION = "Authorization"
+HTTP_MEDIA_TYPE_JSON = "application/json"
+
 # --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------
 # Единый источник endpoint/model для провайдеров, чтобы не дублировать литералы
 # в keychain.py и native_llm.py.

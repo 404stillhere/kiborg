@@ -12,6 +12,7 @@ import json
 import os
 import urllib.request
 
+import config
 import keychain
 
 _ZAI_URL = os.environ.get("KIBORG_ZAI_URL", "https://api.z.ai/api/anthropic/v1/messages")
@@ -51,7 +52,7 @@ def ask(prompt, timeout_ms=None, max_tokens=8192, temperature=0.9):
         url,
         data=body,
         headers={
-            "Content-Type": "application/json",
+            config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
             "x-api-key": key,
             "anthropic-version": "2023-06-01",
         },

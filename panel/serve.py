@@ -625,10 +625,10 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # тихий сервер
         pass
 
-    def _send(self, code, body, ctype="application/json; charset=utf-8"):
+    def _send(self, code, body, ctype=f"{config.HTTP_MEDIA_TYPE_JSON}; charset=utf-8"):
         raw = body if isinstance(body, bytes) else body.encode("utf-8")
         self.send_response(code)
-        self.send_header("Content-Type", ctype)
+        self.send_header(config.HTTP_HEADER_CONTENT_TYPE, ctype)
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -664,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
             with open(path, "rb") as f:
                 raw = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", ctype + "; charset=utf-8")
+            self.send_header(config.HTTP_HEADER_CONTENT_TYPE, ctype + "; charset=utf-8")
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", cache)
             self.end_headers()
@@ -736,9 +736,11 @@ class Handler(BaseHTTPRequestHandler):
         if origin and origin not in (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"):
             self._json({"ok": False, "msg": "чужой источник — отказано"}, 403)
             return
-        ctype = (self.headers.get("Content-Type") or "").lower()
+        ctype = (self.headers.get(config.HTTP_HEADER_CONTENT_TYPE) or "").lower()
         if "application/json" not in ctype:  # form-POST с text/plain сюда не пройдёт
-            self._json({"ok": False, "msg": "нужен Content-Type: application/json"}, 415)
+            self._json(
+                {"ok": False, "msg": f"нужен {config.HTTP_HEADER_CONTENT_TYPE}: {config.HTTP_MEDIA_TYPE_JSON}"}, 415
+            )
             return
         try:
             n = int(self.headers.get("Content-Length") or 0)

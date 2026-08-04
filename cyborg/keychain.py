@@ -208,7 +208,12 @@ def _openai_chat(url, key, model, system, prompt, timeout=40):
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
     body = _json.dumps({"model": model, "messages": msgs, "max_tokens": 1024, "temperature": 0.3}).encode("utf-8")
     req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}
+        url,
+        data=body,
+        headers={
+            config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
+            config.HTTP_HEADER_AUTHORIZATION: "Bearer " + key,
+        },
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = _json.loads(r.read().decode("utf-8", "replace"))
