@@ -13,7 +13,7 @@ from pathlib import Path
 
 import config
 
-_KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
+_KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", config.DEFAULT_LLM_KEYS_FILE)
 
 # Цепочка ИНТУИЦИИ (ask_llm) — fallback после z.ai. Основной провайдер z.ai (glm-5.2,
 # Anthropic endpoint) живёт в отдельном модуле zai_ask.py, потому что DarBench/organ.js
