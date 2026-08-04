@@ -277,7 +277,7 @@ def _shadow_log_lazy(verdict, orch, n_ideas):
         breakdown = (verdict or {}).get("breakdown") or []
         if not isinstance(breakdown, list) or not breakdown:
             return
-        keep = 3
+        keep = config.COUNCIL_AGREEMENT_TOP_K
         top_rank = _top_k_from_breakdown(breakdown, "rank_ideas", keep)
         top_ask = _top_k_from_breakdown(breakdown, "ask_llm", keep)
         if top_rank is None or top_ask is None:
