@@ -56,7 +56,7 @@ def ask(prompt, timeout_ms=None, max_tokens=config.INTUITION_MAX_TOKENS, tempera
             config.HTTP_HEADER_X_API_KEY: key,
             config.HTTP_HEADER_ANTHROPIC_VERSION: config.HTTP_ANTHROPIC_VERSION_DATE,
         },
-        method="POST",
+        method=config.HTTP_METHOD_POST,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as r:

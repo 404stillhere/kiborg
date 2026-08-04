@@ -53,7 +53,7 @@ def _call(spec, prompt, timeout_ms, max_tokens, temperature):
             config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
             config.HTTP_HEADER_AUTHORIZATION: "Bearer " + key,
         },
-        method="POST",
+        method=config.HTTP_METHOD_POST,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as r:

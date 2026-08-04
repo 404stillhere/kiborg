@@ -259,6 +259,7 @@ HTTP_MEDIA_TYPE_TEXT_HTML_UTF8 = f"text/html; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8 = f"text/javascript; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_OCTET_STREAM = "application/octet-stream"
 HTTP_CACHE_CONTROL_NO_STORE = "no-store"
+HTTP_METHOD_POST = "POST"
 
 # --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------
 # Единый источник endpoint/model для провайдеров, чтобы не дублировать литералы
