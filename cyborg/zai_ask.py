@@ -39,12 +39,14 @@ def ask(prompt, timeout_ms=None, max_tokens=8192, temperature=0.9):
         return ""
     timeout_ms = timeout_ms or _TIMEOUT
     url = _ZAI_URL
-    body = json.dumps({
-        "model": _MODEL,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "model": _MODEL,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,

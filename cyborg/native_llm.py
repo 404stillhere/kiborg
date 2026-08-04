@@ -36,12 +36,14 @@ def _call(spec, prompt, timeout_ms, max_tokens, temperature):
     key = _api_key(key_name)
     if not key:
         return ""
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+    ).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,

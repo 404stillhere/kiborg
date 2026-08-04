@@ -119,9 +119,7 @@ def _parse(raw, k):
             if not isinstance(source_ids, list):
                 source_ids = []
             source_ids = [
-                str(value).strip()[:120]
-                for value in source_ids
-                if isinstance(value, (str, int)) and str(value).strip()
+                str(value).strip()[:120] for value in source_ids if isinstance(value, (str, int)) and str(value).strip()
             ][:4]
             card = {
                 "title": o.get("title", ""),

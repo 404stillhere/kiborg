@@ -77,7 +77,9 @@ def run(inputs, env):
 
 
 def _prompt(goal, project_map):
-    files = _prioritize_files(project_map.get("files", []), project_map.get("entrypoints", []), str(project_map.get("oracle_goal", "")))
+    files = _prioritize_files(
+        project_map.get("files", []), project_map.get("entrypoints", []), str(project_map.get("oracle_goal", ""))
+    )
     markers = project_map.get("markers", {})
     readme = project_map.get("readme_summary")
     inbox = project_map.get("inbox_state")

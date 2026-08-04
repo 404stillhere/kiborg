@@ -70,7 +70,9 @@ def run(inputs, env):
                 + (f" | Проверка: {d.get('verification', '')[:180]}" if d.get("verification") else "")
                 + (
                     " | Источники: "
-                    + ", ".join(str(ref.get("title") or ref.get("id") or "")[:100] for ref in d.get("source_refs", [])[:3])
+                    + ", ".join(
+                        str(ref.get("title") or ref.get("id") or "")[:100] for ref in d.get("source_refs", [])[:3]
+                    )
                     if isinstance(d.get("source_refs"), list) and d.get("source_refs")
                     else ""
                 )

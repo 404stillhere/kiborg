@@ -51,9 +51,7 @@ def test_relative_path_with_root():
     root = _make_project()
     base = os.path.dirname(root)
     name = os.path.basename(root)
-    out = oracle_scan.run(
-        {}, {"oracle_project": name, "projects_root": base}
-    )
+    out = oracle_scan.run({}, {"oracle_project": name, "projects_root": base})
     assert out["ok"] is True
     assert out["project_map"]["name"] == "note-bot"
 

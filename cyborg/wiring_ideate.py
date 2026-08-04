@@ -172,14 +172,8 @@ def _run_ideate(inputs, env):
     fresh = None
     if env.get("filter_seen_items") and inp.get("items"):
         inp = dict(inp)
-        always = [
-            item for item in inp["items"]
-            if isinstance(item, dict) and item.get("always_context")
-        ]
-        regular = [
-            item for item in inp["items"]
-            if not (isinstance(item, dict) and item.get("always_context"))
-        ]
+        always = [item for item in inp["items"] if isinstance(item, dict) and item.get("always_context")]
+        regular = [item for item in inp["items"] if not (isinstance(item, dict) and item.get("always_context"))]
         fresh_regular = wiring.seen_items.filter_fresh(regular, mark=False)
         # Карта проекта и архитектурные опоры нужны КАЖДОМУ prompt, иначе свежий файл
         # снова оказывается вырванным из контекста. Они не влияют на fresh_n гейта:
