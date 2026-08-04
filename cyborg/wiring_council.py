@@ -204,8 +204,8 @@ def _deliberate_with_lazy_orchestra(question, options, context, env, orch, op, n
         from wiring_ideate import _jaccard  # переиспользуем (та же семантика множеств)
 
         overlap = _jaccard(set(top_rank), set(top_ask))
-        if overlap >= 2 / 3:
-            return verdict  # согласны ≥ 2/3 → orchestra не нужен
+        if overlap >= config.COUNCIL_LAZY_ORCHESTRA_AGREEMENT_THRESHOLD:
+            return verdict  # согласны ≥ порога → orchestra не нужен
 
         # Фаза 2: расхождение → повторный deliberate С orchestra для разрешения
         if callable(op):
@@ -291,7 +291,7 @@ def _shadow_log_lazy(verdict, orch, n_ideas):
         shadow_metrics.append(
             {
                 "overlap": round(overlap, 3),
-                "would_call_phase2": overlap < 2 / 3,
+                "would_call_phase2": overlap < config.COUNCIL_LAZY_ORCHESTRA_AGREEMENT_THRESHOLD,
                 "top_rank": top_rank,
                 "top_ask": top_ask,
                 "n_ideas": n_ideas,

@@ -316,6 +316,9 @@ COUNCIL_MAX_WEIGHT = 0.3
 COUNCIL_MMR_LAMBDA = 0.7
 # Размер топа для оценки согласия советников внутри breakdown (overlap rank_ideas×ask_llm).
 COUNCIL_AGREEMENT_TOP_K = 3
+# Порог согласия rank_ideas×ask_llm для lazy_orchestra: Jaccard overlap топ-K должен быть
+# НЕ меньше этого значения, иначе оркестр подключается для разрешения расхождения.
+COUNCIL_LAZY_ORCHESTRA_AGREEMENT_THRESHOLD = 2 / 3
 # Температура для оценки читаемости readability_gate (score_llm) — детерминированный суд.
 READABILITY_SCORE_TEMPERATURE = 0.2
 
