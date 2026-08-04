@@ -13,7 +13,7 @@ import config
 
 
 def _send(token, chat_id, text):
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    url = f"{config.TELEGRAM_BOT_API_BASE}/bot{token}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     urllib.request.urlopen(req, timeout=config.ALERT_HTTP_TIMEOUT).read()

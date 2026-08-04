@@ -132,6 +132,8 @@ SLEEP_ORCHESTRA_ENV = "KIBORG_SLEEP_ORCHESTRA"
 # Задать: export KIBORG_ALERT_TOKEN=123:abc  export KIBORG_ALERT_CHAT_ID=987654321
 ALERT_TOKEN_ENV = "KIBORG_ALERT_TOKEN"
 ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
+# Базовый URL Bot API Telegram. Может понадобиться прокси/туннель в корп.сетях.
+TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
 # Таймаут HTTP-запроса в TG (алертинг не должен надолго блокировать прогон). При ошибке/timeout
 # молча падает на print — прогон продолжается.
 ALERT_HTTP_TIMEOUT = 10.0

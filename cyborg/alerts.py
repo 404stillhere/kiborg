@@ -6,7 +6,7 @@
 
 Два режима работы maybe_alert(level, message):
   - Токен в окружении (config.ALERT_TOKEN_ENV + ALERT_CHAT_ENV заданы): POST на
-    https://api.telegram.org/bot<TOKEN>/sendMessage через urllib.request (stdlib, БЕЗ новой
+    config.TELEGRAM_BOT_API_BASE/bot<TOKEN>/sendMessage через urllib.request (stdlib, БЕЗ новой
     зависимости — требование requirements.txt «runtime = чистый stdlib»). Chat ID = из ENV,
     текст = «[kiborg][{level}] {message}». Таймаут ALERT_HTTP_TIMEOUT; любая сетевая ошибка →
     тихо падаем на print (алертинг НЕ должен ронять прогон).
@@ -28,8 +28,8 @@ import config
 
 
 def _tg_send(token, chat_id, text):
-    """POST на api.telegram.org/bot<TOKEN>/sendMessage. Любая ошибка → raise (звавший поймает)."""
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    """POST на Telegram Bot API /sendMessage. Любая ошибка → raise (звавший поймает)."""
+    url = f"{config.TELEGRAM_BOT_API_BASE}/bot{token}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     # urlopen сам по себе выбросит URLError/HTTPError при таймауте/сбое — звавший обработает.
