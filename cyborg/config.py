@@ -82,6 +82,13 @@ DEFAULT_PROJECTS_ROOT = os.path.join("M:/", "projects")
 # Больше и разнообразнее сырья для ideate, глубже churn для гейта. Режим «максимум качества».
 SOURCE_N = 105
 
+# === ВЕСА СОВЕТНИКОВ (mind / council_weights) ===
+# Канонические веса советников при отборе идей. Заданы юзером 2026-07-13.
+# Сумма = 1.0. Является источником истины для mind.WEIGHTS и council_weights.DEFAULT_WEIGHTS.
+ADVISOR_WEIGHTS = {"ask_llm": 0.39, "orchestra": 0.20, "rank_ideas": 0.41}
+# Порядок тай-брейка при равном итоговом балле (по убыванию веса).
+ADVISOR_TIE_ORDER = ["rank_ideas", "ask_llm", "orchestra"]
+
 # === ЛЕНТЫ-ИСТОЧНИКИ (feeds / collect_source) ===
 # Доступные ленты-источники (порядок = порядок показа тумблеров в пульте). Должен совпадать
 # с ключами _SOURCES в idea_engine/organs/collect_source.py минус 'files' (у папок свой блок).

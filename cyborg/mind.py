@@ -28,17 +28,15 @@
 решает юзер (гейт), см. .brain/design/mind-council.md.
 """
 
+import config
+
 # Веса важности мнений (задано юзером 2026-07-13, в порядке ask_llm/orchestra/rank_ideas).
 # Сумма = 1.0. Меняются здесь и только здесь — единственный источник истины.
-WEIGHTS = {
-    "ask_llm": 0.39,
-    "orchestra": 0.20,
-    "rank_ideas": 0.41,
-}
+WEIGHTS = dict(config.ADVISOR_WEIGHTS)
 
 # При равном итоговом балле — чей голос перевешивает (по убыванию веса). Затем — порядок
 # вариантов (стабильно, детерминированно: одинаковый вход -> одинаковый выбор).
-_TIE_ORDER = ["rank_ideas", "ask_llm", "orchestra"]
+_TIE_ORDER = list(config.ADVISOR_TIE_ORDER)
 
 
 def opinion(scores, confidence=1.0, rationale="", raw=None, escalate=False, reason_code=None):

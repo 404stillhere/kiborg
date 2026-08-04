@@ -30,10 +30,12 @@ import _panel_config
 DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "council_weights.json")
 
-ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
-# Канон = mind.WEIGHTS (mind.py:33-37). Копия здесь — чтобы не плодить зависимость от
-# замороженного модуля в обёртке. Если mind.WEIGHTS когда-то поменяют — синхронизировать.
-DEFAULT_WEIGHTS = {"ask_llm": 0.39, "orchestra": 0.20, "rank_ideas": 0.41}
+import config
+
+ALL_ADVISORS = list(config.ALL_ADVISORS)
+# Канон = config.ADVISOR_WEIGHTS (mind.py берёт оттуда же). Копия здесь — чтобы не плодить
+# зависимость от замороженного модуля в обёртке. Если веса поменяют — править в config.py.
+DEFAULT_WEIGHTS = dict(config.ADVISOR_WEIGHTS)
 
 
 def _normalize_updated_after(value):
