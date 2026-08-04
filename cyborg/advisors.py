@@ -361,7 +361,7 @@ class OrchestraAdvisor:
                 out = run({"task": question, "content": _opt_text(o),
                            "models": list(cfg["models"]),
                            "focus": cfg.get("focus") or ["польза", "риски", "выполнимость"],
-                           "timeout_sec": int(cfg.get("timeout_sec", 180))}, env)
+                           "timeout_sec": int(cfg.get("timeout_sec", config.ORCHESTRA_TIMEOUT_SEC))}, env)
             except Exception:
                 continue
             score = self._score_reviewers(out.get("reviewers") or [], out.get("findings") or [])

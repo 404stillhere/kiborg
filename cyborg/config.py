@@ -366,6 +366,10 @@ LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES = 60
 # Сколько заголовков идей показывать в Telegram-уведомлении (до «и ещё N»).
 NOTIFY_MAX_TITLES = 10
 
+# === ORCHESTRA-СОВЕТНИК (advisors.py) ===
+# Дефолтный таймаут одного варианта при orchestra review (сек).
+ORCHESTRA_TIMEOUT_SEC = 180
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90
