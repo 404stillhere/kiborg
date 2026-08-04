@@ -137,6 +137,10 @@ ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
 # Базовый URL Bot API Telegram. Может понадобиться прокси/туннель в корп.сетях.
 TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
 
+# === ВРЕМЕННЫЕ ФОРМАТЫ ------------------------------------------------------
+# Единый формат меток времени в логах/статусе (runs.md, source_status, rejected, triage_store).
+DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
+
 # --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------
 # Единый источник endpoint/model для провайдеров, чтобы не дублировать литералы
 # в keychain.py и native_llm.py.

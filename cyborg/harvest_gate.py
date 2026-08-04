@@ -10,6 +10,8 @@ import datetime
 import hashlib
 import json
 
+import config
+
 
 def _titles_sig(titles):
     """Отпечаток набора заголовков (порядок не важен, изменение — важно)."""
@@ -59,7 +61,7 @@ def _status_from_out(out):
             "beta": name not in harvest.USER_VERIFIED_SOURCES,
         }  # β в пульте: юзером не проверен
     return {
-        "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "checked_at": datetime.datetime.now().strftime(config.DATETIME_FMT),
         "degraded": bool(out.get("degraded")),
         "sources": sources,
     }

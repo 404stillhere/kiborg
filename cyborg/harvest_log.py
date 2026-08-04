@@ -68,7 +68,7 @@ def _log(goal, out):
     import harvest
 
     os.makedirs(harvest.DATA, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.datetime.now().strftime(config.DATETIME_FMT)
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
     rv = str(r)[:120] if r is not None else "нет"

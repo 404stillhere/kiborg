@@ -11,8 +11,14 @@ data/rejected.json, чтобы киборг УЧИЛСЯ на отказах, а
 import datetime
 import json
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cyborg"))
+
+import config
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+_DATETIME_FMT = getattr(config, "DATETIME_FMT", "%Y-%m-%d %H:%M:%S")
 PATH = os.path.join(DATA, "rejected.json")
 
 _MAX = 200  # помним последние N отклонённых (файл не растёт бесконечно)
@@ -57,7 +63,7 @@ def add(title, why=""):
     if any((it.get("title", "").strip().lower() == key) for it in items):
         return
     items.append(
-        {"title": title[:300], "why": (why or "")[:400], "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        {"title": title[:300], "why": (why or "")[:400], "ts": datetime.datetime.now().strftime(_DATETIME_FMT)}
     )
     _save(items)
 

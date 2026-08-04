@@ -35,7 +35,7 @@ DATA = config.CYBORG_DATA_DIR  # mutable для тестов (test_scrub пат�
 def _log_run(out):
     """Читаемый след прогона — чтобы юзер утром видел, что киборг делал."""
     os.makedirs(DATA, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.datetime.now().strftime(config.DATETIME_FMT)
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
     rv = str(r)[:120] if r is not None else "нет"
