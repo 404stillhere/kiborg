@@ -17,6 +17,7 @@ except Exception:
 
 import ask_llm  # noqa: E402
 import harvest  # noqa: E402  (_source_env + wire_council: единый источник и впайка совета — как у автосбора)
+import keychain  # noqa: E402  (runtime-предупреждение о секретном файле не в .gitignore)
 from orchestrator import Cyborg  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемся на граф)
 from registry import load_catalog  # noqa: E402
@@ -57,6 +58,11 @@ def _log_run(out):
 
 
 def main(argv):
+    # защита класса: секретный файл должен быть в .gitignore; предупреждаем, но не ломаем запуск
+    key_warn = keychain.keys_file_warning()
+    if key_warn:
+        print(f"⚠ {key_warn}", flush=True)
+
     # Oracle-режим: --mode oracle --project PATH --goal GOAL
     if len(argv) >= 2 and argv[0] in ("--mode", "-m") and argv[1] == "oracle":
         import oracle_mode
