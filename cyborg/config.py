@@ -374,6 +374,10 @@ ORCHESTRA_TIMEOUT_SEC = 180
 # Дефолтный таймаут одной идеи при orchestra-голосовании в council (сек).
 WIRING_COUNCIL_ORCHESTRA_TIMEOUT_SEC = 45
 
+# === HARVEST_LOG (harvest_log.py) ===
+# Сколько символов результата писать в строку runs.md (обрезка для читаемости).
+HARVEST_LOG_RESULT_MAX_CHARS = 120
+
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500

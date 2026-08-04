@@ -71,7 +71,7 @@ def _log(goal, out):
     ts = datetime.datetime.now().strftime(config.DATETIME_FMT)
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
-    rv = str(r)[:120] if r is not None else "нет"
+    rv = str(r)[: config.HARVEST_LOG_RESULT_MAX_CHARS] if r is not None else "нет"
     line = f"- [{ts}] «{goal}» → {steps} | {out['deliverable']}={rv}"
     note = council_note(out)
     if note:
