@@ -362,6 +362,10 @@ HARVEST_RUNNER_MAX_RUNS = 50
 # Окно health-пульта: сколько минут назад считать зафиксированные таймауты state_lock.
 LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES = 60
 
+# === NOTIFY (notify.py) ===
+# Сколько заголовков идей показывать в Telegram-уведомлении (до «и ещё N»).
+NOTIFY_MAX_TITLES = 10
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90

@@ -28,10 +28,10 @@ def notify_delivered(count, titles):
     if count <= 0:
         return
     lines = [f"[kiborg] Доставлено идей: {count}"]
-    for t in titles[:10]:
+    for t in titles[: config.NOTIFY_MAX_TITLES]:
         lines.append(f"- {t}")
-    if len(titles) > 10:
-        lines.append(f"... и ещё {len(titles) - 10}")
+    if len(titles) > config.NOTIFY_MAX_TITLES:
+        lines.append(f"... и ещё {len(titles) - config.NOTIFY_MAX_TITLES}")
     text = "\n".join(lines)
     try:
         _send(token, chat_id, text)
