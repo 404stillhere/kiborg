@@ -39,7 +39,7 @@ EMA_ALPHA = config.FEEDBACK_CORTEX_EMA_ALPHA  # медленная адапта�
 DECAY_FACTOR = config.FEEDBACK_CORTEX_DECAY_FACTOR  # подтягивание к равномерному каждые N событий
 DECAY_EVERY = config.FEEDBACK_CORTEX_DECAY_EVERY  # период decay
 MIN_WEIGHT = config.FEEDBACK_CORTEX_MIN_WEIGHT  # никто не выключается полностью
-UNIFORM = 1.0 / 3  # равномерное распределение (3 советника)
+UNIFORM = 1.0 / config.FEEDBACK_CORTEX_N_ADVISORS  # равномерное распределение
 
 ALL_ADVISORS = list(config.ALL_ADVISORS)
 TRIAGE_ACTIONS = {"take", "later", "trash"}
@@ -157,7 +157,7 @@ def enforce_min_weight(weights, floor):
     """Никто не ниже floor, даже после перенормировки. Итеративный clamp+renormalize:
     после нормировки деление может опустить кого-то ниже floor → повторяем до стабилизации."""
     out = {name: float(weights.get(name, 0.0)) for name in ALL_ADVISORS}
-    for _ in range(10):  # достаточно для сходимости (3 советника, маленькая правка)
+    for _ in range(config.FEEDBACK_CORTEX_ENFORCE_MAX_ITER):  # достаточно для сходимости
         out = {name: max(out[name], floor) for name in ALL_ADVISORS}
         prev = dict(out)
         out = _renormalize(out)

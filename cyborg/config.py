@@ -95,6 +95,10 @@ FEEDBACK_CORTEX_DECAY_EVERY = 30
 FEEDBACK_CORTEX_MIN_WEIGHT = 0.15
 # Максимальный сдвиг веса за один цикл адаптации (после нормировки сигнала).
 FEEDBACK_CORTEX_MARGIN = 0.1
+# Число советников (для равномерного распределения). Должно совпадать с len(ALL_ADVISORS).
+FEEDBACK_CORTEX_N_ADVISORS = 3
+# Максимальное число итераций enforce_min_weight (для сходимости clamp+renormalize).
+FEEDBACK_CORTEX_ENFORCE_MAX_ITER = 10
 
 # === ВЕСА СОВЕТНИКОВ (mind / council_weights) ===
 # Канонические веса советников при отборе идей. Заданы юзером 2026-07-13.
