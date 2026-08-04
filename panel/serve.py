@@ -212,7 +212,7 @@ def _load_auto():
 
 def _save_auto(on, interval_min):
     iv = max(_AUTO_MIN, min(int(interval_min), _AUTO_MAX))
-    tmp = AUTO_FILE + ".tmp"
+    tmp = AUTO_FILE + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"on": bool(on), "interval_min": iv}, f, ensure_ascii=False)
     os.replace(tmp, AUTO_FILE)  # атомарно: обрыв записи не бьёт существующий флаг
