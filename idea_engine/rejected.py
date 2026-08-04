@@ -19,10 +19,10 @@ import config
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _DATETIME_FMT = getattr(config, "DATETIME_FMT", "%Y-%m-%d %H:%M:%S")
-PATH = os.path.join(DATA, "rejected.json")
+PATH = os.path.join(DATA, config.REJECTED_FILE)
 
-_MAX = 200  # помним последние N отклонённых (файл не растёт бесконечно)
-_CONTEXT_N = 25  # сколько подавать генератору/судье как «не повторяй» (промпт не раздуть)
+_MAX = config.REJECTED_MAX_ITEMS  # помним последние N отклонённых (файл не растёт бесконечно)
+_CONTEXT_N = config.REJECTED_CONTEXT_N  # сколько подавать генератору/судье как «не повторяй» (промпт не раздуть)
 
 
 def _load():
@@ -39,7 +39,7 @@ def _save(items):
     """Атомарно: во временный файл + os.replace — обрыв записи не обрежет rejected.json.
     tmp с pid: файл могут писать разные процессы (триаж-спавн пульта), уникальное имя снимает гонку."""
     os.makedirs(DATA, exist_ok=True)
-    tmp = f"{PATH}.{os.getpid()}.tmp"
+    tmp = f"{PATH}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"rejected": items[-_MAX:]}, f, ensure_ascii=False, indent=2)
@@ -63,7 +63,11 @@ def add(title, why=""):
     if any((it.get("title", "").strip().lower() == key) for it in items):
         return
     items.append(
-        {"title": title[:300], "why": (why or "")[:400], "ts": datetime.datetime.now().strftime(_DATETIME_FMT)}
+        {
+            "title": title[: config.REJECTED_TITLE_MAX_CHARS],
+            "why": (why or "")[: config.REJECTED_WHY_MAX_CHARS],
+            "ts": datetime.datetime.now().strftime(_DATETIME_FMT),
+        }
     )
     _save(items)
 

@@ -489,6 +489,20 @@ LATER_FILE = "later.json"
 # Суффикс атомарного tmp-файла: pid уникализирует имя при параллельной записи.
 ATOMIC_TMP_PID_SUFFIX = "{pid}.tmp"
 
+# === REJECTED / TRIAGE_EVENTS (idea_engine/rejected.py, triage_events.py) ===
+# Мастер-файл отклонённых идей (title+why) — учит генератор/судью.
+REJECTED_FILE = "rejected.json"
+# Append-only журнал действий триажа (сигнал Feedback Cortex).
+TRIAGE_EVENTS_FILE_NAME = "triage_events.jsonl"
+# Потолок памяти отклонённых (файл не растёт бесконечно).
+REJECTED_MAX_ITEMS = 200
+# Сколько последних подавать генератору/судье как «не повторяй» (промпт не раздуть).
+REJECTED_CONTEXT_N = 25
+# Обрезка поля title отклонённой идеи.
+REJECTED_TITLE_MAX_CHARS = 300
+# Обрезка поля why отклонённой идеи.
+REJECTED_WHY_MAX_CHARS = 400
+
 # === СБОР ВНЕШНИХ ИСТОЧНИКОВ (idea_engine/organs/collect_source.py) ===
 # URL-адреса публичных API источников (HN/Reddit/Lobsters/GitHub Trending).
 HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json"

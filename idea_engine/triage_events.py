@@ -20,9 +20,14 @@ breakdown_votes (опционально, с Фазы 2 Feedback Cortex 2026-07-2
 import datetime
 import json
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cyborg"))
+
+import config  # noqa: E402
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-PATH = os.path.join(DATA, "triage_events.jsonl")
+PATH = os.path.join(DATA, config.TRIAGE_EVENTS_FILE_NAME)
 
 
 def append(event):
