@@ -732,13 +732,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         # анти-CSRF: чужой сайт в браузере юзера не должен дёргать наши действия.
         # Браузер на POST шлёт Origin — принимаем только свой (или его отсутствие: curl/скрипты).
-        origin = self.headers.get("Origin", "")
+        origin = self.headers.get(config.HTTP_HEADER_ORIGIN, "")
         _allowed_origins = {f"http://{config.PANEL_HOST}:{PORT}", f"http://{config.PANEL_LOCALHOST_ALIAS}:{PORT}"}
         if origin and origin not in _allowed_origins:
             self._json({"ok": False, "msg": "чужой источник — отказано"}, 403)
             return
         ctype = (self.headers.get(config.HTTP_HEADER_CONTENT_TYPE) or "").lower()
-        if "application/json" not in ctype:  # form-POST с text/plain сюда не пройдёт
+        if config.HTTP_MEDIA_TYPE_JSON not in ctype:  # form-POST с text/plain сюда не пройдёт
             self._json(
                 {"ok": False, "msg": f"нужен {config.HTTP_HEADER_CONTENT_TYPE}: {config.HTTP_MEDIA_TYPE_JSON}"}, 415
             )

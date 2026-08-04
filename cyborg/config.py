@@ -239,6 +239,7 @@ HTTP_HEADER_CONTENT_TYPE = "Content-Type"
 HTTP_HEADER_AUTHORIZATION = "Authorization"
 HTTP_HEADER_CONTENT_LENGTH = "Content-Length"
 HTTP_HEADER_CACHE_CONTROL = "Cache-Control"
+HTTP_HEADER_ORIGIN = "Origin"
 HTTP_MEDIA_TYPE_JSON = "application/json"
 HTTP_CHARSET_UTF8 = "utf-8"
 HTTP_MEDIA_TYPE_JSON_UTF8 = f"{HTTP_MEDIA_TYPE_JSON}; charset={HTTP_CHARSET_UTF8}"
@@ -545,6 +546,11 @@ ORACLE_SCAN_README_SUMMARY_MAX_CHARS = 1200
 ORACLE_PLAN_MAX_FILES = 200
 # Сколько слов минимум должна содержать цель.
 ORACLE_PLAN_MIN_GOAL_WORDS = 3
+
+# === STORE / DEDUP (idea_engine/store.py) ===
+# Порог Jaccard для дедупликации идей по значимым словам заголовка.
+# Используется только когда ни одна из сигнатур не является подмножеством другой.
+STORE_DEDUP_JACCARD_THRESHOLD = 0.6
 
 # === FINISH_STEP (idea_engine/organs/finish_step.py) ===
 # Сколько символов next_step брежем в nudge.
