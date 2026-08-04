@@ -402,6 +402,10 @@ OBSERVE_TITLE_MAX_CHARS = 72
 # Сколько символов исключения советника показывать в reason при краше.
 MIND_EXCEPTION_MAX_CHARS = 80
 
+# === RUN (run.py) ===
+# Сколько символов ошибки загрузки каталога печатать в режиме ручного прогона.
+RUN_CATALOG_ERROR_MAX_CHARS = 30
+
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500
