@@ -442,7 +442,7 @@ PROVENANCE_MAX_DECLARED_SOURCE_IDS = 4
 # Сколько символов purpose органа показывать LLM-планировщику.
 BRAIN_PURPOSE_MAX_CHARS = 80
 
-# === RANK_IDEAS / ADVISORS (advisors.py) ===
+# === RANK_IDEAS / ADVISORS (advisors.py + idea_engine/organs/rank_ideas.py) ===
 # Сколько source_refs показывать в тексте варианта для rank_ideas-арбитра.
 RANK_IDEAS_MAX_REFS = 3
 # Сколько символов why/reason в тексте варианта для rank_ideas-арбитра.

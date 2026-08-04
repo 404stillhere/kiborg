@@ -12,7 +12,18 @@
 """
 
 import json
+import os
 import re
+import sys
+
+# path-bootstrap: rank_ideas.py импортируется как из idea_engine, так и из cyborg (advisors.py).
+# Гарантируем project-root в path, чтобы `from cyborg import config` работал в обоих режимах.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from cyborg import config
 
 RUBRIC = (
     "Ты строгий отборщик идей. Ниже {n} идей-кандидатов (проекты/скиллы/аддоны).\n"
@@ -66,12 +77,17 @@ def run(inputs, env):
     if callable(llm):
         items = "\n".join(
             (
-                f"{i}. {d.get('title', '')} — {d.get('why', '')[:240]}"
-                + (f" | Проверка: {d.get('verification', '')[:180]}" if d.get("verification") else "")
+                f"{i}. {d.get('title', '')} — {d.get('why', '')[: config.RANK_IDEAS_WHY_MAX_CHARS]}"
+                + (
+                    f" | Проверка: {d.get('verification', '')[: config.RANK_IDEAS_VERIFICATION_MAX_CHARS]}"
+                    if d.get("verification")
+                    else ""
+                )
                 + (
                     " | Источники: "
                     + ", ".join(
-                        str(ref.get("title") or ref.get("id") or "")[:100] for ref in d.get("source_refs", [])[:3]
+                        str(ref.get("title") or ref.get("id") or "")[: config.RANK_IDEAS_REF_TITLE_MAX_CHARS]
+                        for ref in d.get("source_refs", [])[: config.RANK_IDEAS_MAX_REFS]
                     )
                     if isinstance(d.get("source_refs"), list) and d.get("source_refs")
                     else ""
