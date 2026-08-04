@@ -31,15 +31,17 @@ main() — cron-точка входа: load events → взять хвост п�
 
 import math
 
+import config
+
 # Константы адаптации (тестируются как параметры pure-функций)
-THRESHOLD = 20  # минимум событий для активации (frozen start до порога)
-EMA_ALPHA = 0.02  # медленная адаптация (часовой cron, не шум)
-DECAY_FACTOR = 0.95  # подтягивание к равномерному каждые 30 событий
-DECAY_EVERY = 30  # период decay
-MIN_WEIGHT = 0.15  # никто не выключается полностью
+THRESHOLD = config.FEEDBACK_CORTEX_THRESHOLD  # минимум событий для активации (frozen start до порога)
+EMA_ALPHA = config.FEEDBACK_CORTEX_EMA_ALPHA  # медленная адаптация (часовой cron, не шум)
+DECAY_FACTOR = config.FEEDBACK_CORTEX_DECAY_FACTOR  # подтягивание к равномерному каждые N событий
+DECAY_EVERY = config.FEEDBACK_CORTEX_DECAY_EVERY  # период decay
+MIN_WEIGHT = config.FEEDBACK_CORTEX_MIN_WEIGHT  # никто не выключается полностью
 UNIFORM = 1.0 / 3  # равномерное распределение (3 советника)
 
-ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
+ALL_ADVISORS = list(config.ALL_ADVISORS)
 TRIAGE_ACTIONS = {"take", "later", "trash"}
 
 
@@ -125,7 +127,7 @@ def adapt_weights(events, current, previous_count=0, enabled=False):
 
     # EMA: new = (1−α)×old + α×(old + signal_direction×margin)
     # margin = насколько вес может сдвинуться (ограничено, чтобы EMA не прыгал)
-    _MARGIN = 0.1  # макс сдвиг за один цикл адаптации (после нормировки)
+    _MARGIN = config.FEEDBACK_CORTEX_MARGIN  # макс сдвиг за один цикл адаптации (после нормировки)
     weights = {}
     for name in ALL_ADVISORS:
         old = current.get(name, UNIFORM)

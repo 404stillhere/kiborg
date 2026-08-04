@@ -82,6 +82,20 @@ DEFAULT_PROJECTS_ROOT = os.path.join("M:/", "projects")
 # Больше и разнообразнее сырья для ideate, глубже churn для гейта. Режим «максимум качества».
 SOURCE_N = 105
 
+# === FEEDBACK CORTEX (B4) ===
+# Порог активации адаптивных весов: минимум реальных triage-действий для включения.
+FEEDBACK_CORTEX_THRESHOLD = 20
+# EMA α — скорость адаптации весов (0.02 = медленная, часовой cron, не шум).
+FEEDBACK_CORTEX_EMA_ALPHA = 0.02
+# Decay-фактор: подтягивание весов к равномерному при пересечении порога событий.
+FEEDBACK_CORTEX_DECAY_FACTOR = 0.95
+# Период decay: пересечение границы DECAY_EVERY событий запускает decay.
+FEEDBACK_CORTEX_DECAY_EVERY = 30
+# Минимальный вес советника: никто не выключается полностью.
+FEEDBACK_CORTEX_MIN_WEIGHT = 0.15
+# Максимальный сдвиг веса за один цикл адаптации (после нормировки сигнала).
+FEEDBACK_CORTEX_MARGIN = 0.1
+
 # === ВЕСА СОВЕТНИКОВ (mind / council_weights) ===
 # Канонические веса советников при отборе идей. Заданы юзером 2026-07-13.
 # Сумма = 1.0. Является источником истины для mind.WEIGHTS и council_weights.DEFAULT_WEIGHTS.
