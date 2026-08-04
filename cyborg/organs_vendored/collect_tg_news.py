@@ -69,7 +69,7 @@ def _post_url(channel, msg_id):
     username = channel.lstrip("@")
     if username.lstrip("-").isdigit():  # приватный канал по числовому id — публичной ссылки нет
         return None
-    return f"https://t.me/{username}/{msg_id}"
+    return config.TELEGRAM_POST_URL_TEMPLATE.format(username=username, msg_id=msg_id)
 
 
 def run(inputs: dict, env: dict) -> dict:

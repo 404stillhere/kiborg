@@ -220,6 +220,11 @@ NATIVE_LLM_PROVIDER_TIMEOUT_MS = 5000
 # Задать: export KIBORG_ALERT_TOKEN=123:abc  export KIBORG_ALERT_CHAT_ID=987654321
 # Базовый URL Bot API Telegram. Может понадобиться прокси/туннель в корп.сетях.
 TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
+# Шаблон публичной ссылки на Telegram-пост.
+TELEGRAM_POST_URL_TEMPLATE = "https://t.me/{username}/{msg_id}"
+# Паттерны секретных URL для scrub_secrets (орган vendored, копия в kiborg).
+SCRUB_SLACK_WEBHOOK_URL = r"https://hooks\.slack\.com/services/[A-Za-z0-9/_\-]{20,}"
+SCRUB_DISCORD_WEBHOOK_URL = r"https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\-]{20,}"
 
 # === ВРЕМЕННЫЕ ФОРМАТЫ ------------------------------------------------------
 # Единый формат меток времени в логах/статусе (runs.md, source_status, rejected, triage_store).

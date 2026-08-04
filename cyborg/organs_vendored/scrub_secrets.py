@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from cyborg import config
+
 NEEDS_KEYS: list = []
 
 _SECRET_PATTERNS = [
@@ -30,8 +32,8 @@ _SECRET_PATTERNS = [
     # (lookahead не съедает @). Ловит mongodb://user:pass@…, redis://…, postgres://… и т.п.
     re.compile(r"(?i)([a-z][a-z0-9+.\-]*://)[^\s:/@]+:[^\s:/@]+(?=@)"),
     # вебхуки Slack/Discord — секрет прямо в URL, редактим целиком
-    re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/_\-]{20,}"),
-    re.compile(r"(?i)https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\-]{20,}"),
+    re.compile(config.SCRUB_SLACK_WEBHOOK_URL),
+    re.compile(config.SCRUB_DISCORD_WEBHOOK_URL),
     # сырой Telegram bot-token <id>:<auth> — ровно тот класс креда, что лежит
     # открытым текстом в recon.next_step по проектам («ротация токена бота 12345:AAH…»);
     # не покрывался прежними паттернами (нет sk-/KEY=/bearer). 30+ символов auth-части
