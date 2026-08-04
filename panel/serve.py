@@ -546,7 +546,7 @@ def _last_provider():
     работает в отдельном Python-процессе и не видит память клиента.
     """
     try:
-        with open(os.path.join(CYBORG, "data", "last_provider.json"), encoding="utf-8") as f:
+        with open(config.LAST_PROVIDER_FILE, encoding="utf-8") as f:
             return str(json.load(f).get("provider", "") or "")
     except Exception:
         return ""
