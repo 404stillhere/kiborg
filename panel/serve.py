@@ -629,8 +629,8 @@ class Handler(BaseHTTPRequestHandler):
         raw = body if isinstance(body, bytes) else body.encode("utf-8")
         self.send_response(code)
         self.send_header(config.HTTP_HEADER_CONTENT_TYPE, ctype)
-        self.send_header("Content-Length", str(len(raw)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header(config.HTTP_HEADER_CONTENT_LENGTH, str(len(raw)))
+        self.send_header(config.HTTP_HEADER_CACHE_CONTROL, config.HTTP_CACHE_CONTROL_NO_STORE)
         self.end_headers()
         self.wfile.write(raw)
 
@@ -653,20 +653,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         ctype, _ = mimetypes.guess_type(path)
         ctype = ctype or "application/octet-stream"
-        is_html = filename.endswith(".html")
-        # На этапе активной разработки v2 кешируем только bodies.js (он не меняется
-        # месяцами и тяжёлый — 20кб SVG-кода). HTML/CSS/JS отдаём без кеша: иначе
-        # у пользователя залипает старая версия после правок и он видит «декоративные»
-        # кнопки, потому что app.js не обновился (баг 2026-07-22). Когда v2 устаканится —
-        # вернём public,max-age=3600 на css/js с версионированием через ?v=хэш.
-        cache = "no-store" if is_html else "no-store"
+        # На этапе активной разработки v2 отдаём всё без кеша: иначе у пользователя
+        # залипает старая версия после правок и он видит «декоративные» кнопки,
+        # потому что app.js не обновился (баг 2026-07-22).
+        cache = config.HTTP_CACHE_CONTROL_NO_STORE
         try:
             with open(path, "rb") as f:
                 raw = f.read()
             self.send_response(200)
             self.send_header(config.HTTP_HEADER_CONTENT_TYPE, f"{ctype}; charset={config.HTTP_CHARSET_UTF8}")
-            self.send_header("Content-Length", str(len(raw)))
-            self.send_header("Cache-Control", cache)
+            self.send_header(config.HTTP_HEADER_CONTENT_LENGTH, str(len(raw)))
+            self.send_header(config.HTTP_HEADER_CACHE_CONTROL, cache)
             self.end_headers()
             self.wfile.write(raw)
         except Exception as e:
