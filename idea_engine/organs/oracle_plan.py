@@ -22,6 +22,8 @@ PROMPT_TMPL = """Ты технический планировщик. У тебя
 Карта проекта:
 Название: {name}
 Корневая папка: {root}
+Описание из README: {readme_summary}
+Инбокс: {inbox_state}
 Файлы: {files}
 Точки входа: {entrypoints}
 Маркеры проблем: {markers}
@@ -72,17 +74,45 @@ def run(inputs, env):
 
 
 def _prompt(goal, project_map):
-    files = project_map.get("files", [])
+    files = _prioritize_files(project_map.get("files", []), project_map.get("entrypoints", []), str(project_map.get("oracle_goal", "")))
     markers = project_map.get("markers", {})
+    readme = project_map.get("readme_summary")
+    inbox = project_map.get("inbox_state")
     return PROMPT_TMPL.format(
         goal=goal,
         name=project_map.get("name", "project"),
         root=project_map.get("root", ""),
+        readme_summary=readme if readme else "(нет README или он пуст)",
+        inbox_state=json.dumps(inbox, ensure_ascii=False) if inbox else "(нет инбокса)",
         files=", ".join(files[:200]),
         entrypoints=", ".join(project_map.get("entrypoints", [])),
         markers=json.dumps(markers, ensure_ascii=False) if markers else "(нет)",
         extensions=json.dumps(project_map.get("extensions", {}), ensure_ascii=False),
     )
+
+
+def _prioritize_files(files, entrypoints, goal):
+    """Поднять entrypoints и файлы, релевантные цели, в начало списка.
+
+    LLM видит только первые 200 файлов; если важные файлы утонут в середине,
+    план ссылается на несуществующие README или упускает нужные модули.
+    """
+    goal_tokens = set(re.findall(r"\w+", goal.lower()))
+    score = {}
+    for f in files:
+        s = 0
+        if f in entrypoints:
+            s += 100
+        if "test" not in f and "__pycache__" not in f:
+            f_lower = f.lower()
+            for tok in goal_tokens:
+                if tok in f_lower:
+                    s += 10
+            for key in ("main", "app", "serve", "index", "run", "config", "core"):
+                if key in f_lower:
+                    s += 3
+        score[f] = s
+    return sorted(files, key=lambda f: (-score.get(f, 0), f))
 
 
 def _parse(raw):

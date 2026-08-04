@@ -7,7 +7,7 @@
 
 Выход project_map:
   root, name, file_count, tree, files, extensions, markers, entrypoints,
-  errors, truncated.
+  readme_summary, inbox_state, errors, truncated.
 """
 
 import os
@@ -75,6 +75,8 @@ def run(inputs, env):
     markers = {}
     entrypoints = []
     errors = []
+    readme_summary = _read_readme(root, errors)
+    inbox_state = _read_inbox_state(root, errors)
 
     for dirpath, dirnames, filenames in _walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
@@ -101,6 +103,8 @@ def run(inputs, env):
             "extensions": extensions,
             "markers": dict(sorted(markers.items())),
             "entrypoints": entrypoints,
+            "readme_summary": readme_summary,
+            "inbox_state": inbox_state,
             "errors": errors[:20],
             "truncated": len(files) > MAX_FILES,
         },
@@ -153,6 +157,94 @@ def _ext_histogram(files):
         if dot != -1:
             hist[f[dot:]] += 1
     return dict(hist)
+
+
+def _read_inbox_state(root, errors):
+    """Краткая сводка по инбоксу: сколько идей, последние 5 заголовков."""
+    inbox_path = root / "idea_engine" / "data" / "inbox.md"
+    if not inbox_path.is_file():
+        return None
+    try:
+        data = inbox_path.read_bytes()[:8192]
+        text = data.decode("utf-8", errors="replace")
+    except OSError as e:
+        errors.append(f"cannot read {inbox_path}: {e}")
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("-")]
+    titles = []
+    for line in lines[:30]:
+        m = re.search(r"\*\*(.+?)\*\*", line)
+        if m:
+            titles.append(m.group(1))
+    recent = titles[:5]
+    return {
+        "path": str(inbox_path.relative_to(root).as_posix()),
+        "total_approx": len(lines),
+        "recent_titles": recent,
+    }
+
+
+def _read_readme(root, errors):
+    """Краткое описание проекта из README: первые 20 строк после заголовка и code-блоков.
+
+    Читается только метаданные: описание и список возможностей, не код. Лимит 2 КиБ, чтобы
+    не раздувать project_map для планировщика. None если README не найден / не читается.
+    """
+    for cand in ("README.md", "readme.md", "README.MD", "Readme.md"):
+        path = root / cand
+        if not path.is_file():
+            continue
+        try:
+            data = path.read_bytes()[:2048]
+            text = data.decode("utf-8", errors="replace")
+        except OSError as e:
+            errors.append(f"cannot read {path}: {e}")
+            return None
+        return _summarize_readme(text)
+    return None
+
+
+def _summarize_readme(text):
+    """Сжать README до описания проекта: пропустить заголовок, code-блоки, ссылки; первое
+    содержательное предложение и список возможностей (если есть). Возвращает короткую строку."""
+    lines = []
+    in_code = False
+    seen_heading = False
+    skip_section = False
+    buf = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if line.startswith("#"):
+            seen_heading = True
+            continue
+        if not line:
+            continue
+        if line.startswith(("[!", "![", "http://", "https://", "<", "|")):
+            continue
+        if line.startswith("-"):
+            buf.append(line)
+            continue
+        if not seen_heading:
+            continue
+        if skip_section:
+            if line.startswith("#") or not line:
+                skip_section = False
+            else:
+                continue
+        if line.lower().startswith(("license", "ci", "status", "badges", "table of contents")):
+            skip_section = True
+            continue
+        lines.append(line)
+        if len(lines) >= 15:
+            break
+    if buf and len(lines) < 5:
+        lines.extend(buf[:5])
+    return " ".join(lines)[:1200] if lines else None
 
 
 def _build_tree(name, files, depth):
