@@ -45,7 +45,7 @@ PATH = os.path.join(DATA, config.ITEMS_CACHE_FILE)
 
 
 def _sha256(text):
-    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+    return hashlib.sha256((text or "").encode(config.HTTP_CHARSET_UTF8)).hexdigest()
 
 
 def _item_hash(item):

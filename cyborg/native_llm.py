@@ -45,7 +45,7 @@ def _call(spec, prompt, timeout_ms, max_tokens, temperature):
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
-    ).encode("utf-8")
+    ).encode(config.HTTP_CHARSET_UTF8)
     req = urllib.request.Request(
         url,
         data=body,
@@ -57,7 +57,7 @@ def _call(spec, prompt, timeout_ms, max_tokens, temperature):
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as r:
-            data = json.loads(r.read().decode("utf-8", "replace"))
+            data = json.loads(r.read().decode(config.HTTP_CHARSET_UTF8, config.HTTP_DECODE_ERRORS_REPLACE))
         return data["choices"][0]["message"]["content"] or ""
     except Exception:
         return ""

@@ -15,7 +15,7 @@ import config
 
 def _titles_sig(titles):
     """Отпечаток набора заголовков (порядок не важен, изменение — важно)."""
-    return hashlib.sha1("|".join(sorted(titles)).encode("utf-8")).hexdigest()
+    return hashlib.sha1("|".join(sorted(titles)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()
 
 
 def _items_sig(items):
@@ -33,7 +33,7 @@ def _items_sig(items):
             values.append(f"{source}:{iid if iid is not None else title}")
         else:
             values.append(str(item))
-    return hashlib.sha1("|".join(sorted(values)).encode("utf-8")).hexdigest()
+    return hashlib.sha1("|".join(sorted(values)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()
 
 
 def _status_from_out(out):
@@ -74,7 +74,7 @@ def _atomic_write(path, text):
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + config.ATOMIC_TMP_SUFFIX
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(text)
     os.replace(tmp, path)
 
@@ -127,7 +127,7 @@ def _last_sig():
     import harvest
 
     try:
-        with open(harvest.STATE_FILE, encoding="utf-8") as f:
+        with open(harvest.STATE_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:
             return json.load(f).get("sig")
     except Exception:
         return None

@@ -89,15 +89,15 @@ def adapt_weights(events, current, previous_count=0, enabled=False):
     # (Б) FALLBACK (старая логика, backward compat): нет breakdown_votes → грубая эвристика по
     #     judged: solo → сигнал только rank_ideas; council → сигнал всем ALL_ADVISORS.
     #     «Судили все → поощряем/наказываем всех». Менее точно, но работает на старых данных.
-    signal = {name: 0.0 for name in ALL_ADVISORS}
+    signal = {name: config.ZERO_WEIGHT for name in ALL_ADVISORS}
     for ev in batch:
         if not isinstance(ev, dict):
             continue
         action = ev.get("action")
         if action == "take":
-            action_sign = 1.0
+            action_sign = config.UNIT_WEIGHT
         elif action == "trash":
-            action_sign = -1.0
+            action_sign = -config.UNIT_WEIGHT
         else:
             continue  # later нейтрально
         votes = ev.get("breakdown_votes")
@@ -114,15 +114,17 @@ def adapt_weights(events, current, previous_count=0, enabled=False):
                 score = float(score)
                 if not math.isfinite(score) or not 0.0 <= score <= 1.0:
                     continue
-                # (score − 0.5) × 2 ∈ [-1, 1]; action_sign × это → направление сдвига веса
-                signal[name] += action_sign * (score - 0.5) * 2.0
+                # (score − center) × scale ∈ [-1, 1]; action_sign × это → направление сдвига веса
+                signal[name] += (
+                    action_sign * (score - config.FEEDBACK_CORTEX_SCORE_CENTER) * config.FEEDBACK_CORTEX_SCORE_SCALE
+                )
         elif judged == "solo":
             signal["rank_ideas"] += action_sign  # (Б) solo = судил один арбитр
         else:
             for name in ALL_ADVISORS:
                 signal[name] += action_sign  # (Б) council = судили все
     # нормировка сигнала к [-1, 1] (по максимуму)
-    max_abs = max((abs(v) for v in signal.values()), default=0.0) or 1.0
+    max_abs = max((abs(v) for v in signal.values()), default=config.ZERO_WEIGHT) or config.UNIT_WEIGHT
     norm_signal = {name: signal[name] / max_abs for name in ALL_ADVISORS}
 
     # EMA: new = (1−α)×old + α×(old + signal_direction×margin)
@@ -156,7 +158,7 @@ def apply_decay(weights, factor):
 def enforce_min_weight(weights, floor):
     """Никто не ниже floor, даже после перенормировки. Итеративный clamp+renormalize:
     после нормировки деление может опустить кого-то ниже floor → повторяем до стабилизации."""
-    out = {name: float(weights.get(name, 0.0)) for name in ALL_ADVISORS}
+    out = {name: float(weights.get(name, config.ZERO_WEIGHT)) for name in ALL_ADVISORS}
     for _ in range(config.FEEDBACK_CORTEX_ENFORCE_MAX_ITER):  # достаточно для сходимости
         out = {name: max(out[name], floor) for name in ALL_ADVISORS}
         prev = dict(out)
@@ -169,10 +171,10 @@ def enforce_min_weight(weights, floor):
 
 def _renormalize(weights):
     """Нормировать веса к сумме 1 (mind._live_weights делает то же для AVG-компонента)."""
-    total = sum(weights.get(name, 0.0) for name in ALL_ADVISORS)
-    if total <= 0:
+    total = sum(weights.get(name, config.ZERO_WEIGHT) for name in ALL_ADVISORS)
+    if total <= config.ZERO_WEIGHT:
         return {name: UNIFORM for name in ALL_ADVISORS}
-    return {name: weights.get(name, 0.0) / total for name in ALL_ADVISORS}
+    return {name: weights.get(name, config.ZERO_WEIGHT) / total for name in ALL_ADVISORS}
 
 
 def main(events_path=None):

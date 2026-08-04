@@ -103,6 +103,12 @@ FEEDBACK_CORTEX_MARGIN = 0.1
 FEEDBACK_CORTEX_N_ADVISORS = 3
 # Максимальное число итераций enforce_min_weight (для сходимости clamp+renormalize).
 FEEDBACK_CORTEX_ENFORCE_MAX_ITER = 10
+# Центр шкалы advisor_score: (score − 0.5) × 2 переводит [0,1] в [-1,1].
+FEEDBACK_CORTEX_SCORE_CENTER = 0.5
+FEEDBACK_CORTEX_SCORE_SCALE = 2.0
+# Общие числовые константы (чтобы не дублировать литералы в feedback_cortex).
+ZERO_WEIGHT = 0.0
+UNIT_WEIGHT = 1.0
 
 # === ВЕСА СОВЕТНИКОВ (mind / council_weights) ===
 # Канонические веса советников при отборе идей. Заданы юзером 2026-07-13.
@@ -253,6 +259,7 @@ HTTP_HEADER_ANTHROPIC_VERSION = "anthropic-version"
 HTTP_ANTHROPIC_VERSION_DATE = "2023-06-01"
 HTTP_MEDIA_TYPE_JSON = "application/json"
 HTTP_CHARSET_UTF8 = "utf-8"
+HTTP_DECODE_ERRORS_REPLACE = "replace"
 HTTP_MEDIA_TYPE_JSON_UTF8 = f"{HTTP_MEDIA_TYPE_JSON}; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8 = f"text/plain; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_TEXT_HTML_UTF8 = f"text/html; charset={HTTP_CHARSET_UTF8}"

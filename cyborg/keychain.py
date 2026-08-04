@@ -211,7 +211,7 @@ def _openai_chat(url, key, model, system, prompt, timeout=config.KEYCHAIN_OPENAI
             "max_tokens": config.KEYCHAIN_OPENAI_MAX_TOKENS,
             "temperature": config.KEYCHAIN_OPENAI_TEMPERATURE,
         }
-    ).encode("utf-8")
+    ).encode(config.HTTP_CHARSET_UTF8)
     req = urllib.request.Request(
         url,
         data=body,
@@ -222,7 +222,7 @@ def _openai_chat(url, key, model, system, prompt, timeout=config.KEYCHAIN_OPENAI
         method=config.HTTP_METHOD_POST,
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        d = _json.loads(r.read().decode("utf-8", "replace"))
+        d = _json.loads(r.read().decode(config.HTTP_CHARSET_UTF8, config.HTTP_DECODE_ERRORS_REPLACE))
     return d["choices"][0]["message"]["content"] or ""
 
 

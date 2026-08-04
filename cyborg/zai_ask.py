@@ -47,7 +47,7 @@ def ask(prompt, timeout_ms=None, max_tokens=config.INTUITION_MAX_TOKENS, tempera
             "temperature": temperature,
             "messages": [{"role": "user", "content": prompt}],
         }
-    ).encode("utf-8")
+    ).encode(config.HTTP_CHARSET_UTF8)
     req = urllib.request.Request(
         url,
         data=body,
@@ -60,7 +60,7 @@ def ask(prompt, timeout_ms=None, max_tokens=config.INTUITION_MAX_TOKENS, tempera
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout_ms / 1000) as r:
-            raw = r.read().decode("utf-8", "replace")
+            raw = r.read().decode(config.HTTP_CHARSET_UTF8, config.HTTP_DECODE_ERRORS_REPLACE)
             data = json.loads(raw)
             content = data.get("content") or []
             for block in content:

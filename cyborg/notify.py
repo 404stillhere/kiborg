@@ -14,7 +14,7 @@ import config
 
 def _send(token, chat_id, text):
     url = f"{config.TELEGRAM_BOT_API_BASE}/bot{token}/sendMessage"
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode(config.HTTP_CHARSET_UTF8)
     req = urllib.request.Request(url, data=data, method=config.HTTP_METHOD_POST)
     urllib.request.urlopen(req, timeout=config.ALERT_HTTP_TIMEOUT).read()
 

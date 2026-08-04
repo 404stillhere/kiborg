@@ -30,7 +30,7 @@ import config
 def _tg_send(token, chat_id, text):
     """POST на Telegram Bot API /sendMessage. Любая ошибка → raise (звавший поймает)."""
     url = f"{config.TELEGRAM_BOT_API_BASE}/bot{token}/sendMessage"
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode(config.HTTP_CHARSET_UTF8)
     req = urllib.request.Request(url, data=data, method=config.HTTP_METHOD_POST)
     # urlopen сам по себе выбросит URLError/HTTPError при таймауте/сбое — звавший обработает.
     urllib.request.urlopen(req, timeout=config.ALERT_HTTP_TIMEOUT).read()
