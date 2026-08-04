@@ -79,4 +79,4 @@ if __name__ == "__main__":
         print("SMOKE SKIP: нет нативных ключей")
     else:
         out = ask('Верни РОВНО одну строку JSON: {"ok":true}')
-        print("SMOKE", "OK" if '"ok"' in out else "FAIL", "|", repr(out[:160]))
+        print("SMOKE", "OK" if '"ok"' in out else "FAIL", "|", repr(out[: config.NATIVE_LLM_SMOKE_MAX_CHARS]))
