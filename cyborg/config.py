@@ -354,6 +354,10 @@ READABILITY_SCORE_TEMPERATURE = 0.2
 # Минимальный per-provider таймаут (мс) при обходе нативных провайдеров.
 NATIVE_LLM_MIN_PER_PROVIDER_MS = 5000
 
+# === АВТОСБОР (harvest_runner.py) ===
+# Максимальное число прогонов за один вызов harvest_runner.main (предохранитель).
+HARVEST_RUNNER_MAX_RUNS = 50
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90

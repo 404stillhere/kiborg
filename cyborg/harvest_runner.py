@@ -43,7 +43,7 @@ def main(argv):
     force = "--force" in argv or "force" in argv  # ручной клик из пульта перебивает гейт
     nums = [a for a in argv if a.isdigit()]
     n = int(nums[0]) if nums else 1
-    n = max(1, min(n, 50))  # предохранитель: не больше 50 прогонов за вызов
+    n = max(1, min(n, config.HARVEST_RUNNER_MAX_RUNS))  # предохранитель: не больше N прогонов за вызов
     goal = "приноси свежие идеи"  # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
     # РЕЗЕРВНОЕ КОПИРОВАНИЕ state.json + seen_items.json перед прогоном (ОДИН раз за вызов main,
     # НЕ за каждый прогон в цикле — иначе N прогонов = N бэкапов под одним таймстемпом, а state.json
