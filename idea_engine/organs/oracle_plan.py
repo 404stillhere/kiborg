@@ -64,7 +64,7 @@ def _validate_goal(goal):
         return "цель слишком короткая: опиши что сделать минимум 3 словами"
     lowered = goal.lower().strip(" .!?:")
     if lowered in _VAGUE_GOALS:
-        return f"цель слишком абстрактная: \"{goal}\" — уточни, что именно нужно сделать"
+        return f'цель слишком абстрактная: "{goal}" — уточни, что именно нужно сделать'
     return None
 
 
