@@ -194,17 +194,20 @@ def _start_observe():
 # --- автономный режим (рубильник): фон гоняет ТОТ ЖЕ сбор по таймеру ---
 # AUTO_FILE объявлен выше в блоке констант (= config.AUTO_JSON).
 _AUTO = {"last": 0.0}
-_AUTO_MIN, _AUTO_MAX = 5, 240  # границы интервала, мин
+_AUTO_MIN = config.AUTO_INTERVAL_MIN_MINUTES
+_AUTO_MAX = config.AUTO_INTERVAL_MAX_MINUTES
+_AUTO_DEFAULT = config.AUTO_INTERVAL_DEFAULT_MINUTES
+_AUTO_LOOP_SLEEP = config.AUTO_LOOP_SLEEP_SECONDS
 
 
 def _load_auto():
     try:
         with open(AUTO_FILE, encoding="utf-8") as f:
             d = json.load(f)
-        iv = int(d.get("interval_min", 30))
+        iv = int(d.get("interval_min", _AUTO_DEFAULT))
         return {"on": bool(d.get("on")), "interval_min": max(_AUTO_MIN, min(iv, _AUTO_MAX))}
     except Exception:
-        return {"on": False, "interval_min": 30}
+        return {"on": False, "interval_min": _AUTO_DEFAULT}
 
 
 def _save_auto(on, interval_min):
@@ -242,7 +245,7 @@ def _auto_loop():
     режим МОЛЧА встанет до рестарта пульта) — логируем и продолжаем со следующего тика."""
     _AUTO["last"] = time.time()  # не палить прогон в первую же минуту после старта пульта
     while True:
-        time.sleep(30)
+        time.sleep(_AUTO_LOOP_SLEEP)
         try:
             _auto_tick()
         except Exception as e:
@@ -772,7 +775,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/auto":
             try:
-                iv = int(body.get("interval_min", 30))
+                iv = int(body.get("interval_min", _AUTO_DEFAULT))
             except (TypeError, ValueError):
                 # как /api/idea: кривой тип → 400, а не ValueError из _save_auto (int()) вне try →
                 # обрыв запроса/трейсбек. Был единственный POST-роут без валидации входа (асимметрия).

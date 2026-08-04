@@ -232,5 +232,13 @@ PANEL_LOCALHOST_ALIAS = "localhost"
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess
 # Рубильник авто-режима пульта (JSON с интервалом/last-run). Патчится в тестах: `serve.AUTO_FILE = tmp`.
 AUTO_JSON = os.path.join(PANEL_DIR, "auto.json")
+# Границы интервала авто-сбора (минуты). Пульт обрезает пользовательское значение в этот диапазон.
+AUTO_INTERVAL_MIN_MINUTES = 5
+AUTO_INTERVAL_MAX_MINUTES = 240
+# Дефолтный интервал авто-сбора (минуты), если файл настроек отсутствует или повреждён.
+AUTO_INTERVAL_DEFAULT_MINUTES = 30
+# Период sleep внутри фонового цикла авто-режима (сек). Меньше интервала — тик проверяет чаще,
+# но не запускает прогон чаще заданного interval_min.
+AUTO_LOOP_SLEEP_SECONDS = 30
 # Feature-lab статус фич (внутренний). Патчится в тестах: `serve.LAB_ROUTER = tmp`.
 LAB_ROUTER_FILE = os.path.join(PROJECT_ROOT, ".feature-lab", "router.json")
