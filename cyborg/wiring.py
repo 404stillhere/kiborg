@@ -87,7 +87,7 @@ _TG_LOCK_POLL_INTERVAL = config.TG_LOCK_POLL_INTERVAL
 # Порог протухания lock-файла tg-сессии (СЕКУНДЫ; config хранит в минутах для читаемости).
 # _collect_locked перед захватом зовёт _remove_stale_lock(sess, ...): lock старше порога
 # (зависший после краша) сносится, не тратя TG_LOCK_TIMEOUT на ожидание. Mutable для тестов.
-_STALE_LOCK_MAX_AGE = config.STALE_LOCK_MAX_AGE_MINUTES * 60
+_STALE_LOCK_MAX_AGE = config.STALE_LOCK_MAX_AGE_MINUTES * config.SECONDS_PER_MINUTE
 # Курсор ротации finish_step — куда писать/откуда читать next_cursor. Mutable для test_registry.
 _CURSOR_FILE = config.CURSOR_FILE
 
