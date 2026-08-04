@@ -22,7 +22,7 @@ import native_llm
 import zai_ask
 
 _NODE_EXE = os.environ.get(config.NODE_EXE_ENV, "node")
-_ORGAN_JS = os.environ.get(config.ASK_LLM_JS_ENV, "M:/projects/DarBench/organ.js")
+_ORGAN_JS = os.environ.get(config.ASK_LLM_JS_ENV, config.DEFAULT_ASK_LLM_JS)
 _TIMEOUT_MS = int(os.environ.get(config.ASK_LLM_TIMEOUT_MS_ENV, str(config.DEFAULT_LLM_TIMEOUT_MS)))
 
 # Ярлык для пульта/логов (serve.py, harvest.py, run.py читают ask_llm._MODEL). Реальная
