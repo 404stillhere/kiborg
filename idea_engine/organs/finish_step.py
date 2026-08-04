@@ -56,7 +56,11 @@ def run(inputs, env):
 
 
 if __name__ == "__main__":
+    import os
     import sys
 
-    p = sys.argv[1] if len(sys.argv) > 1 else "M:/projects/panelofprojects/recon.json"
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cyborg"))
+    import config  # noqa: E402
+
+    p = sys.argv[1] if len(sys.argv) > 1 else config.RECON_FILE
     print(json.dumps(run({}, {"recon_path": p}), ensure_ascii=False, indent=2))

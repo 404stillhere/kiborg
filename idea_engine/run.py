@@ -19,6 +19,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cyborg"))
+
+import config  # noqa: E402
 import rejected  # noqa: E402  (мусор = отклонена: суть уходит сюда, учит генератор/судью)
 import triage_store  # noqa: E402  (take/later = разобрана: полная идея уходит в taken.json/later.json)
 from organs import collect_source, finish_step, ideate  # noqa: E402
@@ -35,7 +38,7 @@ CFG = {
     "n": 8,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
     "source": "hn",
     "k": 3,  # сколько идей за раз
-    "recon_path": "M:/projects/panelofprojects/recon.json",
+    "recon_path": config.RECON_FILE,
     "skip_folders": [],  # folder'ы режима B, которые не толкать (пусто = не фильтровать); knob finish_step
 }
 
