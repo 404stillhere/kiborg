@@ -119,7 +119,7 @@ def _attach_provenance(ideas, items):
         declared = idea.get("source_ids")
         if isinstance(declared, list):
             matched = []
-            for raw in declared[:4]:
+            for raw in declared[: config.PROVENANCE_MAX_DECLARED_SOURCE_IDS]:
                 item = by_id.get(str(raw))
                 if item is None or item in matched:
                     continue

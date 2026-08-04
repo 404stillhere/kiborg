@@ -421,6 +421,8 @@ RUN_RESULT_MAX_CHARS = 900
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500
+# Сколько declared source_ids рассматривать при прямом связывании idea → item.
+PROVENANCE_MAX_DECLARED_SOURCE_IDS = 4
 
 # === BRAIN (brain.py) ===
 # Сколько символов purpose органа показывать LLM-планировщику.
