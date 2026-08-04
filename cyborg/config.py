@@ -481,6 +481,13 @@ TELEGRAM_FETCH_TIMEOUT = 90
 # Потолок сообщений на один ТГ-канал по умолчанию.
 TELEGRAM_LIMIT_PER_CHANNEL = 50
 
+# === TRIAGE_STORE (idea_engine/triage_store.py) ===
+# Имена master-файлов разобранных идей (take / later).
+TAKEN_FILE = "taken.json"
+LATER_FILE = "later.json"
+# Суффикс атомарного tmp-файла: pid уникализирует имя при параллельной записи.
+ATOMIC_TMP_PID_SUFFIX = "{pid}.tmp"
+
 # === СБОР ВНЕШНИХ ИСТОЧНИКОВ (idea_engine/organs/collect_source.py) ===
 # URL-адреса публичных API источников (HN/Reddit/Lobsters/GitHub Trending).
 HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json"

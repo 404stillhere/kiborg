@@ -23,8 +23,8 @@ import config
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _DATETIME_FMT = getattr(config, "DATETIME_FMT", "%Y-%m-%d %H:%M:%S")
-TAKEN_PATH = os.path.join(DATA, "taken.json")
-LATER_PATH = os.path.join(DATA, "later.json")
+TAKEN_PATH = os.path.join(DATA, config.TAKEN_FILE)
+LATER_PATH = os.path.join(DATA, config.LATER_FILE)
 
 
 def _load(path):
@@ -47,7 +47,7 @@ def _save(path, items, key):
     tmp с pid: файл могут писать разные процессы (триаж-спавн пульта), уникальное имя
     снимает гонку за общий .tmp (как в rejected.py / store.py)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
+    tmp = f"{path}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({key: items}, f, ensure_ascii=False, indent=2)
