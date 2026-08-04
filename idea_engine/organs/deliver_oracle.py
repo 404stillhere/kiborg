@@ -9,8 +9,15 @@
 
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from cyborg import config  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 ORACLES_DIR = DATA_DIR / "oracles"
@@ -18,7 +25,7 @@ INBOX_PATH = DATA_DIR / "inbox.md"
 INDEX_PATH = ORACLES_DIR / "index.md"
 
 # План с той же целью/проектом, созданный не позднее этого окна, считается дубликатом.
-DEDUP_WINDOW_HOURS = 24
+DEDUP_WINDOW_HOURS = config.ORACLE_DEDUP_WINDOW_HOURS
 
 
 def _slug(text):

@@ -10,7 +10,16 @@
 """
 
 import json
+import os
 import re
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from cyborg import config
 
 PROMPT_TMPL = (
     "Ты генератор и технический аналитик проектных идей. На входе материалы с ID:\n"
@@ -67,7 +76,7 @@ def _stub(items, k):
         it = items[idx % len(items)] if items else {"title": "—"}
         out.append(
             {
-                "title": f"Идея по мотиву: {it.get('title', '')[:60]}",
+                "title": f"Идея по мотиву: {it.get('title', '')[: config.IDEATE_STUB_TITLE_MAX_CHARS]}",
                 "why": "Заголовок наводит на смежный инструмент — проверить нишу.",
                 "effort": _EFFORT[idx % 3],
                 "brain": "stub",
@@ -119,8 +128,10 @@ def _parse(raw, k):
             if not isinstance(source_ids, list):
                 source_ids = []
             source_ids = [
-                str(value).strip()[:120] for value in source_ids if isinstance(value, (str, int)) and str(value).strip()
-            ][:4]
+                str(value).strip()[: config.IDEATE_SOURCE_ID_MAX_CHARS]
+                for value in source_ids
+                if isinstance(value, (str, int)) and str(value).strip()
+            ][: config.IDEATE_MAX_SOURCE_IDS]
             card = {
                 "title": o.get("title", ""),
                 "why": o.get("why", ""),
@@ -130,7 +141,7 @@ def _parse(raw, k):
             }
             verification = o.get("verification")
             if isinstance(verification, str) and verification.strip():
-                card["verification"] = verification.strip()[:500]
+                card["verification"] = verification.strip()[: config.IDEATE_VERIFICATION_MAX_CHARS]
             out.append(card)
     return out[:k]
 

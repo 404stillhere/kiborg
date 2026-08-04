@@ -75,9 +75,9 @@ KEEP_EXTENSIONS = {
     ".example",
 }
 
-MAX_FILES = 2000
-MAX_TREE_DEPTH = 4
-CONTENT_MAX_BYTES = 200_000
+MAX_FILES = config.ORACLE_SCAN_MAX_FILES
+MAX_TREE_DEPTH = config.ORACLE_SCAN_MAX_TREE_DEPTH
+CONTENT_MAX_BYTES = config.ORACLE_SCAN_CONTENT_MAX_BYTES
 ENTRYPOINTS = {
     "README.md",
     "readme.md",
@@ -143,7 +143,7 @@ def run(inputs, env):
             "entrypoints": entrypoints,
             "readme_summary": readme_summary,
             "inbox_state": inbox_state,
-            "errors": errors[:20],
+            "errors": errors[: config.ORACLE_SCAN_MAX_ERRORS],
             "truncated": len(files) > MAX_FILES,
         },
     }
@@ -214,18 +214,18 @@ def _read_inbox_state(root, errors):
     if not inbox_path.is_file():
         return None
     try:
-        data = inbox_path.read_bytes()[:8192]
+        data = inbox_path.read_bytes()[: config.ORACLE_SCAN_CONTENT_MAX_BYTES]
         text = data.decode("utf-8", errors="replace")
     except OSError as e:
         errors.append(f"cannot read {inbox_path}: {e}")
         return None
     lines = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("-")]
     titles = []
-    for line in lines[:30]:
+    for line in lines[: config.ORACLE_SCAN_INBOX_LINES]:
         m = re.search(r"\*\*(.+?)\*\*", line)
         if m:
             titles.append(m.group(1))
-    recent = titles[:5]
+    recent = titles[: config.ORACLE_SCAN_INBOX_RECENT]
     return {
         "path": str(inbox_path.relative_to(root).as_posix()),
         "total_approx": len(lines),
@@ -244,7 +244,7 @@ def _read_readme(root, errors):
         if not path.is_file():
             continue
         try:
-            data = path.read_bytes()[:2048]
+            data = path.read_bytes()[: config.ORACLE_SCAN_README_BYTES]
             text = data.decode("utf-8", errors="replace")
         except OSError as e:
             errors.append(f"cannot read {path}: {e}")
@@ -289,11 +289,11 @@ def _summarize_readme(text):
             skip_section = True
             continue
         lines.append(line)
-        if len(lines) >= 15:
+        if len(lines) >= config.ORACLE_SCAN_README_LINES:
             break
     if buf and len(lines) < 5:
-        lines.extend(buf[:5])
-    return " ".join(lines)[:1200] if lines else None
+        lines.extend(buf[: config.ORACLE_SCAN_README_FEATURES_BUF])
+    return " ".join(lines)[: config.ORACLE_SCAN_README_SUMMARY_MAX_CHARS] if lines else None
 
 
 def _build_tree(name, files, depth):

@@ -462,6 +462,94 @@ TELEGRAM_FETCH_TIMEOUT = 90
 # Потолок сообщений на один ТГ-канал по умолчанию.
 TELEGRAM_LIMIT_PER_CHANNEL = 50
 
+# === СБОР ВНЕШНИХ ИСТОЧНИКОВ (idea_engine/organs/collect_source.py) ===
+# GitHub Trending: сколько репо обогащать description через API (лимит 60/час для IP без токена).
+GH_TRENDING_ENRICH_LIMIT = 5
+# Таймаут git ls-files внутри _files_git_walk (сек).
+FILES_GIT_LSFILES_TIMEOUT = 8
+# Максимальный размер файла-папки-источника (байт), который читаем.
+FILES_MAX_BYTES = 1024 * 1024
+# Сколько байт читаем с начала файла для headline (переживает лицензионную/сгенерированную шапку).
+FILES_HEAD_BYTES = 32 * 1024
+# Максимальное число символов контекста одного файла в промпт.
+FILES_CONTEXT_CHARS = 1600
+# Максимальное число строк контекста одного файла.
+FILES_CONTEXT_LINES = 20
+# Максимальное число файловых item'ов за прогон.
+FILES_MAX_ITEMS = 48
+# Предохранитель: сколько файлов максимум осматриваем за прогон.
+FILES_MAX_SCAN = 20000
+# Максимальное число карт проектов, которые добавляем к выдаче файлов.
+FILES_MAX_PROJECT_MAPS = 8
+# Сколько символов берём из description репозитория GitHub при обогащении.
+GH_REPO_DESCRIPTION_MAX_CHARS = 180
+# Сколько символов печатаем из stderr Telegram-RPC при ошибке.
+TELEGRAM_RPC_ERROR_MAX_CHARS = 200
+# Сколько символов берём из первой строки поста Telegram.
+TELEGRAM_POST_TITLE_MAX_CHARS = 200
+# Сколько символов строки безопасной линии файла (раскрытие табов + отступ).
+FILES_SAFE_LINE_MAX_CHARS = 260
+# Сколько символов составляет headline файла.
+FILES_HEADLINE_MAX_CHARS = 180
+# Сколько символов берём из строки контекста файла при форматировании L{lineno}: ... .
+FILES_CONTEXT_LINE_MAX_CHARS = 220
+# Сколько символов берём из итогового title файлового item'а.
+FILES_ITEM_TITLE_MAX_CHARS = 240
+# Сколько зависимостей максимум выводим в контекст файла.
+FILES_DEPS_MAX_ITEMS = 10
+# Вес jitter для ротирующей выборки _files_select (score + random * jitter).
+FILES_SELECT_JITTER = 18.0
+# Минимальный размер secret_probe (половина от двустороннего окна).
+FILES_SECRET_PROBE_HALF_WINDOW = 2500
+# Порог длины строки, выше которой используем двустороннее окно для секрет-скана.
+FILES_SECRET_PROBE_FULL_WINDOW = 5000
+
+# === ORACLE-SCAN (idea_engine/organs/oracle_scan.py) ===
+# Максимальное число файлов в карте проекта.
+ORACLE_SCAN_MAX_FILES = 2000
+# Глубина дерева файлов в карте проекта.
+ORACLE_SCAN_MAX_TREE_DEPTH = 4
+# Максимальное число байт, читаемых из файла при подсчёте маркеров.
+ORACLE_SCAN_CONTENT_MAX_BYTES = 200_000
+# Сколько ошибок сохраняем в project_map.
+ORACLE_SCAN_MAX_ERRORS = 20
+# Сколько строк инбокса разбираем на заголовки.
+ORACLE_SCAN_INBOX_LINES = 30
+# Сколько недавних заголовков инбокса показываем.
+ORACLE_SCAN_INBOX_RECENT = 5
+# Сколько байт читаем из README для summary.
+ORACLE_SCAN_README_BYTES = 2048
+# Сколько содержательных строк README сохраняем.
+ORACLE_SCAN_README_LINES = 15
+# Сколько строк возможностей (buf) добавляем к summary, если основных мало.
+ORACLE_SCAN_README_FEATURES_BUF = 5
+# Максимальная длина итогового summary README (символов).
+ORACLE_SCAN_README_SUMMARY_MAX_CHARS = 1200
+
+# === ORACLE-PLAN (idea_engine/organs/oracle_plan.py) ===
+# Максимальное число файлов, передаваемых в промпт планировщика.
+ORACLE_PLAN_MAX_FILES = 200
+# Сколько слов минимум должна содержать цель.
+ORACLE_PLAN_MIN_GOAL_WORDS = 3
+
+# === FINISH_STEP (idea_engine/organs/finish_step.py) ===
+# Сколько символов next_step брежем в nudge.
+FINISH_STEP_WHY_MAX_CHARS = 220
+
+# === IDEATE (idea_engine/organs/ideate.py) ===
+# Сколько символов title источника берём в stub-идею.
+IDEATE_STUB_TITLE_MAX_CHARS = 60
+# Сколько source_ids сохраняем в карточке идеи.
+IDEATE_MAX_SOURCE_IDS = 4
+# Сколько символов source_id сохраняем.
+IDEATE_SOURCE_ID_MAX_CHARS = 120
+# Максимальная длина verification в карточке идеи.
+IDEATE_VERIFICATION_MAX_CHARS = 500
+
+# === DELIVER_ORACLE (idea_engine/organs/deliver_oracle.py) ===
+# План с той же целью/проектом, созданный не позднее этого окна, считается дубликатом (часы).
+ORACLE_DEDUP_WINDOW_HOURS = 24
+
 # === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
 # Максимальное число папок-источников. Больше — мусор/раздувание списка.
 MAX_FOLDERS = 40

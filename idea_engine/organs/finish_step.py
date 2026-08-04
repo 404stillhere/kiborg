@@ -7,6 +7,14 @@
 """
 
 import json
+import os
+import sys
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from cyborg import config  # noqa: E402
 
 
 def _load(path):
@@ -44,7 +52,7 @@ def run(inputs, env):
     return {
         "nudge": {
             "title": f"Доделать: {c.get('folder')}",
-            "why": (c.get("next_step") or "")[:220],
+            "why": (c.get("next_step") or "")[: config.FINISH_STEP_WHY_MAX_CHARS],
             "effort": "средне",
             "kind": "finish",
             "folder": c.get("folder"),

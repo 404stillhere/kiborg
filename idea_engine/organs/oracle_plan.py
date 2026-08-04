@@ -18,6 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
+from cyborg import config
 from cyborg.config import PANEL_PORT
 
 # fmt: off
@@ -61,15 +62,15 @@ PROMPT_TMPL = """Ты технический планировщик. Постр�
 
 _EFFORT_OK = {"S", "M", "L"}
 
-# Минимальная осмысленность цели: ≥3 слова, не из запрещённого списка.
-_MIN_GOAL_WORDS = 3
+# Минимальная осмысленность цели: ≥N слов, не из запрещённого списка.
+_MIN_GOAL_WORDS = config.ORACLE_PLAN_MIN_GOAL_WORDS
 _VAGUE_GOALS = {"test", "tests", "testing", "fix", "bug", "todo", "todo list", "plan", "oracle", "run"}
 
 
 def _validate_goal(goal):
     words = goal.split()
     if len(words) < _MIN_GOAL_WORDS:
-        return "цель слишком короткая: опиши что сделать минимум 3 словами"
+        return f"цель слишком короткая: опиши что сделать минимум {_MIN_GOAL_WORDS} словами"
     lowered = goal.lower().strip(" .!?:")
     if lowered in _VAGUE_GOALS:
         return f'цель слишком абстрактная: "{goal}" — уточни, что именно нужно сделать'
@@ -120,7 +121,7 @@ def _prompt(goal, project_map):
         root=project_map.get("root", ""),
         readme_summary=readme if readme else "(нет README или он пуст)",
         inbox_state=json.dumps(inbox, ensure_ascii=False) if inbox else "(нет инбокса)",
-        files=", ".join(files[:200]),
+        files=", ".join(files[: config.ORACLE_PLAN_MAX_FILES]),
         entrypoints=", ".join(project_map.get("entrypoints", [])),
         markers=json.dumps(markers, ensure_ascii=False) if markers else "(нет)",
         extensions=json.dumps(project_map.get("extensions", {}), ensure_ascii=False),

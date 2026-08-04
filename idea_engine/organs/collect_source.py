@@ -38,7 +38,7 @@ REDDIT_TOP = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
 LOBSTERS_HOT = "https://lobste.rs/hottest.json"
 GH_TRENDING = "https://github.com/trending"
 _UA = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
-_GH_ENRICH_DEFAULT_LIMIT = 5  # GitHub без токена: максимум 60 API-запросов/час
+_GH_ENRICH_DEFAULT_LIMIT = config.GH_TRENDING_ENRICH_LIMIT  # GitHub без токена: максимум 60 API-запросов/час
 
 def _get(url_or_req, timeout):
     with urllib.request.urlopen(url_or_req, timeout=timeout) as r:
@@ -116,7 +116,7 @@ def _gh_repo_description(owner, repo, timeout):
     # enrich — при лимите/сбое вызывающий падает на голый owner/repo. Только stdlib (_get).
     data = _get(f"https://api.github.com/repos/{owner}/{repo}", timeout)
     desc = (data.get("description") or "").strip() if isinstance(data, dict) else ""
-    return desc[:180]
+    return desc[: config.GH_REPO_DESCRIPTION_MAX_CHARS]
 
 
 def _gh_trending(n, timeout, env):
@@ -195,12 +195,12 @@ def _telegram(n, timeout, env):
     proc = subprocess.run([python_exe, _TG_RUNNER, "--rpc"], input=payload,
                            capture_output=True, timeout=tg_timeout)
     if proc.returncode != 0:
-        raise ValueError(f"telegram: rpc exit {proc.returncode}: {proc.stderr.decode('utf-8', 'replace')[:200]}")
+        raise ValueError(f"telegram: rpc exit {proc.returncode}: {proc.stderr.decode('utf-8', 'replace')[: config.TELEGRAM_RPC_ERROR_MAX_CHARS]}")
     result = json.loads(proc.stdout.decode("utf-8"))
 
     items = []
     for it in result.get("items", []):
-        title = (it.get("text") or "").strip().splitlines()[0][:200] if it.get("text") else ""
+        title = (it.get("text") or "").strip().splitlines()[0][: config.TELEGRAM_POST_TITLE_MAX_CHARS] if it.get("text") else ""
         if title:
             items.append({"title": title, "url": it.get("url") or "",
                           "id": f"{it.get('channel')}:{it.get('id')}"})
@@ -251,16 +251,16 @@ _FILES_SECRET_EXT = {".env", ".session", ".key", ".pem", ".pfx", ".p12", ".crt",
                      ".cer", ".keystore", ".jks", ".ppk"}
 _FILES_SECRET_HINTS = ("secret", "password", "credential", "token", "apikey",
                        "api_key", "id_rsa", ".htpasswd")
-_FILES_MAX_BYTES = 1024 * 1024  # до 1 МиБ: большой исходник читаем, но выдаём только умную выжимку
-_FILES_HEAD_BYTES = 32 * 1024   # headline переживает длинную лицензионную/генерированную шапку
-_FILES_CONTEXT_BYTES = _FILES_MAX_BYTES  # ищем TODO/символы/ошибки по всему допустимому файлу
-_FILES_CONTEXT_CHARS = 1600     # глубже прежних 700, но один файл не захватывает весь промпт
-_FILES_CONTEXT_LINES = 20       # линии выбираются по смыслу и по разным участкам файла
-_FILES_MAX_ITEMS = 48           # 48×700 ≈ 34k символов контекста — безопасный потолок прогона
-_FILES_MAX_SCAN = 20000         # предохранитель: осматриваем не больше стольких файлов за прогон —
+_FILES_MAX_BYTES = config.FILES_MAX_BYTES  # до 1 МиБ: большой исходник читаем, но выдаём только умную выжимку
+_FILES_HEAD_BYTES = config.FILES_HEAD_BYTES  # headline переживает длинную лицензионную/генерированную шапку
+_FILES_CONTEXT_BYTES = config.FILES_MAX_BYTES  # ищем TODO/символы/ошибки по всему допустимому файлу
+_FILES_CONTEXT_CHARS = config.FILES_CONTEXT_CHARS  # глубже прежних 700, но один файл не захватывает весь промпт
+_FILES_CONTEXT_LINES = config.FILES_CONTEXT_LINES  # линии выбираются по смыслу и по разным участкам файла
+_FILES_MAX_ITEMS = config.FILES_MAX_ITEMS  # 48×700 ≈ 34k символов контекста — безопасный потолок прогона
+_FILES_MAX_SCAN = config.FILES_MAX_SCAN  # предохранитель: осматриваем не больше стольких файлов за прогон —
                                 # ошибочно заданный диск-корень («M:/») не заставит обойти весь диск
                                 # и подвесить тик автосбора (реальному проекту 20k файлов с запасом)
-_FILES_MAX_PROJECT_MAPS = 8     # карта не должна вытеснить файлы при десятках отдельных корней
+_FILES_MAX_PROJECT_MAPS = config.FILES_MAX_PROJECT_MAPS  # карта не должна вытеснить файлы при десятках отдельных корней
 
 # Строка-СЕКРЕТ — НЕ берём её в заголовок. Заголовок уходит в промпт LLM (ideate) ДО
 # scrub_secrets, поэтому имя-фильтра (_files_is_secret) мало: секрет бывает в СОДЕРЖИМОМ файла
@@ -348,7 +348,11 @@ def _files_safe_line(raw):
         return ""
     # Минифицированная/сгенерированная строка может занимать сотни КБ. Полный regex с
     # `\w*` на ней дорог и сама строка бесполезна; проверяем края и берём только начало.
-    secret_probe = stripped if len(stripped) <= 5000 else stripped[:2500] + stripped[-2500:]
+    secret_probe = (
+        stripped
+        if len(stripped) <= config.FILES_SECRET_PROBE_FULL_WINDOW
+        else stripped[: config.FILES_SECRET_PROBE_HALF_WINDOW] + stripped[-config.FILES_SECRET_PROBE_HALF_WINDOW :]
+    )
     if _FILES_SECRET_LINE.search(secret_probe):
         return ""
     # Бинарь под текстовым расширением: управляющие символы — сильный сигнал.
@@ -356,7 +360,7 @@ def _files_safe_line(raw):
         return ""
     indent = min(len(expanded) - len(expanded.lstrip()), 24)
     body = expanded.lstrip()
-    return (" " * indent + body)[:260]
+    return (" " * indent + body)[: config.FILES_SAFE_LINE_MAX_CHARS]
 
 
 def _files_meaningful_lines(path, limit):
@@ -377,7 +381,7 @@ def _files_headline(path):
     маркеры комментов, markdown-#), пропускаем техническое (shebang, coding, import) И строки-
     СЕКРЕТЫ (значение ключа/токена/пароля не должно утечь в промпт LLM). Пусто — нет пригодной
     строки (тогда заголовком остаётся просто имя файла)."""
-    for _lineno, raw in _files_read_lines(path, _FILES_HEAD_BYTES):
+    for _lineno, raw in _files_read_lines(path, config.FILES_HEAD_BYTES):
         s = _files_safe_line(raw).strip()
         if not s:
             continue
@@ -395,7 +399,7 @@ def _files_headline(path):
             continue
         if _FILES_SECRET_LINE.search(line):
             continue                      # строка-секрет (ключ/токен/пароль/creds-URL) — не в заголовок
-        return line[:180]
+        return line[: config.FILES_HEADLINE_MAX_CHARS]
     return ""
 
 
@@ -450,7 +454,7 @@ def _files_dependencies(lines):
                 seen.add(dep)
                 deps.append(dep)
             break
-        if len(deps) >= 10:
+        if len(deps) >= config.FILES_DEPS_MAX_ITEMS:
             break
     return deps
 
@@ -461,7 +465,7 @@ def _files_context(path, headline=""):
     Это всё ещё не полный файл в prompt, но модель видит функции/TODO далеко ниже шапки,
     номера строк, зависимости и исходные отступы. Выбор строк распределён по файлу.
     """
-    rows = _files_meaningful_lines(path, _FILES_CONTEXT_BYTES)
+    rows = _files_meaningful_lines(path, config.FILES_MAX_BYTES)
     if not rows:
         return ""
     headline_norm = re.sub(r"\s+", " ", str(headline or "")).strip().casefold()
@@ -489,9 +493,9 @@ def _files_context(path, headline=""):
                 continue
             seen.add(key)
             selected.append(row)
-            if len(selected) >= _FILES_CONTEXT_LINES:
+            if len(selected) >= config.FILES_CONTEXT_LINES:
                 break
-        if len(selected) >= _FILES_CONTEXT_LINES:
+        if len(selected) >= config.FILES_CONTEXT_LINES:
             break
 
     parts = []
@@ -499,8 +503,8 @@ def _files_context(path, headline=""):
     if deps:
         parts.append("Связи: " + ", ".join(deps))
     for lineno, line in selected:
-        parts.append(f"L{lineno}: {line[:220]}")
-    return "\n".join(parts)[:_FILES_CONTEXT_CHARS]
+        parts.append(f"L{lineno}: {line[: config.FILES_CONTEXT_LINE_MAX_CHARS]}")
+    return "\n".join(parts)[: config.FILES_CONTEXT_CHARS]
 
 
 def _files_is_candidate(path):
@@ -517,7 +521,7 @@ def _files_is_candidate(path):
     ):   # только известный текст (код+доки+конфиг)
         return False
     try:
-        return os.path.getsize(path) <= _FILES_MAX_BYTES
+        return os.path.getsize(path) <= config.FILES_MAX_BYTES
     except OSError:
         return False
 
@@ -544,7 +548,7 @@ def _files_git_walk(root):
             ["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            timeout=8,
+            timeout=config.FILES_GIT_LSFILES_TIMEOUT,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -691,7 +695,7 @@ def _files_select(records, budget):
     if len(records) <= budget:
         return sorted(records, key=lambda r: (-r["score"], r["rel"].casefold()))
 
-    work = [dict(rec, _order=rec["score"] + random.random() * 18.0) for rec in records]
+    work = [dict(rec, _order=rec["score"] + random.random() * config.FILES_SELECT_JITTER) for rec in records]
     by_root = {}
     for rec in work:
         by_root.setdefault(os.path.normcase(os.path.abspath(rec["base"])), []).append(rec)
@@ -813,7 +817,7 @@ def _files_project_map(records):
             "Опорные файлы: " + ", ".join(rec["rel"] for rec in anchors),
             "Эта карта описывает весь корень; фрагменты ниже — углубление в выбранные файлы.",
         ]
-    )[:_FILES_CONTEXT_CHARS]
+    )[: config.FILES_CONTEXT_CHARS]
     digest = hashlib.sha1("\n".join(sorted(fingerprint)).encode("utf-8")).hexdigest()[:16]
     return {
         "title": f"[КАРТА ПРОЕКТА] {project}",
@@ -832,9 +836,10 @@ def _files(n, timeout, env):
         raise ValueError("files: no folders configured (env['files_paths'])")
     found = []                            # records: path/base/project/rel/area/role/score
     by_real_path = {}
-    scanned = 0                           # предохранитель: не осматриваем больше _FILES_MAX_SCAN файлов
+    scanned = 0                           # предохранитель: не осматриваем больше FILES_MAX_SCAN файлов
+    max_scan = _FILES_MAX_SCAN
     for root in roots:
-        if scanned >= _FILES_MAX_SCAN:
+        if scanned >= max_scan:
             break
         if os.path.isfile(root):
             cand = [(root, os.path.dirname(root))]
@@ -844,7 +849,7 @@ def _files(n, timeout, env):
             continue                      # путь не существует — молча пропускаем (не крашим)
         for p, base in cand:
             scanned += 1
-            if scanned > _FILES_MAX_SCAN:  # потолок файлов — дальше не идём (тик не виснет на диске)
+            if scanned > max_scan:  # потолок файлов — дальше не идём (тик не виснет на диске)
                 break
             if _files_is_candidate(p):     # секрет/не-текст/крупный — мимо (общий фильтр с probe_paths)
                 rec = _files_record(p, base)
@@ -856,7 +861,8 @@ def _files(n, timeout, env):
     found = list(by_real_path.values())
     if not found:
         raise ValueError("files: no readable text files in configured folders")
-    take_n = min(max(1, int(n)), _FILES_MAX_ITEMS)
+    max_items = _FILES_MAX_ITEMS
+    take_n = min(max(1, int(n)), max_items)
 
     by_base = {}
     for rec in found:
@@ -880,7 +886,7 @@ def _files(n, timeout, env):
         p, base, rel = rec["path"], rec["base"], rec["rel"]
         headline = _files_headline(p)
         titled_path = f"[{rec['project']}] {rel}"
-        title = (f"{titled_path} — {headline}" if headline else titled_path)[:240]
+        title = (f"{titled_path} — {headline}" if headline else titled_path)[: config.FILES_ITEM_TITLE_MAX_CHARS]
         context = _files_context(p, headline)
         item = {"title": title, "url": "", "id": _files_item_id(p, base, headline, context)}
         item["project"] = rec["project"]
@@ -936,8 +942,9 @@ def probe_paths(paths):
             result[root] = {"exists": False, "files": 0, "capped": False}   # путь не существует
             continue
         cnt, capped = 0, False
+        max_scan = _FILES_MAX_SCAN
         for p, _base in entries:
-            if scanned >= _FILES_MAX_SCAN:
+            if scanned >= max_scan:
                 capped = True                 # обход обрезан — счётчик неполон, честно помечаем
                 break
             scanned += 1
