@@ -82,6 +82,14 @@ DEFAULT_PROJECTS_ROOT = os.path.join("M:/", "projects")
 # Больше и разнообразнее сырья для ideate, глубже churn для гейта. Режим «максимум качества».
 SOURCE_N = 105
 
+# === ЛЕНТЫ-ИСТОЧНИКИ (feeds / collect_source) ===
+# Доступные ленты-источники (порядок = порядок показа тумблеров в пульте). Должен совпадать
+# с ключами _SOURCES в idea_engine/organs/collect_source.py минус 'files' (у папок свой блок).
+ALL_FEEDS = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "self"]
+# Дефолтный набор включённых лент (когда файла настроек ещё нет). Как было в harvest.SOURCES:
+# только telegram — лично курированный юзером источник.
+DEFAULT_FEEDS = ["telegram"]
+
 # === СОВЕТ СОВЕТНИКОВ (council_config) ===
 # Доступные советники при отборе идей. Порядок важен для фильтрации "unknown" в save().
 ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
