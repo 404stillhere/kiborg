@@ -8,6 +8,7 @@ mind.deliberate, интуиция без потолка токенов, фолб
 
 import math
 
+import config
 import wiring  # noqa: E402  (advisors нужен на module level — base class _IntuitionNoCap)
 from wiring_runtime import _content_llm
 
@@ -375,9 +376,9 @@ def _rank_by_council(inputs, env, keep):
     # (>6.0 не дотянули) место не занимают: куча без потолка, фокус на сильнейших. Полы:
     # минимум 1 (если все слабые — лучшая по баллу, не пустота), потолок keep (по умолч.
     # 3). Кандидаты БЕЗ score (маловероятно в совете — голосовали все) трактуются как 0.0.
-    # Порог балла совета 0..1, ниже которого идея не проходит (по умолчанию 0.6). Настраивается
+    # Порог балла совета 0..1, ниже которого идея не проходит (по умолчанию config.DEFAULT_KEEP_MIN_SCORE). Настраивается
     # в пульте. Раньше был хардкод 0.6 (module-level local). Доверяем clamp на стороне genparams.
-    _KEEP_MIN_SCORE = float(env.get("keep_min_score", 0.6))
+    _KEEP_MIN_SCORE = float(env.get("keep_min_score", config.DEFAULT_KEEP_MIN_SCORE))
     passing = [oid for oid in ranked if float(scores.get(oid, 0.0)) >= _KEEP_MIN_SCORE]
     if not passing:
         passing = ranked[:1]  # все слабые — отдаём лучшую по баллу, не пустоту (минимум 1)
@@ -416,7 +417,9 @@ def _run_readability(inputs, env):
     import wiring
 
     env = env if isinstance(env, dict) else {}
-    e = {"min_score": float(env.get("read_min_score", 8))}  # порог 8 (режим «максимум качества»): ниже 8 → переписать
+    e = {
+        "min_score": float(env.get("read_min_score", config.DEFAULT_READ_MIN_SCORE))
+    }  # порог 8 (режим «максимум качества»): ниже 8 → переписать
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
@@ -439,10 +442,10 @@ def _run_rank(inputs, env):
     import wiring
 
     env = env if isinstance(env, dict) else {}
-    # Сколько идей оставить после совета — из env (по умолчанию 3). Настраивается в пульте.
+    # Сколько идей оставить после совета — из env (по умолчанию config.DEFAULT_RANK_KEEP). Настраивается в пульте.
     # Раньше было хардкод 3. Должно быть <= gen_k (иначе совета не из чего выбирать — но это
     # clamp на стороне genparams/UI, здесь доверяем значению).
-    e = {"keep": int(env.get("rank_keep", 3))}
+    e = {"keep": int(env.get("rank_keep", config.DEFAULT_RANK_KEEP))}
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm

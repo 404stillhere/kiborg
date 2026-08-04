@@ -26,6 +26,7 @@ import math
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
 PATH = os.path.join(DATA, "genparams.json")
@@ -35,11 +36,11 @@ PATH = os.path.join(DATA, "genparams.json")
 # rank_keep 1..8 (минимум 1 идея, потолок = gen_k); source_n 8..300 (меньше 8 — пусто, больше 300 —
 # таймаут/лимиты лент); read_min_score 0..10 (шкала оценки); keep_min_score 0..1 (нормированный балл совета).
 PARAMS = {
-    "gen_k": (2, 16, 8, False),
-    "rank_keep": (1, 8, 3, False),
-    "source_n": (8, 300, 105, False),
-    "read_min_score": (0.0, 10.0, 8.0, True),
-    "keep_min_score": (0.0, 1.0, 0.6, True),
+    "gen_k": (2, 16, config.DEFAULT_GEN_K, False),
+    "rank_keep": (1, 8, config.DEFAULT_RANK_KEEP, False),
+    "source_n": (8, 300, config.DEFAULT_SOURCE_N, False),
+    "read_min_score": (0.0, 10.0, config.DEFAULT_READ_MIN_SCORE, True),
+    "keep_min_score": (0.0, 1.0, config.DEFAULT_KEEP_MIN_SCORE, True),
 }
 
 

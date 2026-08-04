@@ -82,6 +82,15 @@ DEFAULT_PROJECTS_ROOT = os.path.join("M:/", "projects")
 # Больше и разнообразнее сырья для ideate, глубже churn для гейта. Режим «максимум качества».
 SOURCE_N = 105
 
+# === ПАРАМЕТРЫ ГЕНЕРАЦИИ ИДЕЙ (genparams) ===
+# Дефолтные значения, которые юзер может переопределить в пульте. Централизовано,
+# чтобы не дублировать литералы в genparams.py, wiring_ideate.py, wiring_council.py.
+DEFAULT_GEN_K = 8
+DEFAULT_RANK_KEEP = 3
+DEFAULT_SOURCE_N = SOURCE_N  # collect_source бюджет
+DEFAULT_READ_MIN_SCORE = 8.0
+DEFAULT_KEEP_MIN_SCORE = 0.6
+
 # Каналы под тематику kiborg (тех/AI/pet-проекты) — НЕ список darbot (тот про новости/политику).
 # @tproger (стартовый, подтверждён живым смоуком 2026-07-12) + 20 AI-каналов из папки юзера
 # (t.me/addlist/gUpAozY8_SI0ZTVi), разрешена read-only (chatlists.CheckChatlistInvite) 2026-07-12.

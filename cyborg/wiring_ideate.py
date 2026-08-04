@@ -7,6 +7,7 @@
 
 import re
 
+import config
 from wiring_runtime import _content_llm
 
 # ПРОИСХОЖДЕНИЕ идеи (A5): item-источник приписывается post-factum по Jaccard значимых
@@ -180,9 +181,9 @@ def _run_ideate(inputs, env):
         # гейт по-прежнему запускает LLM только при новом ID.
         fresh = always + fresh_regular
         inp["items"] = fresh
-    # Сколько кандидатов генерить — из env (по умолчанию 8). Настраивается в пульте: больше = шире
-    # выбор для совета, но дольше прогон и риск размытия качества. Раньше было хардкод 8.
-    e = {"k": int(env.get("gen_k", 8))}
+    # Сколько кандидатов генерить — из env (по умолчанию config.DEFAULT_GEN_K). Настраивается в пульте:
+    # больше = шире выбор для совета, но дольше прогон и риск размытия качества. Раньше было хардкод 8.
+    e = {"k": int(env.get("gen_k", config.DEFAULT_GEN_K))}
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm
