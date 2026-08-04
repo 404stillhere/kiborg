@@ -320,6 +320,14 @@ OBSERVE_SOURCE_TIMEOUT = 7
 KEYCHAIN_OPENAI_CHAT_TIMEOUT = 40
 # Потолок токенов ответа модели в payload OpenAI-совместимых вызовах (council reviewer).
 KEYCHAIN_OPENAI_MAX_TOKENS = 1024
+# Температура OpenAI-совместимых вызовов (council reviewer).
+KEYCHAIN_OPENAI_TEMPERATURE = 0.3
+
+# === ИНТУИЦИЯ / ГЕНЕРАЦИЯ ИДЕЙ (ask_llm / native_llm / zai_ask) ===
+# Дефолтная температура для интуиции (z.ai, нативные, closerouter-цепочка).
+INTUITION_TEMPERATURE = 0.9
+# Дефолтный потолок токенов ответа для интуиции.
+INTUITION_MAX_TOKENS = 8192
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.

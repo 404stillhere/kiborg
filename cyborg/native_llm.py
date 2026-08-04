@@ -63,7 +63,7 @@ def _call(spec, prompt, timeout_ms, max_tokens, temperature):
         return ""
 
 
-def ask(prompt, timeout_ms=None, max_tokens=8192, temperature=0.9):
+def ask(prompt, timeout_ms=None, max_tokens=config.INTUITION_MAX_TOKENS, temperature=config.INTUITION_TEMPERATURE):
     """Пройти по нативным провайдерам, вернуть первый непустой ответ."""
     timeout_ms = timeout_ms or _TIMEOUT
     per_provider_ms = max(5000, timeout_ms // len(_NATIVE_SPEC))

@@ -33,7 +33,7 @@ def available():
     return bool(_api_key())
 
 
-def ask(prompt, timeout_ms=None, max_tokens=8192, temperature=0.9):
+def ask(prompt, timeout_ms=None, max_tokens=config.INTUITION_MAX_TOKENS, temperature=config.INTUITION_TEMPERATURE):
     """Один вызов z.ai Anthropic /v1/messages. -> text | ""."""
     key = _api_key()
     if not key:

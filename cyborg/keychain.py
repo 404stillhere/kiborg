@@ -209,7 +209,12 @@ def _openai_chat(url, key, model, system, prompt, timeout=config.KEYCHAIN_OPENAI
 
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
     body = _json.dumps(
-        {"model": model, "messages": msgs, "max_tokens": config.KEYCHAIN_OPENAI_MAX_TOKENS, "temperature": 0.3}
+        {
+            "model": model,
+            "messages": msgs,
+            "max_tokens": config.KEYCHAIN_OPENAI_MAX_TOKENS,
+            "temperature": config.KEYCHAIN_OPENAI_TEMPERATURE,
+        }
     ).encode("utf-8")
     req = urllib.request.Request(
         url,

@@ -81,7 +81,7 @@ def _strip_fence(t):
     return t
 
 
-def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
+def _run_chain(chain, prompt, timeout_ms, temperature=config.INTUITION_TEMPERATURE):
     """Один прогон DarBench/organ.js по fallback-цепочке. Текст | ""."""
     global last_provider
     if not chain or not os.path.exists(_ORGAN_JS):
@@ -119,7 +119,7 @@ def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
     return ""
 
 
-def ask(prompt, timeout_ms=None, temperature=0.9):
+def ask(prompt, timeout_ms=None, temperature=config.INTUITION_TEMPERATURE):
     """prompt -> text. Сначала z.ai, потом fallback-цепочка. "" при любом сбое."""
     global last_provider
     timeout_ms = timeout_ms or _TIMEOUT_MS
