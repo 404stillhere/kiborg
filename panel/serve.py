@@ -566,7 +566,7 @@ def _read_oracles():
             if not os.path.isdir(plan_dir) or slug == ".":
                 continue
             for fname in os.listdir(plan_dir):
-                if not fname.endswith(".md") or fname == "index.md":
+                if not fname.endswith(config.ORACLE_PLAN_EXT) or fname == config.ORACLE_INDEX_FILE:
                     continue
                 path = os.path.join(plan_dir, fname)
                 try:

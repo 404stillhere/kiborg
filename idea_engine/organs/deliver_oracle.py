@@ -22,7 +22,7 @@ from cyborg import config  # noqa: E402
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 ORACLES_DIR = DATA_DIR / "oracles"
 INBOX_PATH = DATA_DIR / "inbox.md"
-INDEX_PATH = ORACLES_DIR / "index.md"
+INDEX_PATH = ORACLES_DIR / config.ORACLE_INDEX_FILE
 
 # План с той же целью/проектом, созданный не позднее этого окна, считается дубликатом.
 DEDUP_WINDOW_HOURS = config.ORACLE_DEDUP_WINDOW_HOURS
@@ -47,7 +47,7 @@ def _find_duplicate(slug, goal, since):
         return None
     goal_fp = _goal_fingerprint(goal)
     best = None
-    for path in plan_dir.glob("*.md"):
+    for path in plan_dir.glob(f"*{config.ORACLE_PLAN_EXT}"):
         if not path.is_file():
             continue
         try:
@@ -81,7 +81,7 @@ def run(inputs, env):
     date = now.strftime(config.ORACLE_PLAN_DATE_FMT)
     time_ = now.strftime(config.ORACLE_PLAN_TIME_FMT)
     plan_dir = ORACLES_DIR / slug
-    plan_path = plan_dir / f"{date}_{time_}.md"
+    plan_path = plan_dir / f"{date}_{time_}{config.ORACLE_PLAN_EXT}"
 
     os.makedirs(plan_dir, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)

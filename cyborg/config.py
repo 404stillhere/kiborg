@@ -601,6 +601,10 @@ STATE_CORRUPTED_PREFIX = ".corrupted-"
 TRIAGE_EVENTS_FILE = "triage_events.jsonl"
 # Журнал shadow-метрик lazy orchestra (наблюдатель, не меняет поведение).
 SHADOW_METRICS_FILE = "shadow_metrics.jsonl"
+# Расширение файлов планов Oracle и индекса.
+ORACLE_PLAN_EXT = ".md"
+# Имя индексного файла Oracle (внутри ORACLES_DIR).
+ORACLE_INDEX_FILE = "index.md"
 
 # === FEEDBACK_CORTEX (feedback_cortex.py) ===
 # Допуск при проверке сходимости clamp+renormalize (модуль итеративно стабилизирует веса).
