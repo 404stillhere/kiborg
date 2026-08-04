@@ -302,6 +302,8 @@ COUNCIL_MAX_WEIGHT = 0.3
 # MMR lambda: релевантность = λ × score − (1−λ) × max_sim_to_selected.
 # Балл важнее разнообразия, но diversity имеет голос.
 COUNCIL_MMR_LAMBDA = 0.7
+# Размер топа для оценки согласия советников внутри breakdown (overlap rank_ideas×ask_llm).
+COUNCIL_AGREEMENT_TOP_K = 3
 
 # === НАБЛЮДАТЕЛЬ (observe_sources) ===
 # Пауза между постами (сек) — в пульте строки шли живым потоком, не пачкой.
@@ -316,6 +318,8 @@ OBSERVE_SOURCE_TIMEOUT = 7
 # Сокет-таймаут одного OpenAI-совместимого вызова (сек). Эндпоинт, что вообще молчит, падает тут.
 # Slow-loris добивается отдельным wall-clock deadline в make_council_chat.
 KEYCHAIN_OPENAI_CHAT_TIMEOUT = 40
+# Потолок токенов ответа модели в payload OpenAI-совместимых вызовах (council reviewer).
+KEYCHAIN_OPENAI_MAX_TOKENS = 1024
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.

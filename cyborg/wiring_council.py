@@ -165,7 +165,7 @@ def _deliberate_with_lazy_orchestra(question, options, context, env, orch, op, n
     rank_ideas×ask_llm из breakdown и пишем в shadow_metrics.jsonl. Реальное поведение НЕ
     меняется — запись «что было бы если бы включили lazy». Данные для решения «включать ли A2».
     """
-    keep = 3  # топ-3 для оценки согласия советников (ранг внутри breakdown)
+    keep = config.COUNCIL_AGREEMENT_TOP_K  # топ-K для оценки согласия советников (ранг внутри breakdown)
     # B2: scoped rebind весов если Feedback Cortex включил адаптивный режим
     orig_weights = wiring.mind.WEIGHTS
     rebinded = False
