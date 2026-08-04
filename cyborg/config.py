@@ -146,6 +146,9 @@ DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 HTTP_HEADER_CONTENT_TYPE = "Content-Type"
 HTTP_HEADER_AUTHORIZATION = "Authorization"
 HTTP_MEDIA_TYPE_JSON = "application/json"
+HTTP_CHARSET_UTF8 = "utf-8"
+HTTP_MEDIA_TYPE_JSON_UTF8 = f"{HTTP_MEDIA_TYPE_JSON}; charset={HTTP_CHARSET_UTF8}"
+HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8 = f"text/plain; charset={HTTP_CHARSET_UTF8}"
 
 # --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------
 # Единый источник endpoint/model для провайдеров, чтобы не дублировать литералы

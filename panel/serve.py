@@ -625,7 +625,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # тихий сервер
         pass
 
-    def _send(self, code, body, ctype=f"{config.HTTP_MEDIA_TYPE_JSON}; charset=utf-8"):
+    def _send(self, code, body, ctype=config.HTTP_MEDIA_TYPE_JSON_UTF8):
         raw = body if isinstance(body, bytes) else body.encode("utf-8")
         self.send_response(code)
         self.send_header(config.HTTP_HEADER_CONTENT_TYPE, ctype)
@@ -649,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
         Файл отсутствует → 404 текстом (как api-роуты, без трейсбека)."""
         path = os.path.join(STATIC_DIR, filename)
         if not os.path.isfile(path):
-            self._send(404, f"нет файла: {filename}", "text/plain; charset=utf-8")
+            self._send(404, f"нет файла: {filename}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
             return
         ctype, _ = mimetypes.guess_type(path)
         ctype = ctype or "application/octet-stream"
@@ -664,13 +664,13 @@ class Handler(BaseHTTPRequestHandler):
             with open(path, "rb") as f:
                 raw = f.read()
             self.send_response(200)
-            self.send_header(config.HTTP_HEADER_CONTENT_TYPE, ctype + "; charset=utf-8")
+            self.send_header(config.HTTP_HEADER_CONTENT_TYPE, f"{ctype}; charset={config.HTTP_CHARSET_UTF8}")
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", cache)
             self.end_headers()
             self.wfile.write(raw)
         except Exception as e:
-            self._send(500, f"не читается: {e}", "text/plain; charset=utf-8")
+            self._send(500, f"не читается: {e}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
 
     def do_GET(self):
         # ── Статика v2 (новый пульт): /, /index.html, /style.css, /app.js ──
@@ -684,15 +684,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             try:
                 with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
-                    self._send(200, f.read(), "text/html; charset=utf-8")
+                    self._send(200, f.read(), f"text/html; charset={config.HTTP_CHARSET_UTF8}")
             except Exception as e:
-                self._send(500, f"index.html не читается: {e}", "text/plain; charset=utf-8")
+                self._send(500, f"index.html не читается: {e}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
         elif self.path == "/bodies.js":
             try:
                 with open(os.path.join(HERE, "bodies.js"), encoding="utf-8") as f:
-                    self._send(200, f.read(), "text/javascript; charset=utf-8")
+                    self._send(200, f.read(), f"text/javascript; charset={config.HTTP_CHARSET_UTF8}")
             except Exception as e:
-                self._send(500, f"// bodies.js: {e}", "text/javascript; charset=utf-8")
+                self._send(500, f"// bodies.js: {e}", f"text/javascript; charset={config.HTTP_CHARSET_UTF8}")
         elif self.path == "/api/state":
             try:
                 self._json(_api_state())
