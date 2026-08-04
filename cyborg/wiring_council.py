@@ -340,7 +340,7 @@ def _rank_by_council(inputs, env, keep):
         "content_llm": _content_llm(env),  # оживляет арбитра живой моделью (иначе фолбэк-порядок)
         "llm_chain": env.get("llm_chain"),  # оживляет интуицию (цепочка провайдеров с ключами)
         "orchestra": orch,  # оркестр: голосует всегда (параллельно, короткий бюджет)
-        "llm_timeout_ms": env.get("llm_timeout_ms", 45000),
+        "llm_timeout_ms": env.get("llm_timeout_ms", config.WIRING_COUNCIL_LLM_TIMEOUT_MS),
         "direction": env.get("direction"),  # руль темы: арбитр читает из ctx, интуиция/оркестр — из вопроса
     }
     question = (

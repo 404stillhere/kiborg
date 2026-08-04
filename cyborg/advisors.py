@@ -41,14 +41,14 @@ def _opt_text(o):
         if o.get(f):
             t = str(o[f])
             why = str(o.get("why") or o.get("reason") or "")
-            parts = [t + (" — " + why[:260] if why else "")]
+            parts = [t + (" — " + why[: config.RANK_IDEAS_WHY_MAX_CHARS] if why else "")]
             verification = str(o.get("verification") or "").strip()
             if verification:
-                parts.append("Проверка: " + verification[:180])
+                parts.append("Проверка: " + verification[: config.RANK_IDEAS_VERIFICATION_MAX_CHARS])
             refs = o.get("source_refs")
             if isinstance(refs, list) and refs:
                 evidence = ", ".join(
-                    str(ref.get("title") or ref.get("path") or ref.get("id") or "")[:100]
+                    str(ref.get("title") or ref.get("path") or ref.get("id") or "")[: config.RANK_IDEAS_REF_TITLE_MAX_CHARS]
                     for ref in refs[: config.RANK_IDEAS_MAX_REFS]
                     if isinstance(ref, dict)
                 )

@@ -201,6 +201,10 @@ COUNCIL_DEADLINE_DEFAULT_SEC = 50
 # === LLM / AI ===============================================================
 # Дефолтный таймаут LLM-вызовов (мс). Используется в ask_llm, native_llm, zai_ask.
 DEFAULT_LLM_TIMEOUT_MS = 120000
+# Таймаут ask_llm-советника при обходе цепочки провайдеров (мс).
+ASK_LLM_ADVISOR_TIMEOUT_MS = 60000
+# Таймаут нативных LLM-провайдеров на одного провайдера (мс).
+NATIVE_LLM_PROVIDER_TIMEOUT_MS = 5000
 
 # === АЛЕРТИНГ (опциональный, через Telegram Bot API) ===
 # Если при прогоне случился семантический сбой (out['brain_down'] / много dropped_stub),
@@ -321,6 +325,8 @@ OBSERVE_STEP_PAUSE = 0.35
 # n и timeout для collect_source при наблюдении (легковесный обход).
 OBSERVE_SOURCE_N = 6
 OBSERVE_SOURCE_TIMEOUT = 7
+# Ширина рамки-заголовка в консоли наблюдателя (символов «=»).
+OBSERVE_FRAME_WIDTH = 60
 
 # === KEYCHAIN / COUNCIL REVIEWER ===
 # Сокет-таймаут одного OpenAI-совместимого вызова (сек). Эндпоинт, что вообще молчит, падает тут.
@@ -375,6 +381,8 @@ ORCHESTRA_TIMEOUT_SEC = 180
 # === WIRING_COUNCIL (wiring_council.py) ===
 # Дефолтный таймаут одной идеи при orchestra-голосовании в council (сек).
 WIRING_COUNCIL_ORCHESTRA_TIMEOUT_SEC = 45
+# Таймаут на всю цепочку провайдеров интуиции ask_llm в council (мс).
+WIRING_COUNCIL_LLM_TIMEOUT_MS = 45000
 
 # === HARVEST_LOG (harvest_log.py) ===
 # Сколько символов результата писать в строку runs.md (обрезка для читаемости).
@@ -414,9 +422,19 @@ RUN_RESULT_MAX_CHARS = 900
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500
 
-# === RANK_IDEAS (advisors.py) ===
+# === BRAIN (brain.py) ===
+# Сколько символов purpose органа показывать LLM-планировщику.
+BRAIN_PURPOSE_MAX_CHARS = 80
+
+# === RANK_IDEAS / ADVISORS (advisors.py) ===
 # Сколько source_refs показывать в тексте варианта для rank_ideas-арбитра.
 RANK_IDEAS_MAX_REFS = 3
+# Сколько символов why/reason в тексте варианта для rank_ideas-арбитра.
+RANK_IDEAS_WHY_MAX_CHARS = 260
+# Сколько символов verification в тексте варианта для rank_ideas-арбитра.
+RANK_IDEAS_VERIFICATION_MAX_CHARS = 180
+# Сколько символов title/path/id одного source_ref в тексте варианта.
+RANK_IDEAS_REF_TITLE_MAX_CHARS = 100
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.

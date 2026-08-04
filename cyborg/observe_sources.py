@@ -64,7 +64,7 @@ def main():
     seen = seen_items.load()  # снимок «уже видел» ОДИН раз, БЕЗ мутации
     tg_channels = base_env.get("telegram_channels") or []
 
-    say("=" * 60)
+    say("=" * config.OBSERVE_FRAME_WIDTH)
     say("🤖  Киборг просыпается. Задача: принести свежее сырьё для идей.", _STEP_PAUSE)
     say("    Обхожу источники по одному и рассказываю, что вижу.", _STEP_PAUSE)
     say("")
@@ -121,10 +121,10 @@ def main():
         grand_fresh += fresh
         say(f"│  ✅ {human}: прочитал {read}, из них новых {fresh}  ({dt:.1f}с)\n")
 
-    say("└" + "─" * 59)
+    say("└" + "─" * (config.OBSERVE_FRAME_WIDTH - 1))
     say(f"🏁  Обход закончен: прочитал {grand_read} постов, новых (не видел) {grand_fresh}.")
     say("    Свежее дальше подхватил бы орган «придумай идею» (в наблюдении не зову).")
-    say("=" * 60)
+    say("=" * config.OBSERVE_FRAME_WIDTH)
 
 
 if __name__ == "__main__":
