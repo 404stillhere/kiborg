@@ -10,6 +10,7 @@ sys.path.insert(0, BASE)
 import json  # noqa: E402
 import tempfile  # noqa: E402
 
+import config  # noqa: E402
 import wiring  # noqa: E402
 from registry import load_catalog  # noqa: E402
 from wiring import build_organs  # noqa: E402
@@ -17,7 +18,7 @@ from wiring import build_organs  # noqa: E402
 # Реестр _shared/organs.json — ВНЕШНИЙ файл (не в репо kiborg, лежит на прод-машине юзера
 # в M:/projects/_shared/). На CI его нет. Тест test_catalog_loads — интеграционный, пропускаем
 # при отсутствии файла; остальные тесты (build_organs/route/finish_cursor) НЕ зависят от него.
-_HAS_CATALOG = os.path.exists("M:/projects/_shared/organs.json")
+_HAS_CATALOG = os.path.exists(config.ORGANS_CATALOG)
 
 
 class TestRegistry(unittest.TestCase):
