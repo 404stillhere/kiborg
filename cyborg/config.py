@@ -195,6 +195,8 @@ ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
 NOTIFY_TOKEN_ENV = "KIBORG_NOTIFY_TOKEN"
 NOTIFY_CHAT_ENV = "KIBORG_NOTIFY_CHAT_ID"
 COUNCIL_DEADLINE_ENV = "KIBORG_COUNCIL_DEADLINE"
+# Дефолтный wall-clock потолок на один вызов рецензента (keychain._with_deadline), сек.
+COUNCIL_DEADLINE_DEFAULT_SEC = 50
 
 # === LLM / AI ===============================================================
 # Дефолтный таймаут LLM-вызовов (мс). Используется в ask_llm, native_llm, zai_ask.

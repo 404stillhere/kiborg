@@ -169,7 +169,7 @@ _COUNCIL_DISABLED = {"cerebras", "gemini"}
 
 
 _COUNCIL_DEADLINE = int(
-    os.environ.get(config.COUNCIL_DEADLINE_ENV, "50")
+    os.environ.get(config.COUNCIL_DEADLINE_ENV, str(config.COUNCIL_DEADLINE_DEFAULT_SEC))
 )  # wall-clock потолок на один вызов рецензента
 
 
