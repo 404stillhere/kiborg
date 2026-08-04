@@ -12,8 +12,12 @@
 
 import os
 import re
+import sys
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cyborg"))
+import config  # noqa: E402
 
 SKIP_DIRS = {
     ".git",
@@ -151,7 +155,7 @@ def _resolve_root(env):
         return None
     p = Path(raw).expanduser()
     if not p.is_absolute():
-        base = str(env.get("projects_root", "M:/projects"))
+        base = str(env.get("projects_root", config.DEFAULT_PROJECTS_ROOT))
         p = Path(base).expanduser() / p
     try:
         p = p.resolve()

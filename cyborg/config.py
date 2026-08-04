@@ -73,6 +73,8 @@ DEFAULT_LLM_KEYS_FILE = os.path.join(PROJECT_ROOT, "llm_keys.env")
 # Внешние органы (DarBench / Claude Code API Dual Mode) — дефолтные пути для fallback.
 DEFAULT_ASK_LLM_JS = os.path.join("M:/", "projects", "DarBench", "organ.js")
 DEFAULT_ORCHESTRA_PY = os.path.join("M:/", "projects", "Claude Code API Dual Mode", "organ.py")
+# Корень проектов для Oracle-режима (сканер ищет относительные пути здесь).
+DEFAULT_PROJECTS_ROOT = os.path.join("M:/", "projects")
 
 # === КОНФИГ ИСТОЧНИКОВ ===
 # Сколько заголовков тянуть за прогон СУММАРНО (бюджет делится между источниками в collect_source).

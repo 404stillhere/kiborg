@@ -6,7 +6,9 @@
 
 import os
 
-PROJECTS_ROOT = "M:/projects"
+import config
+
+PROJECTS_ROOT = config.DEFAULT_PROJECTS_ROOT
 
 
 def prepare_env(goal, project_path, projects_root=None):
