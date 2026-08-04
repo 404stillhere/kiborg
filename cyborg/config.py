@@ -51,6 +51,9 @@ CURSOR_FILE = os.path.join(CYBORG_DATA_DIR, "finish_cursor.json")
 # Своя копия tg-сессии (pyrogram/SQLite) — не та, что живой darbot-бот держит открытой.
 # Патчится в тестах: `harvest._KIBORG_TG_SESSION = tmp` (фасадный алиас).
 KIBORG_TG_SESSION = os.path.join(CYBORG_DATA_DIR, "kiborg_tg.session")
+# Последний ответивший LLM-провайдер (zai/native/muse-spark/...). Пишет ask_llm, читают
+# panel/serve.py и harvest._degrade_note. Файл нужен, потому что панель — отдельный процесс.
+LAST_PROVIDER_FILE = os.path.join(CYBORG_DATA_DIR, "last_provider.json")
 
 # === DATA-ФАЙЛЫ idea_engine/ (read-only со стороны cyborg — доставляет/читает через deliver) ===
 INBOX_MD = os.path.join(IDEA_ENGINE_DATA_DIR, "inbox.md")  # инбокс идей для человека

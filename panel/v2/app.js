@@ -11,6 +11,7 @@
               taken:[...],later:[...],rejected:[...],finish,seen_count,error},
        sources:{checked_at, sources:{<name>:{ok,error,items,...}}}|null,
        auto:{on,interval_min}, runs:[{ts,goal,chain,deliverable,value,council,degraded}],
+       last_provider,
        registry:{total,by_status,by_project,cards:[...],error},
        lab:{exists,locked,features,needs_manual},
        direction:{current,presets}, folders:{folders:[{path,on}],paths},
@@ -323,6 +324,13 @@ class Renderer {
     const k = S.key || {};
     keyEl.textContent = k.present ? k.model : 'нет';
     keyEl.className = 'h-metric-value ' + (k.present ? 'good' : 'warn');
+
+    // последний ответивший провайдер
+    const provEl = Renderer.$('#m-provider');
+    if (provEl) {
+      provEl.textContent = S.last_provider || '—';
+      provEl.className = 'h-metric-value ' + (S.last_provider ? 'good' : '');
+    }
 
     // пульс
     const pulse = Renderer.$('#h-pulse');

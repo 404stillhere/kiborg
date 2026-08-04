@@ -14,7 +14,9 @@
 import json
 import os
 import subprocess
+import time
 
+import config
 import keychain
 import native_llm
 import zai_ask
@@ -31,7 +33,34 @@ _MODEL = "zai glm-5.2 → mistral/openrouter/groq → closerouter"
 # Какой провайдер РЕАЛЬНО ответил в последнем ask() — id из organ.js result.provider
 # или "zai" для z.ai. Диагностика: видно, кто сработал (первичная или фолбэк).
 # "" до первого вызова / при сбое. Читают harvest/panel (опц., для логов).
+# Дублируется в файл config.LAST_PROVIDER_FILE, потому что panel/serve.py живёт в другом
+# процессе и не видит module-global из ask_llm.
 last_provider = ""
+
+
+def _load_provider():
+    """Прочитать сохранённого провайдера из файла (используется при старте)."""
+    try:
+        with open(config.LAST_PROVIDER_FILE, encoding="utf-8") as f:
+            return json.load(f).get("provider", "") or ""
+    except Exception:
+        return ""
+
+
+def _save_provider(provider):
+    """Атомарно сохранить провайдера в файл, чтобы panel/serve.py в другом процессе видел."""
+    path = config.LAST_PROVIDER_FILE
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"provider": provider or "", "ts": time.time()}, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+# При импорте восстанавливаем последнее известное значение (после рестарта процесса).
+last_provider = _load_provider()
 
 
 def _chain():
@@ -83,8 +112,10 @@ def _run_chain(chain, prompt, timeout_ms, temperature=0.9):
         return ""
     if res.get("ok"):
         last_provider = res.get("provider") or ""
+        _save_provider(last_provider)
         return _strip_fence(res.get("text") or "")
     last_provider = ""
+    _save_provider("")
     return ""
 
 
@@ -98,20 +129,26 @@ def ask(prompt, timeout_ms=None, temperature=0.9):
         out = zai_ask.ask(prompt, timeout_ms=timeout_ms, temperature=temperature)
         if out:
             last_provider = "zai"
+            _save_provider("zai")
             return _strip_fence(out)
         last_provider = ""
+        _save_provider("")
 
     # 2. Нативные OpenAI-совместимые провайдеры (Mistral/OpenRouter/Groq).
     if native_llm.available():
         out = native_llm.ask(prompt, timeout_ms=timeout_ms, temperature=temperature)
         if out:
             last_provider = "native"
+            _save_provider("native")
             return _strip_fence(out)
         last_provider = ""
+        _save_provider("")
 
     # 3. Fallback на closerouter-цепочку.
     chain = _chain()
     if not chain:
+        last_provider = ""
+        _save_provider("")
         return ""
     return _run_chain(chain, prompt, timeout_ms, temperature)
 

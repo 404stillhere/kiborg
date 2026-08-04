@@ -535,6 +535,20 @@ def _key_state():
     return {"present": bool(chain), "model": "→".join(c["id"] for c in chain) or ask_llm._MODEL}
 
 
+def _last_provider():
+    """Последний использованный LLM-провайдер (из cyborg/data/last_provider.json).
+
+    Пустая строка, если ещё не было вызовов или все провайдеры молчали.
+    Файл нужен вместо module-global ask_llm.last_provider, потому что serve.py
+    работает в отдельном Python-процессе и не видит память клиента.
+    """
+    try:
+        with open(os.path.join(CYBORG, "data", "last_provider.json"), encoding="utf-8") as f:
+            return str(json.load(f).get("provider", "") or "")
+    except Exception:
+        return ""
+
+
 def _read_oracles():
     """Список сохранённых Oracle-планов из idea_engine/data/oracles/*/YYYY-MM-DD_*.md.
 
@@ -603,6 +617,7 @@ def _api_state():
         "genparams": genparams.meta()["params"],
         "rejected": rejected.count(),  # сколько идей отклонено «мусором» (учат генератор/судью)
         "oracles": _read_oracles(),
+        "last_provider": _last_provider(),
     }
 
 

@@ -7,12 +7,14 @@ prompt->text: z.ai → native (mistral/openrouter/groq) → closerouter. Про�
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
 import ask_llm  # noqa: E402
+import config  # noqa: E402
 import native_llm  # noqa: E402
 import wiring  # noqa: E402
 import zai_ask  # noqa: E402
@@ -40,6 +42,11 @@ class TestAskLlm(unittest.TestCase):
         self._orig_zai_ask = zai_ask.ask
         self._orig_native_available = native_llm.available
         self._orig_native_ask = native_llm.ask
+        self._orig_provider_file = config.LAST_PROVIDER_FILE
+        fd, self._tmp_provider_file = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        config.LAST_PROVIDER_FILE = self._tmp_provider_file
+        ask_llm.config.LAST_PROVIDER_FILE = self._tmp_provider_file
         ask_llm.os.path.exists = lambda p: True
         ask_llm.last_provider = ""
 
@@ -51,6 +58,12 @@ class TestAskLlm(unittest.TestCase):
         zai_ask.ask = self._orig_zai_ask
         native_llm.available = self._orig_native_available
         native_llm.ask = self._orig_native_ask
+        config.LAST_PROVIDER_FILE = self._orig_provider_file
+        ask_llm.config.LAST_PROVIDER_FILE = self._orig_provider_file
+        try:
+            os.remove(self._tmp_provider_file)
+        except Exception:
+            pass
 
     def _chain(self, items=None):
         ask_llm.keychain.build_chain = lambda path=None: _CHAIN if items is None else items
