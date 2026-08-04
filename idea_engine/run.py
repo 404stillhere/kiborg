@@ -29,9 +29,9 @@ from store import Store, state_lock  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
-STATE = os.path.join(DATA, "state.json")
-INBOX = os.path.join(DATA, "inbox.md")
-NOTIFY = os.path.join(DATA, "notify.md")
+STATE = config.IE_STATE_JSON
+INBOX = config.INBOX_MD
+NOTIFY = config.IE_NOTIFY_MD
 
 CFG = {
     "cap": 0,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
