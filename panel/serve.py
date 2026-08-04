@@ -16,6 +16,7 @@
 # См. подробный комментарий у блока import wiring ниже. Не переупорядочивать.
 
 import atexit
+import datetime
 import json
 import mimetypes
 import os
@@ -534,6 +535,35 @@ def _key_state():
     return {"present": bool(chain), "model": "→".join(c["id"] for c in chain) or ask_llm._MODEL}
 
 
+def _read_oracles():
+    """Список сохранённых Oracle-планов из idea_engine/data/oracles/*/YYYY-MM-DD_*.md.
+
+    Возвращает список [{slug, goal, path, ts, steps}], отсортированный по убыванию даты.
+    Без индекса — читает файлы напрямую. Быстро: планов немного.
+    """
+    oracles_dir = os.path.join(IDEA, "data", "oracles")
+    out = []
+    try:
+        for slug in os.listdir(oracles_dir):
+            plan_dir = os.path.join(oracles_dir, slug)
+            if not os.path.isdir(plan_dir) or slug == ".":
+                continue
+            for fname in os.listdir(plan_dir):
+                if not fname.endswith(".md") or fname == "index.md":
+                    continue
+                path = os.path.join(plan_dir, fname)
+                try:
+                    st = os.path.getmtime(path)
+                    ts = datetime.datetime.fromtimestamp(st).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    ts = fname[:10] + " 00:00"
+                out.append({"slug": slug, "path": path, "ts": ts})
+    except Exception:
+        return []
+    out.sort(key=lambda x: x["ts"], reverse=True)
+    return out[:100]
+
+
 def _api_state():
     wired = [
         {
@@ -572,6 +602,7 @@ def _api_state():
         # is_float/value для каждого. UI строит range-инпуты по этим данным. Без файла — дефолты.
         "genparams": genparams.meta()["params"],
         "rejected": rejected.count(),  # сколько идей отклонено «мусором» (учат генератор/судью)
+        "oracles": _read_oracles(),
     }
 
 

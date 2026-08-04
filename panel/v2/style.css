@@ -38,6 +38,7 @@
    Органы/журнал: #organs-list .organ-row/.organ-main/.organ-line1/.organ-name/.organ-flow
                    /.organ-badges/.organ-purpose .runs-table/.run-ts/.run-goal/.run-result
                    /.run-duration/.run-status-pill #journal-dock/.dock-*
+   Oracle: #oracles-list .oracle-row/.oracle-slug/.oracle-ts/.oracle-link
    Настройки: #settings-overlay #settings-drawer .settings-header/.settings-title
               /.settings-close #settings-body .settings-section/.settings-section-title
               .settings-row/.settings-label/.settings-input .list-item/.list-item-path
@@ -1442,6 +1443,48 @@ input[type="number"]:focus,
   font-family: var(--font-sans);
   font-size: 13px;
   color: var(--ink);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ORACLE — список планов
+   ════════════════════════════════════════════════════════════════════════ */
+#oracles-list { display: flex; flex-direction: column; gap: 10px; }
+.oracle-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow);
+}
+.oracle-slug {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--magenta);
+  min-width: 140px;
+}
+.oracle-ts {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-left: auto;
+}
+.oracle-link {
+  font-family: var(--font-display);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ink);
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  background: var(--yellow);
+  text-decoration: none;
+}
+.oracle-link:hover {
+  background: var(--magenta);
+  color: var(--white);
 }
 
 /* ════════════════════════════════════════════════════════════════════════

@@ -269,6 +269,7 @@ class Renderer {
     this._renderIdeas(next);
     this._renderOrgans(next);
     this._renderJournal(next);
+    this._renderOracles(next);
     this._renderRegistryStrip(next);  // сводка тела/реестра в табах
     this._renderDock(next);
     this._renderEmptyState(next);
@@ -897,6 +898,33 @@ class Renderer {
     const pill = Renderer.el('span', { cls: ['run-status-pill', ok ? 'ok' : 'fail'], text: ok ? 'ok' : '⚠' });
     tr.appendChild(Renderer.el('td', {}, [pill]));
     return tr;
+  }
+
+  // ── ORACLE (список планов) ──
+  _renderOracles(S) {
+    const list = Renderer.$('#oracles-list');
+    const counter = Renderer.$('#oracles-count');
+    if (!list) return;
+    const oracles = S.oracles || [];
+    if (counter) counter.textContent = String(oracles.length);
+    const sig = oracles.map(o => o.path).join('|');
+    if (sig === this._lastOraclesSig) return;
+    this._lastOraclesSig = sig;
+    list.textContent = '';
+    if (!oracles.length) {
+      list.appendChild(Renderer.el('div', { cls: 'empty-state', text: 'Планов пока нет. Нажми 🔮 Oracle слева.' }));
+      return;
+    }
+    oracles.forEach(o => {
+      const row = Renderer.el('div', { cls: 'oracle-row' });
+      const title = Renderer.el('span', { cls: 'oracle-slug', text: o.slug });
+      const ts = Renderer.el('span', { cls: 'oracle-ts', text: o.ts });
+      const link = Renderer.el('a', { cls: 'oracle-link', text: 'открыть', attrs: { href: 'file:///' + o.path.replace(/\\/g, '/'), target: '_blank' } });
+      row.appendChild(title);
+      row.appendChild(ts);
+      row.appendChild(link);
+      list.appendChild(row);
+    });
   }
 
   // ── СВОДКА В ТАБ-БАРЕ ──
