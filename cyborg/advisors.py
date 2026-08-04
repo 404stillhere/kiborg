@@ -219,7 +219,7 @@ class AskLlmAdvisor:
             'Верни РОВНО одну строку JSON и ничего больше: '
             '{"scores":{"<id>":<0-100>, ...}}'
         )
-        text = self._ask(chain, prompt, int(ctx.get("llm_timeout_ms", 60000)))
+        text = self._ask(chain, prompt, int(ctx.get("llm_timeout_ms", config.ASK_LLM_ADVISOR_TIMEOUT_MS)))
         if not text:
             return mind.opinion(None, reason_code="provider_fail")
         raw = text.strip()
