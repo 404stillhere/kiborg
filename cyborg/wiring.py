@@ -51,6 +51,8 @@ import mind  # noqa: E402,F401  (движок взвешенного совещ�
 import seen_items  # noqa: E402,F401  (фильтр «уже видели» по ID сырых items — только для харвеста)
 from core import Organ  # noqa: E402,F401
 from organs import collect_source, finish_step, ideate, rank_ideas, readability_gate  # noqa: E402,F401
+from organs import oracle_plan, oracle_scan  # noqa: E402,F401
+from organs import deliver_oracle as deliver_oracle_organ  # noqa: E402,F401
 from organs_vendored import scrub_secrets  # noqa: E402,F401  (вендорен из реестра, чистый)
 from store import state_lock  # noqa: E402,F401  (O_EXCL-замок; тот же примитив, что вокруг state.json)
 
@@ -83,7 +85,7 @@ _CURSOR_FILE = config.CURSOR_FILE
 # Реэкспорт из подмодулей: сохраняет публичный API wiring.* для внешних потребителей
 # (run.py, harvest.py, panel/serve.py, ВСЕ тесты). E402 — импорты после sys.path-хака выше;
 # F401 — символы реэкспортируются, но в ЭТОМ модуле напрямую не используются.
-from wiring_builder import build_organs  # noqa: E402,F401
+from wiring_builder import build_organs, build_oracle_organs  # noqa: E402,F401
 from wiring_collect import _collect_locked, _remove_stale_lock, _run_collect  # noqa: E402,F401
 from wiring_council import (  # noqa: E402,F401
     _council_no_cap,
@@ -94,5 +96,6 @@ from wiring_council import (  # noqa: E402,F401
 )
 from wiring_finish import _run_finish  # noqa: E402,F401
 from wiring_ideate import _run_ideate  # noqa: E402,F401
+from wiring_oracle import _run_deliver_oracle, _run_oracle_plan, _run_oracle_scan  # noqa: E402,F401
 from wiring_runtime import _content_llm  # noqa: E402,F401
 from wiring_scrub import _liver_clean, _run_deliver, _run_finish_sink, _run_scrub  # noqa: E402,F401

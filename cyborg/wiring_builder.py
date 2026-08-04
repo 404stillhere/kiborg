@@ -9,6 +9,7 @@ from wiring_collect import _run_collect
 from wiring_council import _run_rank, _run_readability
 from wiring_finish import _run_finish
 from wiring_ideate import _run_ideate
+from wiring_oracle import _run_deliver_oracle, _run_oracle_plan, _run_oracle_scan
 from wiring_scrub import _run_deliver, _run_finish_sink, _run_scrub
 
 
@@ -94,6 +95,43 @@ def build_organs():
             produces=["delivered"],
             consumes=["nudge"],
             tags=["доделать", "довести", "шаг", "инбокс", "проекты"],
+            needs={},
+        ),
+    ]
+
+
+def build_oracle_organs():
+    import wiring
+
+    return [
+        wiring.Organ(
+            name="oracle_scan",
+            purpose="Oracle: сканирует локальный проект и строит его карту.",
+            run=_run_oracle_scan,
+            role="source",
+            produces=["project_map"],
+            consumes=[],
+            tags=["oracle", "проект", "скан", "карта"],
+            needs={},
+        ),
+        wiring.Organ(
+            name="oracle_plan",
+            purpose="Oracle: строит план достижения цели по карте проекта через LLM.",
+            run=_run_oracle_plan,
+            role="transform",
+            produces=["plan"],
+            consumes=["project_map"],
+            tags=["oracle", "план", "цель"],
+            needs={"key": "LLM_KEY", "stub_ok": True},
+        ),
+        wiring.Organ(
+            name="deliver_oracle",
+            purpose="Oracle: сохраняет план в data/oracles/ и кладёт карточку в инбокс.",
+            run=_run_deliver_oracle,
+            role="sink",
+            produces=["delivered"],
+            consumes=["plan"],
+            tags=["oracle", "доставить", "план"],
             needs={},
         ),
     ]
