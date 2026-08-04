@@ -374,6 +374,10 @@ ORCHESTRA_TIMEOUT_SEC = 180
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500
 
+# === RANK_IDEAS (advisors.py) ===
+# Сколько source_refs показывать в тексте варианта для rank_ideas-арбитра.
+RANK_IDEAS_MAX_REFS = 3
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90

@@ -49,7 +49,7 @@ def _opt_text(o):
             if isinstance(refs, list) and refs:
                 evidence = ", ".join(
                     str(ref.get("title") or ref.get("path") or ref.get("id") or "")[:100]
-                    for ref in refs[:3]
+                    for ref in refs[: config.RANK_IDEAS_MAX_REFS]
                     if isinstance(ref, dict)
                 )
                 if evidence:
