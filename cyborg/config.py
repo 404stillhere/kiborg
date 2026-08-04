@@ -185,6 +185,9 @@ LLM_PROVIDER_NVIDIA = (
     "meta/llama-3.1-8b-instruct",
 )
 LLM_PROVIDER_CEREBRAS = ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b")
+# Closerouter — прокси-агрегатор для интуиции (muse-spark / deepseek / nemotron).
+# URL вынесен сюда, чтобы не дублировать в keychain.py.
+CLOSEROUTER_API_BASE = "https://api.closerouter.dev/v1/chat/completions"
 # Таймаут HTTP-запроса в TG (алертинг не должен надолго блокировать прогон). При ошибке/timeout
 # молча падает на print — прогон продолжается.
 ALERT_HTTP_TIMEOUT = 10.0

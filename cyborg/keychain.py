@@ -20,7 +20,7 @@ _KEYS_FILE = os.environ.get(config.LLM_KEYS_ENV, config.DEFAULT_LLM_KEYS_FILE)
 # говорит только OpenAI /chat/completions. Fallback-цепочка здесь — closerouter:
 # muse-spark → deepseek-v4-pro → nemotron-3-ultra. Порядок = приоритет.
 # Mistral и все остальные — в СОВЕТ.
-_CR_URL = "https://api.closerouter.dev/v1/chat/completions"
+_CR_URL = config.CLOSEROUTER_API_BASE
 # Нативные fallback-провайдеры для интуиции: (id, env-key, baseUrl, model). Дубли URL
 # убран — берём из cyborg.config.LLM_PROVIDER_*.
 _NATIVE_PROVIDERS = [
