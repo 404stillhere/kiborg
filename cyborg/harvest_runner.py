@@ -22,7 +22,7 @@ def main(argv):
     try:
         harvest.feedback_cortex.main()
     except Exception as exc:
-        print(f"[feedback_cortex] пропущен: {str(exc)[:160]}")
+        print(f"[feedback_cortex] пропущен: {str(exc)[: harvest.config.HARVEST_RUNNER_ERROR_MAX_CHARS]}")
 
     # АВТО-ВОССТАНОВЛЕНИЕ state.json при повреждении (ДО backup_state, ДО органов).
     # Если state.json битый/отсутствует и есть валидный бэкап — восстанавливаем, шлём

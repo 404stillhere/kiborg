@@ -378,6 +378,10 @@ WIRING_COUNCIL_ORCHESTRA_TIMEOUT_SEC = 45
 # Сколько символов результата писать в строку runs.md (обрезка для читаемости).
 HARVEST_LOG_RESULT_MAX_CHARS = 120
 
+# === HARVEST_RUNNER (harvest_runner.py) ===
+# Сколько символов ошибки печатать в консоль при best-effort пропуске feedback_cortex.
+HARVEST_RUNNER_ERROR_MAX_CHARS = 160
+
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500
