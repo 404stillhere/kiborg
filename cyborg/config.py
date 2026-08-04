@@ -382,6 +382,10 @@ HARVEST_LOG_RESULT_MAX_CHARS = 120
 # Сколько символов ошибки печатать в консоль при best-effort пропуске feedback_cortex.
 HARVEST_RUNNER_ERROR_MAX_CHARS = 160
 
+# === ASK_LLM (ask_llm.py) ===
+# Сколько символов smoke-ответа печатать в консоль при диагностике.
+ASK_LLM_SMOKE_MAX_CHARS = 160
+
 # === PROVENANCE (wiring_ideate.py) ===
 # Сколько символов context item'а учитывать при Jaccard-подборе источника идеи.
 PROVENANCE_CONTEXT_MAX_CHARS = 500

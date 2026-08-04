@@ -164,4 +164,9 @@ if __name__ == "__main__":
         print("SMOKE SKIP: цепочки нет (llm_keys.env / ZAI_API_KEY / CLOSEROUTER_API_KEY)")
     else:
         out = ask('Верни РОВНО одну строку JSON и ничего больше: {"ok":true}')
-        print("SMOKE", "OK" if '"ok"' in out or "ok" in out.lower() else "FAIL", "|", repr(out[:160]))
+        print(
+            "SMOKE",
+            "OK" if '"ok"' in out or "ok" in out.lower() else "FAIL",
+            "|",
+            repr(out[: config.ASK_LLM_SMOKE_MAX_CHARS]),
+        )
