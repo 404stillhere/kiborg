@@ -39,6 +39,38 @@ SKIP_DIRS = {
     "coverage",
 }
 
+# Генерированные/вспомогательные артефакты, которые не должны попадать в карту проекта.
+# Исключаем: бэкапы, логи, данные (inbox, oracles, backups), handoffs, audit.
+SKIP_PATH_PATTERNS = {
+    re.compile(r"\.bak(?:-|$)"),
+    re.compile(r"\.log$"),
+    re.compile(r"/data/"),
+    re.compile(r"^data/"),
+    re.compile(r"^handoffs/"),
+    re.compile(r"^audit/"),
+    re.compile(r"^\.brain/"),
+    re.compile(r"^\.feature-lab/"),
+}
+
+# Расширения файлов, которые несут полезную информацию для планировщика.
+# Всё остальное (бинарные, временные) игнорируется.
+KEEP_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+    ".md",
+    ".toml",
+    ".txt",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".sh",
+    ".env",
+    ".example",
+}
+
 MAX_FILES = 2000
 MAX_TREE_DEPTH = 4
 CONTENT_MAX_BYTES = 200_000
@@ -82,6 +114,8 @@ def run(inputs, env):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
         for name in sorted(filenames):
             rel = _rel(Path(dirpath) / name, root)
+            if _skip_file(rel):
+                continue
             files.append(rel)
             if name in ENTRYPOINTS:
                 entrypoints.append(rel)
@@ -124,6 +158,17 @@ def _resolve_root(env):
     except OSError:
         return None
     return p if p.is_dir() else None
+
+
+def _skip_file(rel):
+    """Исключить шумовые/сгенерированные файлы из карты проекта."""
+    rel_str = str(rel)
+    if any(pat.search(rel_str) for pat in SKIP_PATH_PATTERNS):
+        return True
+    dot = rel_str.rfind(".")
+    if dot == -1:
+        return False
+    return rel_str[dot:].lower() not in KEEP_EXTENSIONS
 
 
 def _walk(root):
