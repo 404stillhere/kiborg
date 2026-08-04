@@ -106,8 +106,8 @@ from harvest_env import (  # noqa: E402,F401
 )
 from harvest_gate import (  # noqa: E402,F401
     _atomic_write,
-    _last_sig,
     _items_sig,
+    _last_sig,
     _persist_status,
     _save_sig,
     _should_run,
