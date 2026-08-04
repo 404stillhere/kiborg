@@ -21,12 +21,13 @@ import os
 import subprocess
 import sys
 
+import config
 import mind
 
 # --- пути к внешним модулям-органам (провод к другим проектам) ---------------
-_ASK_LLM_JS = os.environ.get("KIBORG_ASK_LLM_JS", "M:/projects/DarBench/organ.js")
-_ORCHESTRA_PY = os.environ.get("KIBORG_ORCHESTRA_PY", "M:/projects/Claude Code API Dual Mode/organ.py")
-_NODE_EXE = os.environ.get("KIBORG_NODE_EXE", "node")
+_ASK_LLM_JS = os.environ.get(config.ASK_LLM_JS_ENV, "M:/projects/DarBench/organ.js")
+_ORCHESTRA_PY = os.environ.get(config.ORCHESTRA_PY_ENV, "M:/projects/Claude Code API Dual Mode/organ.py")
+_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, "node")
 
 
 _TEXT_FIELDS = ("title", "text", "value", "name")

@@ -21,9 +21,9 @@ import keychain
 import native_llm
 import zai_ask
 
-_NODE_EXE = os.environ.get("KIBORG_NODE_EXE", "node")
-_ORGAN_JS = os.environ.get("KIBORG_ASK_LLM_JS", "M:/projects/DarBench/organ.js")
-_TIMEOUT_MS = int(os.environ.get("KIBORG_ASK_LLM_TIMEOUT_MS", "120000"))
+_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, "node")
+_ORGAN_JS = os.environ.get(config.ASK_LLM_JS_ENV, "M:/projects/DarBench/organ.js")
+_TIMEOUT_MS = int(os.environ.get(config.ASK_LLM_TIMEOUT_MS_ENV, "120000"))
 
 # Ярлык для пульта/логов (serve.py, harvest.py, run.py читают ask_llm._MODEL). Реальная
 # модель — первая живая в цепочке; тут статичное человекочитаемое имя провайдера.

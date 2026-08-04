@@ -44,8 +44,8 @@ def maybe_alert(level, message):
     Любой сбой отправки (нет сети, неверный токен, таймаут) — тихо логируется в stdout,
     исключение НЕ прокидывается: алертинг не должен ронять рабочий прогон киборга.
     """
-    token = os.environ.get("KIBORG_ALERT_TOKEN")
-    chat_id = os.environ.get("KIBORG_ALERT_CHAT_ID")
+    token = os.environ.get(config.ALERT_TOKEN_ENV)
+    chat_id = os.environ.get(config.ALERT_CHAT_ENV)
     line = f"[kiborg][{level}] {message}"
     if not token or not chat_id:
         # Нет конфигурации — логируем. Прогон продолжается, юзер хотя бы увидит в консоли/журнале.

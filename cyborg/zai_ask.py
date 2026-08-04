@@ -15,9 +15,9 @@ import urllib.request
 import config
 import keychain
 
-_ZAI_URL = os.environ.get("KIBORG_ZAI_URL", "https://api.z.ai/api/anthropic/v1/messages")
-_MODEL = os.environ.get("KIBORG_ZAI_MODEL", "glm-5.2")
-_TIMEOUT = int(os.environ.get("KIBORG_ZAI_TIMEOUT_MS", "120000"))
+_ZAI_URL = os.environ.get(config.ZAI_URL_ENV, "https://api.z.ai/api/anthropic/v1/messages")
+_MODEL = os.environ.get(config.ZAI_MODEL_ENV, "glm-5.2")
+_TIMEOUT = int(os.environ.get(config.ZAI_TIMEOUT_MS_ENV, "120000"))
 
 
 def _api_key():

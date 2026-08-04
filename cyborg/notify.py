@@ -21,8 +21,8 @@ def _send(token, chat_id, text):
 
 def notify_delivered(count, titles):
     """Уведомить о доставленных идеях. count — число, titles — список строк."""
-    token = os.environ.get("KIBORG_NOTIFY_TOKEN")
-    chat_id = os.environ.get("KIBORG_NOTIFY_CHAT_ID")
+    token = os.environ.get(config.NOTIFY_TOKEN_ENV)
+    chat_id = os.environ.get(config.NOTIFY_CHAT_ENV)
     if not token or not chat_id:
         return
     if count <= 0:

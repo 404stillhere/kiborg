@@ -122,7 +122,7 @@ def wire_council(env):
     chain = harvest.keychain.build_chain()
     if chain:
         env["llm_chain"] = chain
-    if not os.environ.get("KIBORG_SLEEP_ORCHESTRA"):
+    if not os.environ.get(config.SLEEP_ORCHESTRA_ENV):
         orch = harvest.keychain.orchestra_context()
         if orch:
             env["orchestra"] = orch

@@ -122,9 +122,23 @@ TG_LOCK_TIMEOUT = 130.0
 STALE_LOCK_MAX_AGE_MINUTES = 30
 # Folder'ы, которые режим «доделай» (finish_step) не толкает (пусто = не фильтровать). Knob.
 SKIP_FOLDERS = []
-# ENV-имя для усыпления 7-модельного оркестра (читается в harvest_env.wire_council).
-# Остальные 5 KIBORG_* ENV-имён живут в frozen-модулях (advisors/ask_llm/keychain) — не выносим.
+# ENV-имена (централизовано — единый источник истины, чтобы не дублировать литералы в модулях).
+# Осторожно: тесты в test_alerts/test_notify/test_deliver напрямую читают/пишут os.environ["..."] —
+# при переименовании здесь их трогать не надо, но новые тесты должны брать имя из config.
 SLEEP_ORCHESTRA_ENV = "KIBORG_SLEEP_ORCHESTRA"
+LLM_KEYS_ENV = "KIBORG_LLM_KEYS"
+ASK_LLM_JS_ENV = "KIBORG_ASK_LLM_JS"
+ASK_LLM_TIMEOUT_MS_ENV = "KIBORG_ASK_LLM_TIMEOUT_MS"
+ORCHESTRA_PY_ENV = "KIBORG_ORCHESTRA_PY"
+NODE_EXE_ENV = "KIBORG_NODE_EXE"
+NATIVE_LLM_TIMEOUT_MS_ENV = "KIBORG_NATIVE_LLM_TIMEOUT_MS"
+ZAI_URL_ENV = "KIBORG_ZAI_URL"
+ZAI_MODEL_ENV = "KIBORG_ZAI_MODEL"
+ZAI_TIMEOUT_MS_ENV = "KIBORG_ZAI_TIMEOUT_MS"
+ALERT_TOKEN_ENV = "KIBORG_ALERT_TOKEN"
+ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
+NOTIFY_TOKEN_ENV = "KIBORG_NOTIFY_TOKEN"
+NOTIFY_CHAT_ENV = "KIBORG_NOTIFY_CHAT_ID"
 
 # === АЛЕРТИНГ (опциональный, через Telegram Bot API) ===
 # Если при прогоне случился семантический сбой (out['brain_down'] / много dropped_stub),
@@ -132,8 +146,6 @@ SLEEP_ORCHESTRA_ENV = "KIBORG_SLEEP_ORCHESTRA"
 # алерт уходит в Telegram (urllib, без новой зависимости). Нет ENV — логируется в stdout с
 # пометкой [ALERT]. Токен бота храним в ENV запуска (не в llm_keys.env — это не LLM-ключ).
 # Задать: export KIBORG_ALERT_TOKEN=123:abc  export KIBORG_ALERT_CHAT_ID=987654321
-ALERT_TOKEN_ENV = "KIBORG_ALERT_TOKEN"
-ALERT_CHAT_ENV = "KIBORG_ALERT_CHAT_ID"
 # Базовый URL Bot API Telegram. Может понадобиться прокси/туннель в корп.сетях.
 TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
 
