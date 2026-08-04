@@ -303,6 +303,15 @@ COUNCIL_MAX_WEIGHT = 0.3
 # Балл важнее разнообразия, но diversity имеет голос.
 COUNCIL_MMR_LAMBDA = 0.7
 
+# === НАБЛЮДАТЕЛЬ (observe_sources) ===
+# Пауза между постами (сек) — в пульте строки шли живым потоком, не пачкой.
+OBSERVE_ITEM_PAUSE = 0.28
+# Пауза между шагами/источниками (сек).
+OBSERVE_STEP_PAUSE = 0.35
+# n и timeout для collect_source при наблюдении (легковесный обход).
+OBSERVE_SOURCE_N = 6
+OBSERVE_SOURCE_TIMEOUT = 7
+
 # === ПОТОЛКИ ПАПОК-ИСТОЧНИКОВ (folders) ===
 # Максимальное число папок-источников. Больше — мусор/раздувание списка.
 MAX_FOLDERS = 40

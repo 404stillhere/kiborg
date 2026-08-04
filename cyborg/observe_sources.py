@@ -31,6 +31,7 @@ try:
 except Exception:
     pass
 
+import config  # noqa: E402
 import harvest  # noqa: E402
 import seen_items  # noqa: E402
 from organs import collect_source  # noqa: E402
@@ -48,8 +49,8 @@ WHERE = {
 }
 ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "self", "files"]
 
-_ITEM_PAUSE = 0.28  # пауза между постами — чтобы в пульте строки шли живым потоком, не пачкой
-_STEP_PAUSE = 0.35
+_ITEM_PAUSE = config.OBSERVE_ITEM_PAUSE
+_STEP_PAUSE = config.OBSERVE_STEP_PAUSE
 
 
 def say(s="", pause=0.0):
@@ -87,7 +88,7 @@ def main():
         say(f"│  🚪 {verb}…", _STEP_PAUSE)
 
         env = dict(base_env)
-        env.update(source=name, sources=None, n=6, timeout=7)
+        env.update(source=name, sources=None, n=config.OBSERVE_SOURCE_N, timeout=config.OBSERVE_SOURCE_TIMEOUT)
         t0 = time.time()
         try:
             out = collect_source.run({}, env)
