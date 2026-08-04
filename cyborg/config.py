@@ -141,6 +141,14 @@ TELEGRAM_BOT_API_BASE = "https://api.telegram.org"
 LLM_PROVIDER_MISTRAL = ("MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest")
 LLM_PROVIDER_OPENROUTER = ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free")
 LLM_PROVIDER_GROQ = ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b")
+LLM_PROVIDER_SAMBANOVA = ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2")
+LLM_PROVIDER_COHERE = ("COHERE_API_KEY", "https://api.cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025")
+LLM_PROVIDER_NVIDIA = (
+    "NVIDIA_API_KEY",
+    "https://integrate.api.nvidia.com/v1/chat/completions",
+    "meta/llama-3.1-8b-instruct",
+)
+LLM_PROVIDER_CEREBRAS = ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b")
 # Таймаут HTTP-запроса в TG (алертинг не должен надолго блокировать прогон). При ошибке/timeout
 # молча падает на print — прогон продолжается.
 ALERT_HTTP_TIMEOUT = 10.0

@@ -146,7 +146,7 @@ def available(path=None):
 # сети юзера (HTTP 400 "User location is not supported") — тоже отключён 2026-07-21, спека
 # остается на случай смены сети/VPN (вернуть = убрать из _COUNCIL_DISABLED).
 _COUNCIL_SPEC = {
-    "sambanova": ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2"),
+    "sambanova": config.LLM_PROVIDER_SAMBANOVA,
     "groq": config.LLM_PROVIDER_GROQ,
     "gemini": (
         "GEMINI_API_KEY",
@@ -155,9 +155,9 @@ _COUNCIL_SPEC = {
     ),
     "mistral": config.LLM_PROVIDER_MISTRAL,
     "openrouter": config.LLM_PROVIDER_OPENROUTER,
-    "cohere": ("COHERE_API_KEY", "https://api.cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025"),
-    "nvidia": ("NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1/chat/completions", "meta/llama-3.1-8b-instruct"),
-    "cerebras": ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b"),
+    "cohere": config.LLM_PROVIDER_COHERE,
+    "nvidia": config.LLM_PROVIDER_NVIDIA,
+    "cerebras": config.LLM_PROVIDER_CEREBRAS,
 }
 
 # Рецензенты ОТКЛЮЧЕНЫ, но НЕ удалены (реш. юзера 2026-07-13): спека остаётся, из совета
