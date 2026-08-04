@@ -8,11 +8,11 @@
 
 def _liver_clean(rec):
     """Печень (scrub_secrets): прогоняет текстовые поля записи через вычистку секретов.
-    Чистка — работа Печени, не руки. Возвращает копию с вычищенными title/why."""
+    Чистка — работа Печени, не руки. Возвращает вычищенную копию."""
     import wiring
 
     clean = dict(rec)
-    for f in ("title", "why"):
+    for f in ("title", "why", "verification"):
         if isinstance(clean.get(f), str):
             clean[f] = wiring.scrub_secrets.scrub_text(clean[f])
     return clean
@@ -46,12 +46,27 @@ def _run_scrub(inputs, env):
     for idea in ideas:
         if isinstance(idea, dict):
             clean = dict(idea)
-            for f in ("title", "why"):
+            for f in ("title", "why", "verification"):
                 if isinstance(clean.get(f), str):
                     s = wiring.scrub_secrets.scrub_text(clean[f])
                     if s != clean[f]:
                         red += 1
                     clean[f] = s
+            refs = clean.get("source_refs")
+            if isinstance(refs, list):
+                safe_refs = []
+                for ref in refs[:4]:
+                    if not isinstance(ref, dict):
+                        continue
+                    safe_ref = dict(ref)
+                    for field in ("title", "project", "path"):
+                        if isinstance(safe_ref.get(field), str):
+                            scrubbed = wiring.scrub_secrets.scrub_text(safe_ref[field])
+                            if scrubbed != safe_ref[field]:
+                                red += 1
+                            safe_ref[field] = scrubbed
+                    safe_refs.append(safe_ref)
+                clean["source_refs"] = safe_refs
             out.append(clean)
         else:
             out.append(idea)

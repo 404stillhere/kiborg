@@ -40,7 +40,20 @@ def _opt_text(o):
         if o.get(f):
             t = str(o[f])
             why = str(o.get("why") or o.get("reason") or "")
-            return (t + " — " + why[:120]) if why else t
+            parts = [t + (" — " + why[:260] if why else "")]
+            verification = str(o.get("verification") or "").strip()
+            if verification:
+                parts.append("Проверка: " + verification[:180])
+            refs = o.get("source_refs")
+            if isinstance(refs, list) and refs:
+                evidence = ", ".join(
+                    str(ref.get("title") or ref.get("path") or ref.get("id") or "")[:100]
+                    for ref in refs[:3]
+                    if isinstance(ref, dict)
+                )
+                if evidence:
+                    parts.append("Основание: " + evidence)
+            return " | ".join(parts)
     return str(o.get("id"))
 
 

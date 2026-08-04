@@ -220,6 +220,17 @@ _FILES_TEXT_EXT = {
     ".c", ".h", ".hpp", ".cpp", ".cc", ".cs", ".swift", ".m", ".mm", ".scala", ".dart",
     ".lua", ".r", ".jl", ".sh", ".sql", ".vue", ".svelte", ".html",
     ".md", ".txt", ".rst", ".markdown", ".adoc",
+    # Конфигурация и инфраструктура — без них «анализ проекта» слеп к реальной сборке.
+    ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties",
+    ".xml", ".css", ".scss", ".sass", ".less", ".ps1", ".psm1", ".bat", ".cmd",
+    ".gradle", ".proto", ".graphql", ".gql", ".tf", ".hcl",
+}
+_FILES_TEXT_NAMES = {
+    "dockerfile", "makefile", "rakefile", "gemfile", "procfile", "justfile",
+    "go.mod", "go.work", "cargo.lock",
+}
+_FILES_LOW_SIGNAL_NAMES = {
+    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum", "cargo.lock",
 }
 _FILES_SKIP_DIRS = {
     ".git", ".hg", ".svn", "venv", ".venv", "env", "node_modules", "__pycache__",
@@ -229,19 +240,22 @@ _FILES_SKIP_DIRS = {
     # как сырьё, их можно указать отдельным корнем: _files_walk не отбрасывает сам root.
     "handoffs", "backups",
 }
+# Эти скрытые папки — не личный мусор, а часть архитектуры/деплоя проекта.
+_FILES_KEEP_HIDDEN_DIRS = {".github", ".openai"}
 _FILES_SECRET_EXT = {".env", ".session", ".key", ".pem", ".pfx", ".p12", ".crt",
                      ".cer", ".keystore", ".jks", ".ppk"}
 _FILES_SECRET_HINTS = ("secret", "password", "credential", "token", "apikey",
                        "api_key", "id_rsa", ".htpasswd")
-_FILES_MAX_BYTES = 256 * 1024   # крупные файлы не тянем (заголовок всё равно берём из «шапки»)
-_FILES_HEAD_BYTES = 4096        # хватает на первую содержательную строку
-_FILES_CONTEXT_BYTES = 16 * 1024  # читаем только начало: докстринг, контракты, первые функции
-_FILES_CONTEXT_CHARS = 700      # один файл не может захватить весь промпт
-_FILES_CONTEXT_LINES = 12       # разнообразие сигналов важнее длинного куска одной функции
+_FILES_MAX_BYTES = 1024 * 1024  # до 1 МиБ: большой исходник читаем, но выдаём только умную выжимку
+_FILES_HEAD_BYTES = 32 * 1024   # headline переживает длинную лицензионную/генерированную шапку
+_FILES_CONTEXT_BYTES = _FILES_MAX_BYTES  # ищем TODO/символы/ошибки по всему допустимому файлу
+_FILES_CONTEXT_CHARS = 1600     # глубже прежних 700, но один файл не захватывает весь промпт
+_FILES_CONTEXT_LINES = 20       # линии выбираются по смыслу и по разным участкам файла
 _FILES_MAX_ITEMS = 48           # 48×700 ≈ 34k символов контекста — безопасный потолок прогона
 _FILES_MAX_SCAN = 20000         # предохранитель: осматриваем не больше стольких файлов за прогон —
                                 # ошибочно заданный диск-корень («M:/») не заставит обойти весь диск
                                 # и подвесить тик автосбора (реальному проекту 20k файлов с запасом)
+_FILES_MAX_PROJECT_MAPS = 8     # карта не должна вытеснить файлы при десятках отдельных корней
 
 # Строка-СЕКРЕТ — НЕ берём её в заголовок. Заголовок уходит в промпт LLM (ideate) ДО
 # scrub_secrets, поэтому имя-фильтра (_files_is_secret) мало: секрет бывает в СОДЕРЖИМОМ файла
@@ -256,7 +270,8 @@ _FILES_SECRET_LINE = re.compile(
     r"|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"                 # JWT
     r"|\b\d{6,12}:[A-Za-z0-9_-]{30,}\b"                          # telegram bot token
     r"|[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/@]+:[^\s/@]+@"           # scheme://user:pass@host
-    r"|(?i:\w*(?:api[_-]?key|secret|token|passw(?:or)?d|credential|access[_-]?key)\w*)\s*[:=]\s*\S"
+    r"|(?i:[A-Za-z0-9_]{0,40}(?:api[_-]?key|secret|token|passw(?:or)?d|credential|access[_-]?key)"
+    r"[A-Za-z0-9_]{0,40})\s*[:=]\s*\S"
 )
 
 
@@ -265,7 +280,91 @@ def _files_is_secret(name):
     low = name.lower()
     if os.path.splitext(low)[1] in _FILES_SECRET_EXT:
         return True
-    return any(h in low for h in _FILES_SECRET_HINTS)
+    # Не режем полезные tokenizer.py / secret_scanner.py только из-за куска слова.
+    # Секретный намёк должен быть отдельной частью имени: my_token.txt, api_key-prod.json.
+    parts = set(p for p in re.split(r"[^a-z0-9]+", low) if p)
+    compact = low.replace("-", "_")
+    return (
+        bool(parts & {"secret", "secrets", "password", "passwords", "credential", "credentials",
+                      "token", "tokens", "apikey", "htpasswd"})
+        or "api_key" in compact
+        or low.startswith("id_rsa")
+    )
+
+
+def _files_decode(raw):
+    """Декодировать текст без кракозябр.
+
+    Большинство проектов UTF-8, но старые Windows-файлы бывают CP1251, а один файл может
+    содержать строки разных эпох. Поэтому UTF-16 распознаём целиком, остальные кодируем
+    построчно: UTF-8 -> CP1251 -> latin-1. Ошибочные байты не превращают весь русский файл
+    в mojibake.
+    """
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            return raw.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    # UTF-16 без BOM: много нулей на чётных/нечётных позициях.
+    if raw and raw.count(b"\x00") > len(raw) // 5:
+        for enc in ("utf-16-le", "utf-16-be"):
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                continue
+    decoded = []
+    for idx, line in enumerate(raw.splitlines()):
+        if idx == 0 and line.startswith(b"\xef\xbb\xbf"):
+            line = line[3:]
+        try:
+            decoded.append(line.decode("utf-8"))
+        except UnicodeDecodeError:
+            try:
+                decoded.append(line.decode("cp1251"))
+            except UnicodeDecodeError:
+                decoded.append(line.decode("latin-1", errors="replace"))
+    return "\n".join(decoded)
+
+
+def _files_read_lines(path, limit):
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(limit)
+    except OSError:
+        return []
+    return list(enumerate(_files_decode(raw).splitlines(), 1))
+
+
+def _files_safe_line(raw):
+    """Одна строка, которую разрешено отдать модели; отступ сохраняем."""
+    expanded = str(raw or "").expandtabs(4).rstrip()
+    stripped = expanded.strip().lstrip("\ufeff").strip()
+    if not stripped:
+        return ""
+    # Минифицированная/сгенерированная строка может занимать сотни КБ. Полный regex с
+    # `\w*` на ней дорог и сама строка бесполезна; проверяем края и берём только начало.
+    secret_probe = stripped if len(stripped) <= 5000 else stripped[:2500] + stripped[-2500:]
+    if _FILES_SECRET_LINE.search(secret_probe):
+        return ""
+    # Бинарь под текстовым расширением: управляющие символы — сильный сигнал.
+    if sum(1 for ch in stripped if ord(ch) < 32 and ch not in "\t") > 1:
+        return ""
+    indent = min(len(expanded) - len(expanded.lstrip()), 24)
+    body = expanded.lstrip()
+    return (" " * indent + body)[:260]
+
+
+def _files_meaningful_lines(path, limit):
+    out = []
+    for lineno, raw in _files_read_lines(path, limit):
+        line = _files_safe_line(raw)
+        if not line:
+            continue
+        stripped = line.strip()
+        if stripped in {"{", "}", "[", "]", "(", ")", ");", "};", "---", "***", '"""', "'''"}:
+            continue
+        out.append((lineno, line))
+    return out
 
 
 def _files_headline(path):
@@ -273,14 +372,8 @@ def _files_headline(path):
     маркеры комментов, markdown-#), пропускаем техническое (shebang, coding, import) И строки-
     СЕКРЕТЫ (значение ключа/токена/пароля не должно утечь в промпт LLM). Пусто — нет пригодной
     строки (тогда заголовком остаётся просто имя файла)."""
-    try:
-        with open(path, "rb") as f:
-            head = f.read(_FILES_HEAD_BYTES)
-    except OSError:
-        return ""
-    # utf-8-sig снимает BOM (иначе '﻿' в начале ломает и заголовок, и проверку shebang)
-    for raw in head.decode("utf-8-sig", errors="replace").splitlines():
-        s = raw.strip().lstrip("﻿").strip()
+    for _lineno, raw in _files_read_lines(path, _FILES_HEAD_BYTES):
+        s = _files_safe_line(raw).strip()
         if not s:
             continue
         low_raw = s.lower()
@@ -301,54 +394,108 @@ def _files_headline(path):
     return ""
 
 
+_FILES_SYMBOL_RE = re.compile(
+    r"^\s*(?:async\s+)?(?:def|class|function|func|interface|type|struct|enum|trait|impl|record)\s+"
+    r"|^\s*(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*="
+    r"|^\s*(?:public|private|protected|internal|static|final|abstract|sealed)\s+.*(?:class|interface)\s+"
+    r"|^\s*(?:CREATE\s+(?:TABLE|VIEW|FUNCTION|PROCEDURE)|ALTER\s+TABLE)\b",
+    re.IGNORECASE,
+)
+_FILES_RISK_RE = re.compile(
+    r"\b(?:TODO|FIXME|BUG|HACK|XXX|deprecated|raise|except|catch|panic|fatal|rollback|retry|timeout)\b",
+    re.IGNORECASE,
+)
+_FILES_CONFIG_RE = re.compile(
+    r"^\s*[\"']?[A-Za-z_][\w.\-]*[\"']?\s*[:=]"
+    r"|^\s*<(?:service|component|dependency|route|target|task|property)\b",
+    re.IGNORECASE,
+)
+
+
+def _spread_pick(rows, limit):
+    """Взять строки со всего файла, а не только первые совпадения."""
+    if limit <= 0 or not rows:
+        return []
+    if len(rows) <= limit:
+        return list(rows)
+    if limit == 1:
+        return [rows[len(rows) // 2]]
+    idxs = {round(i * (len(rows) - 1) / (limit - 1)) for i in range(limit)}
+    return [rows[i] for i in sorted(idxs)]
+
+
+def _files_dependencies(lines):
+    deps = []
+    patterns = (
+        re.compile(r"^\s*from\s+([\w.]+)\s+import\b"),
+        re.compile(r"^\s*import\s+([\w.@/\-]+)"),
+        re.compile(r"^\s*use\s+([\w:]+)"),
+        re.compile(r"^\s*#include\s*[<\"]([^>\"]+)"),
+        re.compile(r"^\s*.*\bfrom\s+[\"']([^\"']+)[\"']"),
+        re.compile(r"^\s*.*\brequire\([\"']([^\"']+)[\"']\)"),
+    )
+    seen = set()
+    for _lineno, line in lines:
+        for pat in patterns:
+            match = pat.match(line)
+            if not match:
+                continue
+            dep = match.group(1).strip()
+            if dep and dep not in seen:
+                seen.add(dep)
+                deps.append(dep)
+            break
+        if len(deps) >= 10:
+            break
+    return deps
+
+
 def _files_context(path, headline=""):
-    """Короткий безопасный фрагмент файла для генератора идей.
+    """Безопасная выжимка ПО ВСЕМУ файлу: шапка, символы, риски, конфиг и хвост.
 
-    Берём несколько первых содержательных строк, но выкидываем импортный шум, одиночные
-    скобки/разделители и строки с признаками секретов. Это не полный code review: контекст
-    лишь даёт модели факты о назначении, контрактах, TODO и первых функциях файла.
+    Это всё ещё не полный файл в prompt, но модель видит функции/TODO далеко ниже шапки,
+    номера строк, зависимости и исходные отступы. Выбор строк распределён по файлу.
     """
-    try:
-        with open(path, "rb") as f:
-            head = f.read(_FILES_CONTEXT_BYTES)
-    except OSError:
+    rows = _files_meaningful_lines(path, _FILES_CONTEXT_BYTES)
+    if not rows:
         return ""
-
     headline_norm = re.sub(r"\s+", " ", str(headline or "")).strip().casefold()
-    lines, seen = [], set()
-    total = 0
-    for raw in head.decode("utf-8-sig", errors="replace").splitlines():
-        s = raw.strip().lstrip("﻿").strip()
-        if not s or _FILES_SECRET_LINE.search(s):
-            continue
-        low = s.casefold()
-        if (
-            low.startswith(("#!", "<?xml", "<!doctype", "import ", "from ", "package ", "use ", "#include", "using "))
-            or (low.startswith("#") and ("-*-" in low or "coding:" in low or "coding=" in low))
-        ):
-            continue
-        # Снимаем только декоративные обёртки. Сам код/сигнатуры оставляем: они и есть факты.
-        clean = s.strip('"').strip("'").strip("`").strip()
-        clean = re.sub(r"\s+", " ", clean)
-        if not clean or clean in {"{", "}", "[", "]", "(", ")", ");", "};", "---", "***"}:
-            continue
-        # Первая смысловая строка уже есть в title — не тратим на неё второй раз бюджет.
-        comparable = clean.lstrip("#/*-;%=<>! \t").strip().casefold()
-        if headline_norm and comparable == headline_norm:
-            continue
-        key = clean.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        room = _FILES_CONTEXT_CHARS - total
-        if room <= 0:
+
+    def is_headline(row):
+        comparable = row[1].strip().lstrip("#/*-;%=<>! \t").strip().strip("\"'`").casefold()
+        return bool(headline_norm and comparable == headline_norm)
+
+    usable = [row for row in rows if not is_headline(row)]
+    technical = ("import ", "from ", "package ", "use ", "#include", "using ")
+    content_rows = [row for row in usable if not row[1].strip().lower().startswith(technical)]
+    head = content_rows[:3]
+    risks = _spread_pick([row for row in content_rows if _FILES_RISK_RE.search(row[1])], 4)
+    symbols = _spread_pick([row for row in content_rows if _FILES_SYMBOL_RE.search(row[1])], 7)
+    configs = _spread_pick([row for row in content_rows if _FILES_CONFIG_RE.search(row[1])], 4)
+    distributed = _spread_pick(content_rows, 4)
+    tail = content_rows[-2:]
+
+    selected, seen = [], set()
+    # Сначала самые доказательные сигналы, чтобы они не отпали по символьному потолку.
+    for group in (head, risks, symbols, configs, distributed, tail):
+        for row in group:
+            key = (row[0], row[1].strip().casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append(row)
+            if len(selected) >= _FILES_CONTEXT_LINES:
+                break
+        if len(selected) >= _FILES_CONTEXT_LINES:
             break
-        piece = clean[: min(220, room)]
-        lines.append(piece)
-        total += len(piece) + (3 if len(lines) > 1 else 0)
-        if len(lines) >= _FILES_CONTEXT_LINES:
-            break
-    return " | ".join(lines)[:_FILES_CONTEXT_CHARS]
+
+    parts = []
+    deps = _files_dependencies(rows)
+    if deps:
+        parts.append("Связи: " + ", ".join(deps))
+    for lineno, line in selected:
+        parts.append(f"L{lineno}: {line[:220]}")
+    return "\n".join(parts)[:_FILES_CONTEXT_CHARS]
 
 
 def _files_is_candidate(path):
@@ -358,22 +505,79 @@ def _files_is_candidate(path):
     name = os.path.basename(path)
     if _files_is_secret(name):            # секреты не читаем вообще (не утекут в промпт LLM)
         return False
-    if os.path.splitext(name)[1].lower() not in _FILES_TEXT_EXT:   # только текст (код+доки)
+    low_name = name.lower()
+    if (
+        os.path.splitext(low_name)[1] not in _FILES_TEXT_EXT
+        and low_name not in _FILES_TEXT_NAMES
+    ):   # только известный текст (код+доки+конфиг)
         return False
     try:
-        return os.path.getsize(path) <= _FILES_MAX_BYTES           # крупные — мимо
+        return os.path.getsize(path) <= _FILES_MAX_BYTES
     except OSError:
         return False
 
 
+def _files_path_allowed(path, root):
+    rel = os.path.relpath(path, root).replace("\\", "/")
+    dirs = rel.split("/")[:-1]
+    skip = {d.casefold() for d in _FILES_SKIP_DIRS}
+    for directory in dirs:
+        low = directory.casefold()
+        if low in skip:
+            return False
+        if directory.startswith(".") and low not in _FILES_KEEP_HIDDEN_DIRS:
+            return False
+    return True
+
+
+def _files_git_walk(root):
+    """Файлы Git-репозитория с учётом .gitignore; нет Git/репо -> None."""
+    if not os.path.exists(os.path.join(root, ".git")):
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    paths = []
+    for raw in proc.stdout.split(b"\0"):
+        if not raw:
+            continue
+        rel = raw.decode("utf-8", errors="surrogateescape")
+        path = os.path.join(root, *rel.split("/"))
+        if os.path.isfile(path) and _files_path_allowed(path, root):
+            paths.append(path)
+    return sorted(set(paths), key=lambda p: p.casefold())
+
+
 def _files_walk(root):
-    """Лениво обходит папку, обрубая мусорные/скрытые подпапки. Генератор (не список): при
-    упоре в потолок _FILES_MAX_SCAN вызыватель просто перестаёт тянуть — обход не идёт дальше."""
+    """Обходит проект детерминированно и уважает .gitignore, если это Git-репозиторий."""
+    git_paths = _files_git_walk(root)
+    if git_paths is not None:
+        for path in git_paths:
+            yield (path, root)
+        return
+    skip = {d.casefold() for d in _FILES_SKIP_DIRS}
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                       if d not in _FILES_SKIP_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            yield (os.path.join(dirpath, fn), root)
+        dirnames[:] = sorted(
+            (
+                d for d in dirnames
+                if d.casefold() not in skip
+                and (not d.startswith(".") or d.casefold() in _FILES_KEEP_HIDDEN_DIRS)
+            ),
+            key=str.casefold,
+        )
+        for fn in sorted(filenames, key=str.casefold):
+            path = os.path.join(dirpath, fn)
+            if _files_path_allowed(path, root):
+                yield (path, root)
 
 
 def _files_item_id(path, base, headline, context=""):
@@ -398,11 +602,231 @@ def _files_item_id(path, base, headline, context=""):
     return "f2:" + hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
 
 
+_FILES_OVERVIEW_NAMES = {
+    "readme.md", "readme.txt", "agents.md", "contributing.md", "architecture.md",
+    "design.md", "decisions.md", "roadmap.md", "runbook.md",
+}
+_FILES_MANIFEST_NAMES = {
+    "pyproject.toml", "package.json", "cargo.toml", "go.mod", "go.work",
+    "requirements.txt", "dockerfile", "compose.yaml", "compose.yml",
+    "docker-compose.yaml", "docker-compose.yml", "makefile",
+}
+_FILES_ENTRY_NAMES = {
+    "main.py", "app.py", "server.py", "cli.py", "index.js", "index.ts",
+    "main.go", "main.rs", "program.cs",
+}
+
+
+def _files_root_label(base):
+    norm = os.path.normpath(os.fspath(base or ""))
+    label = os.path.basename(norm)
+    return label or norm.replace("\\", "/") or "project"
+
+
+def _files_role(path, base):
+    rel = os.path.relpath(path, base).replace("\\", "/")
+    low = rel.casefold()
+    name = os.path.basename(low)
+    parts = low.split("/")
+    ext = os.path.splitext(name)[1]
+    if any(p in {"archive", "archives", "legacy", "deprecated"} for p in parts[:-1]):
+        return "archive", 12
+    if any(p in {"audit", "audits", "codex_update"} for p in parts[:-1]):
+        return "audit", 30
+    if name in _FILES_OVERVIEW_NAMES:
+        return "overview", 120
+    if name in _FILES_MANIFEST_NAMES or name in _FILES_TEXT_NAMES:
+        return "manifest", 112
+    if name in _FILES_ENTRY_NAMES:
+        return "entrypoint", 104
+    if name in _FILES_LOW_SIGNAL_NAMES or ".min." in name or name.endswith(".map"):
+        return "generated", 5
+    if any(p in {"tests", "test", "spec", "specs"} for p in parts[:-1]) or name.startswith("test_"):
+        return "test", 36
+    if any(p in {"docs", "doc", "knowledge"} for p in parts[:-1]) or ext in {".md", ".rst", ".adoc"}:
+        return "docs", 62
+    if ext in {".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".xml", ".tf", ".hcl"}:
+        return "config", 78
+    if any(word in name for word in ("core", "config", "router", "service", "controller", "model", "store", "api")):
+        return "core", 82
+    return "source", 58
+
+
+def _files_area(rel):
+    parts = rel.replace("\\", "/").split("/")
+    if len(parts) <= 1:
+        return "(root)"
+    if len(parts) > 2 and parts[1].casefold() in {
+        "tests", "test", "docs", "doc", "knowledge", "archive", "legacy", "audit", "audits", "codex_update",
+    }:
+        return "/".join(parts[:2])
+    return parts[0]
+
+
+def _files_record(path, base):
+    rel = os.path.relpath(path, base).replace("\\", "/")
+    role, score = _files_role(path, base)
+    return {
+        "path": path,
+        "base": base,
+        "project": _files_root_label(base),
+        "rel": rel,
+        "area": _files_area(rel),
+        "role": role,
+        "score": score,
+    }
+
+
+def _files_select(records, budget):
+    """Сбалансированный отбор: каждый корень и каждая зона получают голос.
+
+    Ключевой обзор/manifest/entrypoint идут первыми; остальное ротируется случайным
+    tie-breaker. Тесты и архив не могут захватить больше разумной доли prompt.
+    """
+    if len(records) <= budget:
+        return sorted(records, key=lambda r: (-r["score"], r["rel"].casefold()))
+
+    work = [dict(rec, _order=rec["score"] + random.random() * 18.0) for rec in records]
+    by_root = {}
+    for rec in work:
+        by_root.setdefault(os.path.normcase(os.path.abspath(rec["base"])), []).append(rec)
+    roots = sorted(by_root, key=lambda key: _files_root_label(by_root[key][0]["base"]).casefold())
+
+    selected, chosen = [], set()
+    role_counts = {"test": 0, "archive": 0, "audit": 0, "generated": 0}
+    role_caps = {
+        "test": max(2, budget // 6),
+        "archive": max(1, budget // 12),
+        "audit": max(2, budget // 8),
+        "generated": 1,
+    }
+
+    def allowed(rec):
+        cap = role_caps.get(rec["role"])
+        return cap is None or role_counts.get(rec["role"], 0) < cap
+
+    def take(rec):
+        key = os.path.normcase(os.path.abspath(rec["path"]))
+        if key in chosen or not allowed(rec):
+            return False
+        chosen.add(key)
+        selected.append(rec)
+        if rec["role"] in role_counts:
+            role_counts[rec["role"]] += 1
+        return True
+
+    # По одной архитектурной опоре на каждый отдельный корень.
+    for root in roots:
+        best = max(by_root[root], key=lambda r: (r["_order"], -len(r["rel"])))
+        take(best)
+        if len(selected) >= budget:
+            return selected[:budget]
+
+    # Внутри корня ходим по зонам round-robin. Поэтому M:/projects не отдаёт весь
+    # бюджет двум самым большим репозиториям, а отдельные roots делят его поровну.
+    root_areas = {}
+    root_pos = {}
+    for root in roots:
+        areas = {}
+        for rec in by_root[root]:
+            areas.setdefault(rec["area"], []).append(rec)
+        for rows in areas.values():
+            rows.sort(key=lambda r: (-r["_order"], r["rel"].casefold()))
+        order = sorted(areas, key=lambda a: (-max(r["_order"] for r in areas[a]), a.casefold()))
+        root_areas[root] = (areas, order)
+        root_pos[root] = 0
+
+    stalled_rounds = 0
+    while len(selected) < budget and stalled_rounds < 2:
+        progress = False
+        for root in roots:
+            areas, order = root_areas[root]
+            if not order:
+                continue
+            for _ in range(len(order)):
+                idx = root_pos[root] % len(order)
+                root_pos[root] += 1
+                area = order[idx]
+                rows = areas[area]
+                while rows and os.path.normcase(os.path.abspath(rows[0]["path"])) in chosen:
+                    rows.pop(0)
+                if not rows:
+                    continue
+                # Если верхний test/archive упёрся в квоту, ищем следующий полезный в зоне.
+                pick_idx = next((i for i, rec in enumerate(rows) if allowed(rec)), None)
+                if pick_idx is None:
+                    continue
+                rec = rows.pop(pick_idx)
+                if take(rec):
+                    progress = True
+                break
+            if len(selected) >= budget:
+                break
+        stalled_rounds = 0 if progress else stalled_rounds + 1
+
+    # Если строгие квоты оставили дырку, заполняем лучшим остатком — бюджет важнее.
+    if len(selected) < budget:
+        rest = sorted(work, key=lambda r: (-r["_order"], r["rel"].casefold()))
+        for rec in rest:
+            key = os.path.normcase(os.path.abspath(rec["path"]))
+            if key in chosen:
+                continue
+            chosen.add(key)
+            selected.append(rec)
+            if len(selected) >= budget:
+                break
+    return selected[:budget]
+
+
+def _files_project_map(records):
+    """Короткая карта корня: масштаб, зоны, форматы и архитектурные опоры."""
+    if not records:
+        return None
+    project = records[0]["project"]
+    areas, exts, roles = {}, {}, {}
+    fingerprint = []
+    for rec in records:
+        areas[rec["area"]] = areas.get(rec["area"], 0) + 1
+        name = os.path.basename(rec["rel"])
+        ext = os.path.splitext(name)[1].lower() or name.lower()
+        exts[ext] = exts.get(ext, 0) + 1
+        roles[rec["role"]] = roles.get(rec["role"], 0) + 1
+        try:
+            stat = os.stat(rec["path"])
+            fingerprint.append(f"{rec['rel']}:{stat.st_size}:{stat.st_mtime_ns}")
+        except OSError:
+            fingerprint.append(rec["rel"])
+    top_areas = sorted(areas.items(), key=lambda x: (-x[1], x[0].casefold()))[:10]
+    top_exts = sorted(exts.items(), key=lambda x: (-x[1], x[0]))[:10]
+    anchors = sorted(records, key=lambda r: (-r["score"], r["rel"].casefold()))[:12]
+    context = "\n".join(
+        [
+            f"Проект: {project}. Пригодных файлов: {len(records)}.",
+            "Зоны: " + ", ".join(f"{name} ({count})" for name, count in top_areas),
+            "Форматы: " + ", ".join(f"{name} ({count})" for name, count in top_exts),
+            "Роли: " + ", ".join(f"{name}={count}" for name, count in sorted(roles.items())),
+            "Опорные файлы: " + ", ".join(rec["rel"] for rec in anchors),
+            "Эта карта описывает весь корень; фрагменты ниже — углубление в выбранные файлы.",
+        ]
+    )[:_FILES_CONTEXT_CHARS]
+    digest = hashlib.sha1("\n".join(sorted(fingerprint)).encode("utf-8")).hexdigest()[:16]
+    return {
+        "title": f"[КАРТА ПРОЕКТА] {project}",
+        "context": context,
+        "url": "",
+        "id": "map:" + digest,
+        "project": project,
+        "project_map": True,
+        "always_context": True,
+    }
+
+
 def _files(n, timeout, env):
     roots = list(env.get("files_paths") or [])
     if not roots:
         raise ValueError("files: no folders configured (env['files_paths'])")
-    found = []                            # [(полный_путь, база_для_относительного)]
+    found = []                            # records: path/base/project/rel/area/role/score
+    by_real_path = {}
     scanned = 0                           # предохранитель: не осматриваем больше _FILES_MAX_SCAN файлов
     for root in roots:
         if scanned >= _FILES_MAX_SCAN:
@@ -418,22 +842,47 @@ def _files(n, timeout, env):
             if scanned > _FILES_MAX_SCAN:  # потолок файлов — дальше не идём (тик не виснет на диске)
                 break
             if _files_is_candidate(p):     # секрет/не-текст/крупный — мимо (общий фильтр с probe_paths)
-                found.append((p, base))
+                rec = _files_record(p, base)
+                real = os.path.normcase(os.path.realpath(p))
+                old = by_real_path.get(real)
+                # Пересекающиеся roots: оставляем самый конкретный (короче относительный путь).
+                if old is None or len(rec["rel"]) < len(old["rel"]):
+                    by_real_path[real] = rec
+    found = list(by_real_path.values())
     if not found:
         raise ValueError("files: no readable text files in configured folders")
-    # Папка шире бюджета -> случайная выборка (ротация, как у telegram): за разные прогоны
-    # смотрим разные файлы. Отдельный потолок не даёт source_n=300 превратить контекст файлов
-    # в стотысячный промпт.
     take_n = min(max(1, int(n)), _FILES_MAX_ITEMS)
-    if len(found) > take_n:
-        found = random.sample(found, take_n)
-    items = []
-    for p, base in found:
-        rel = os.path.relpath(p, base) if base else os.path.basename(p)
+
+    by_base = {}
+    for rec in found:
+        by_base.setdefault(os.path.normcase(os.path.abspath(rec["base"])), []).append(rec)
+    maps = []
+    if len(found) >= 8 and take_n >= 8:
+        map_cap = min(_FILES_MAX_PROJECT_MAPS, max(1, take_n // 6))
+        # Если все файлы и карты помещаются — ничего не жертвуем. Иначе карты входят в бюджет.
+        available = max(0, take_n - min(len(found), take_n))
+        want = min(len(by_base), map_cap)
+        map_slots = min(want, available if available else want)
+        for key in sorted(by_base, key=lambda k: _files_root_label(by_base[k][0]["base"]).casefold())[:map_slots]:
+            project_map = _files_project_map(by_base[key])
+            if project_map:
+                maps.append(project_map)
+
+    file_budget = min(len(found), max(1, take_n - len(maps)))
+    picked = _files_select(found, file_budget)
+    items = list(maps)
+    for rec in picked:
+        p, base, rel = rec["path"], rec["base"], rec["rel"]
         headline = _files_headline(p)
-        title = (f"{rel} — {headline}" if headline else rel)[:200]
+        titled_path = f"[{rec['project']}] {rel}"
+        title = (f"{titled_path} — {headline}" if headline else titled_path)[:240]
         context = _files_context(p, headline)
         item = {"title": title, "url": "", "id": _files_item_id(p, base, headline, context)}
+        item["project"] = rec["project"]
+        item["path"] = rel
+        item["role"] = rec["role"]
+        if rec["role"] in {"overview", "manifest", "entrypoint"}:
+            item["always_context"] = True
         if context:
             item["context"] = context
         items.append(item)

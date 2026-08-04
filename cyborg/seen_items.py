@@ -36,6 +36,7 @@ MAX_RECORDS = 5000  # жёсткий потолок размера (страхо
 
 
 _FILES_V2_PREFIX = "f2:"
+_FILES_MAP_PREFIX = "map:"
 _FILES_LEGACY_PREFIX = "legacy-"
 _FILES_LEGACY_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
 
@@ -69,7 +70,7 @@ def _item_key(it):
     # чтобы новый точный id не наследовал их необратимые коллизии.
     if src == "files":
         raw = str(iid)
-        iid = raw if raw.startswith(_FILES_V2_PREFIX) else _legacy_files_token(raw)
+        iid = raw if raw.startswith((_FILES_V2_PREFIX, _FILES_MAP_PREFIX)) else _legacy_files_token(raw)
     return f"{src}:{iid}"
 
 
@@ -85,7 +86,7 @@ def _normalize_key(k):
     """Перевести старые files-ключи в явное legacy-пространство, v2 не трогать."""
     if isinstance(k, str) and k.startswith("files:"):
         rest = k[len("files:") :]
-        if rest.startswith(_FILES_V2_PREFIX) or rest.startswith(_FILES_LEGACY_PREFIX):
+        if rest.startswith((_FILES_V2_PREFIX, _FILES_MAP_PREFIX, _FILES_LEGACY_PREFIX)):
             return k
         return "files:" + _legacy_files_token(rest)
     return k

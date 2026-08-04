@@ -1,10 +1,15 @@
-"""A6 cache_check — фильтр items автосбора по SHA256(title), TTL 30 мин.
+"""A6 cache_check — короткий фильтр повторов автосбора, TTL 30 мин.
 
 Автосбор гоняет каждые ~30 мин. Если item уже пришёл в одном из последних 3 прогонов,
 повторно его генератору не отдавать — экономим LLM-вызовы на заголовках, которые юзер
 уже видел (в виде идеи или stub). Ручной run.py НЕ фильтрует (решение юзера — жмёшь
 кнопку «Принеси идеи», хочешь идей сейчас, даже если посты мелькали: wiring_ideate.py
 не ставит filter_seen_items, мы тут ему не конкуренты — это ОТДЕЛЬНЫЙ слой по title).
+
+Ленты сравниваются по title (как раньше). Локальные файлы — по source+id, потому что
+их id включает видимый context: изменение кода при прежнем заголовке обязано пройти.
+always_context (карта проекта/архитектурные опоры) не отрезается — она нужна свежим
+файлам для понимания целого проекта.
 
 Структура файла data/items_cache.json:
     {"runs": [{"ts": <unix>, "titles": {"<sha256>": "<title>"}, ...}, ...]}
@@ -30,6 +35,20 @@ PATH = os.path.join(DATA, "items_cache.json")
 
 def _sha256(text):
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
+def _item_hash(item):
+    if not isinstance(item, dict):
+        return None
+    title = item.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    iid = item.get("id")
+    source = str(item.get("source") or "")
+    iid_text = str(iid or "")
+    if source in {"files", "self"} or iid_text.startswith(("f2:", "self:f2:", "map:", "self:map:")):
+        return _sha256("id:" + source + ":" + iid_text)
+    return _sha256(title)  # совместимо с уже записанным title-кэшем лент
 
 
 def _load():
@@ -77,7 +96,7 @@ def _known_titles(cache, now=None):
 
 
 def filter_fresh(items):
-    """Вернуть items, чьи title НЕ в кэше (свежие). Битый кэш / нет title → проходит.
+    """Вернуть items, чья сигнатура НЕ в кэше. Битый кэш / нет title → проходит.
 
     ПАССИВНЫЙ фильтр: только читает кэш, НЕ метит. mark_seen зовётся обёрткой ПОСЛЕ
     успешной генерации (по образцу seen_items.mark_seen в wiring_ideate) — иначе сбой
@@ -92,11 +111,14 @@ def filter_fresh(items):
         if not isinstance(it, dict):
             out.append(it)  # не словарь — не можем сравнить, пропускаем как есть
             continue
+        if it.get("always_context"):
+            out.append(it)
+            continue
         title = it.get("title")
         if not isinstance(title, str) or not title.strip():
             out.append(it)  # нет title — не фильтруем
             continue
-        if _sha256(title) in known:
+        if _item_hash(it) in known:
             continue  # уже видели в свежем прогоне — отрезаем
         out.append(it)
     return out
@@ -111,8 +133,9 @@ def mark_seen(items):
         if not isinstance(it, dict):
             continue
         title = it.get("title")
-        if isinstance(title, str) and title.strip():
-            titles[_sha256(title)] = title
+        key = _item_hash(it)
+        if key and isinstance(title, str) and title.strip():
+            titles[key] = title
     if not titles:
         return
     cache = _load()

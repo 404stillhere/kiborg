@@ -16,6 +16,24 @@ def _titles_sig(titles):
     return hashlib.sha1("|".join(sorted(titles)).encode("utf-8")).hexdigest()
 
 
+def _items_sig(items):
+    """Отпечаток видимого сырья, включая content-aware ID локальных файлов.
+
+    Раньше хешировались только заголовки. Изменение функции ниже неизменной первой
+    строки давало новый f2-id, но гейт всё равно пропускал прогон как «не изменилось».
+    """
+    values = []
+    for item in items or []:
+        if isinstance(item, dict):
+            iid = item.get("id")
+            title = str(item.get("title") or "")
+            source = str(item.get("source") or "")
+            values.append(f"{source}:{iid if iid is not None else title}")
+        else:
+            values.append(str(item))
+    return hashlib.sha1("|".join(sorted(values)).encode("utf-8")).hexdigest()
+
+
 def _status_from_out(out):
     """Живой per-source статус из выхлопа collect_source (для пульта): сколько items дал
     каждый источник и упал ли он. ok = дал >=1 item и не в partial_errors. Все упали / нет
@@ -92,11 +110,10 @@ def _source_signature():
         print(f"гейт-проба источника упала ({type(e).__name__}: {e}) — прогон пойдёт без отпечатка")
         return None, False, None, None, None
     items = out.get("items") or []
-    titles = [(it.get("title", "") if isinstance(it, dict) else str(it)) for it in items]
     # 5-й элемент — сам `out` гейт-фетча: прогон переиспользует его вместо ВТОРОГО фетча телеги
     # (гейт и cy.run раньше тянули ленту независимо, 2 pyrogram-логина ~90с/тик; см. _run_collect)
     return (
-        _titles_sig(titles),
+        _items_sig(items),
         bool(out.get("degraded")),
         harvest.seen_items.count_fresh(items),
         _status_from_out(out),

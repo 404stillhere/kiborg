@@ -16,8 +16,9 @@ import re
 
 RUBRIC = (
     "Ты строгий отборщик идей. Ниже {n} идей-кандидатов (проекты/скиллы/аддоны).\n"
-    "Мысленно оцени каждую: оригинальность (вне очевидного) + практическая польза +\n"
-    "выполнимость в одиночку. Верни ОДНУ строку JSON и ничего больше:\n"
+    "Мысленно оцени каждую: доказательность по исходным материалам + конкретность проверки +\n"
+    "практическая польза + оригинальность + выполнимость. Красивая, но не подтверждённая\n"
+    "догадка должна быть ниже проверяемого улучшения. Верни ОДНУ строку JSON и ничего больше:\n"
     '{{"top":[i,j,k]}} — 0-based индексы {keep} ЛУЧШИХ, от лучшей к худшей.\n'
     "Идеи:\n{items}\n"
 )
@@ -63,7 +64,19 @@ def run(inputs, env):
         return {"ideas_best": ideas}  # идей меньше чем нужно — отдаём все
     llm = env.get("llm")
     if callable(llm):
-        items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')[:100]}" for i, d in enumerate(ideas))
+        items = "\n".join(
+            (
+                f"{i}. {d.get('title', '')} — {d.get('why', '')[:240]}"
+                + (f" | Проверка: {d.get('verification', '')[:180]}" if d.get("verification") else "")
+                + (
+                    " | Источники: "
+                    + ", ".join(str(ref.get("title") or ref.get("id") or "")[:100] for ref in d.get("source_refs", [])[:3])
+                    if isinstance(d.get("source_refs"), list) and d.get("source_refs")
+                    else ""
+                )
+            )
+            for i, d in enumerate(ideas)
+        )
         prompt = RUBRIC.format(n=len(ideas), keep=keep, items=items)
         direction = (env.get("direction") or "").strip()
         if direction:  # при прочих равных — идеи В НАПРАВЛЕНИИ выше

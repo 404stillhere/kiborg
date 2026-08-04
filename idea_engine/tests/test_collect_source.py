@@ -583,7 +583,7 @@ class TestFilesSource(_TmpDirTest):
         self.assertNotIn(".png", titles)  # бинарь по расширению
 
     def test_oversized_file_skipped(self):
-        self._write("big.md", "# huge\n" + ("x" * (300 * 1024)))
+        self._write("big.md", "# huge\n" + ("x" * (collect_source._FILES_MAX_BYTES + 1)))
         self._write("small.md", "# small doc\nтекст\n")
         out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
         titles = " ".join(it["title"] for it in out["items"])
@@ -707,9 +707,102 @@ class TestFilesSource(_TmpDirTest):
         collect_source._FILES_MAX_SCAN = 10
         try:
             out = collect_source.run({}, {"n": 100, "source": "files", "files_paths": [self.tmp]})
-            self.assertLessEqual(len(out["items"]), 10)  # осмотрено <=10 из 50 -> обход оборван
+            file_items = [item for item in out["items"] if not item.get("project_map")]
+            self.assertLessEqual(len(file_items), 10)  # карта — не осмотренный файл
         finally:
             collect_source._FILES_MAX_SCAN = orig
+
+    def test_reads_project_manifests_configs_styles_and_windows_scripts(self):
+        for rel in (
+            "pyproject.toml",
+            "settings.yaml",
+            "panel/style.css",
+            "deploy/task.ps1",
+            "schema/model.xml",
+            "Dockerfile",
+        ):
+            self._write(rel, "# purpose\nsetting = true\n")
+        out = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(item["title"] for item in out["items"])
+        for name in ("pyproject.toml", "settings.yaml", "style.css", "task.ps1", "model.xml", "Dockerfile"):
+            self.assertIn(name, titles)
+
+    def test_deep_context_finds_signal_below_old_16k_limit_and_keeps_indentation(self):
+        prefix = "".join(f"padding_{i} = {i}\n" for i in range(1800))
+        p = self._write(
+            "deep.py",
+            prefix
+            + "# TODO: корневая проблема находится далеко внизу\n"
+            + "def repair_deep_state():\n"
+            + "    return True\n",
+        )
+        self.assertGreater(os.path.getsize(p), 16 * 1024)
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
+        context = out["items"][0]["context"]
+        self.assertIn("TODO: корневая проблема", context)
+        self.assertIn("def repair_deep_state", context)
+        self.assertIn("    return True", context)
+        self.assertRegex(context, r"L1[0-9]{3}:")
+
+    def test_cp1251_file_decodes_without_mojibake(self):
+        self._write("legacy.txt", "Старый русский проект\nважная логика\n".encode("cp1251"))
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
+        blob = " ".join(item["title"] + " " + item.get("context", "") for item in out["items"])
+        self.assertIn("Старый русский проект", blob)
+        self.assertNotIn("����", blob)
+
+    def test_multiple_roots_keep_project_identity(self):
+        left = os.path.join(self.tmp, "left")
+        right = os.path.join(self.tmp, "right")
+        self._write("left/main.py", '"""Левый запуск."""\n')
+        self._write("right/main.py", '"""Правый запуск."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [left, right]})
+        titles = " ".join(item["title"] for item in out["items"])
+        self.assertIn("[left] main.py", titles)
+        self.assertIn("[right] main.py", titles)
+
+    def test_project_map_covers_whole_root_and_changes_with_inventory(self):
+        for i in range(8):
+            self._write(f"src/f{i}.py", f'"""модуль {i}."""\n')
+        first = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        maps = [item for item in first["items"] if item.get("project_map")]
+        self.assertEqual(len(maps), 1)
+        self.assertTrue(maps[0]["always_context"])
+        self.assertIn("Зоны:", maps[0]["context"])
+        old_id = maps[0]["id"]
+        self._write("src/f0.py", '"""модуль 0 изменён глубоко."""\nновая_строка = True\n')
+        second = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        new_map = next(item for item in second["items"] if item.get("project_map"))
+        self.assertNotEqual(old_id, new_map["id"])
+
+    def test_selection_balances_areas_instead_of_biggest_folder_winning(self):
+        for i in range(70):
+            self._write(f"giant/f{i}.py", f'"""гигант {i}."""\n')
+        for i in range(2):
+            self._write(f"tiny/key{i}.py", f'"""малый {i}."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        file_titles = [item["title"] for item in out["items"] if not item.get("project_map")]
+        self.assertTrue(any("tiny" in title for title in file_titles))
+
+    def test_case_insensitive_junk_hidden_ci_and_legitimate_tokenizer(self):
+        self._write("Node_Modules/dep.js", "// dependency\n")
+        self._write(".github/workflows/ci.yml", "name: CI\n")
+        self._write("tokenizer.py", '"""Разбирает текст на токены."""\n')
+        self._write("my_token.txt", "секрет\n")
+        out = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(item["title"] for item in out["items"])
+        self.assertNotIn("Node_Modules", titles)
+        self.assertIn(".github", titles)
+        self.assertIn("tokenizer.py", titles)
+        self.assertNotIn("my_token.txt", titles)
+
+    def test_overlapping_roots_do_not_duplicate_same_file(self):
+        nested = os.path.join(self.tmp, "src")
+        self._write("src/main.py", '"""Единственный запуск."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp, nested]})
+        files = [item for item in out["items"] if not item.get("project_map")]
+        self.assertEqual(len(files), 1)
+        self.assertIn("[src] main.py", files[0]["title"])
 
 
 class TestSelfSource(_TmpDirTest):

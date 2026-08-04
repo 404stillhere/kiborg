@@ -315,6 +315,16 @@ class TestRunIdeateFilterSeenItems(unittest.TestCase):
         out2 = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
         self.assertEqual(out2["n_in"], 0)  # второй раз — те же items, уже видели
 
+    def test_always_context_survives_seen_filter(self):
+        items = [
+            {"title": "Карта", "source": "files", "id": "map:1", "always_context": True},
+            {"title": "Свежий файл", "source": "files", "id": "f2:1"},
+        ]
+        first = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
+        second = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
+        self.assertEqual(first["n_in"], 2)
+        self.assertEqual(second["n_in"], 1)  # карта остаётся, обычный уже просмотрен
+
 
 class TestRunIdeateDegradedInput(unittest.TestCase):
     def test_degraded_source_never_reaches_generator(self):
@@ -1809,11 +1819,7 @@ class TestRunIdeateProviderSurfaces(unittest.TestCase):
 
 
 class TestRunIdeateProvenance(unittest.TestCase):
-    """A5 provenance: после генерации каждая идея получает ссылку на item-источник
-    (source_name, source_url, source_title, inspired_by). Сопоставление по Jaccard
-    значимых слов title; порог 0.3 — ниже не приписываем (модель синтезировала, а не
-    пересказала). Промпт ideate даёт модели ТОЛЬКО title — post-factum Jaccard корректен.
-    """
+    """Provenance: точные source_ids — канон, Jaccard — фолбэк старого ответа."""
 
     def setUp(self):
         self._orig = wiring.ideate.run
@@ -1834,6 +1840,25 @@ class TestRunIdeateProvenance(unittest.TestCase):
         self.assertEqual(idea.get("source_name"), "hn")
         self.assertEqual(idea.get("source_url"), "https://hn/x")
         self.assertEqual(idea.get("source_title"), "сон: трекер фаз")
+
+    def test_declared_source_ids_attach_multiple_exact_refs(self):
+        wiring.ideate.run = lambda inputs, env: {
+            "ideas": [{"title": "Глубокая правка", "brain": "llm", "source_ids": ["map:1", "f2:2"]}]
+        }
+        items = [
+            {"title": "Карта проекта", "id": "map:1", "source": "files", "project": "demo"},
+            {
+                "title": "[demo] core.py",
+                "id": "f2:2",
+                "source": "files",
+                "project": "demo",
+                "path": "core.py",
+            },
+        ]
+        idea = wiring._run_ideate({"items": items}, {})["ideas"][0]
+        self.assertEqual(idea["inspired_by"], "map:1")
+        self.assertEqual([ref["id"] for ref in idea["source_refs"]], ["map:1", "f2:2"])
+        self.assertEqual(idea["source_refs"][1]["path"], "core.py")
 
     def test_provenance_below_threshold_no_attachment(self):
         # идея и все items слабо перекликаются → НЕ навязываем ложный источник

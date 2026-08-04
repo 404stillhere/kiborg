@@ -13,10 +13,17 @@ import json
 import re
 
 PROMPT_TMPL = (
-    "Ты генератор проектных идей. На входе свежие внешние заголовки или фрагменты локальных файлов.\n"
-    "Придумай {k} КОНКРЕТНЫХ идей (новый проект / аддон / скилл / улучшение существующей системы),\n"
-    "на которые они наводят,\n"
-    "но оригинальных — не пересказ заголовка.\n"
+    "Ты генератор и технический аналитик проектных идей. На входе материалы с ID:\n"
+    "внешние сигналы, карты проектов и доказательные фрагменты локальных файлов.\n"
+    "Придумай {k} КОНКРЕТНЫХ идей (новый проект / аддон / скилл / улучшение системы).\n"
+    "Оригинальность важна, но ДОКАЗАТЕЛЬНОСТЬ важнее красивой догадки.\n"
+    "\n"
+    "Для улучшения существующего проекта:\n"
+    "- опирайся на карту, путь, номера строк и видимый код; не объявляй функцию отсутствующей,\n"
+    "  если материалы этого не доказывают;\n"
+    "- если данных недостаточно, честно назови идею гипотезой и предложи проверку;\n"
+    "- укажи 1-3 source_ids, которые реально навели на идею;\n"
+    "- verification — один конкретный способ доказать пользу после реализации.\n"
     "\n"
     "Поле «why» — это ОПИСАНИЕ карточки, его читают БЕЗ всякого контекста. 4 правила:\n"
     "1. Самонесущесть. Начни с того, ЧТО это и ЧТО делает, простыми словами. НЕЛЬЗЯ\n"
@@ -31,7 +38,8 @@ PROMPT_TMPL = (
     "хозяину на телефон, что это было — тревога, чужой у двери, скулёж».\n"
     "\n"
     "Каждую идею верни ОДНОЙ строкой JSON и ничего лишнего:\n"
-    '{{"title":"...","why":"...","effort":"легко|средне|тяжело"}}\n'
+    '{{"title":"...","why":"...","effort":"легко|средне|тяжело",'
+    '"source_ids":["..."],"verification":"..."}}\n'
     "Материалы:\n{items}\n"
 )
 
@@ -63,6 +71,8 @@ def _stub(items, k):
                 "why": "Заголовок наводит на смежный инструмент — проверить нишу.",
                 "effort": _EFFORT[idx % 3],
                 "brain": "stub",
+                "source_ids": [str(it.get("id"))] if it.get("id") is not None else [],
+                "verification": "Проверить гипотезу на маленьком прототипе.",
             }
         )
     return out
@@ -105,14 +115,25 @@ def _parse(raw, k):
     out = []
     for o in objs:
         if isinstance(o, dict):
-            out.append(
-                {
-                    "title": o.get("title", ""),
-                    "why": o.get("why", ""),
-                    "effort": o.get("effort", "средне"),
-                    "brain": "llm",
-                }
-            )
+            source_ids = o.get("source_ids")
+            if not isinstance(source_ids, list):
+                source_ids = []
+            source_ids = [
+                str(value).strip()[:120]
+                for value in source_ids
+                if isinstance(value, (str, int)) and str(value).strip()
+            ][:4]
+            card = {
+                "title": o.get("title", ""),
+                "why": o.get("why", ""),
+                "effort": o.get("effort", "средне"),
+                "brain": "llm",
+                "source_ids": source_ids,
+            }
+            verification = o.get("verification")
+            if isinstance(verification, str) and verification.strip():
+                card["verification"] = verification.strip()[:500]
+            out.append(card)
     return out[:k]
 
 
@@ -132,16 +153,24 @@ def _format_items(items):
         if not title:
             continue
         context = str(item.get("context") or "").strip()
+        source_id = str(item.get("id") or "?").strip()
+        role = str(item.get("role") or "").strip()
+        source_tag = f"[SOURCE {source_id}]"
         if item.get("kind") == "self_reflection":
             row = (
                 "- [САМОАНАЛИЗ KIBORG] "
+                + ("[КАРТА ПРОЕКТА] " if item.get("project_map") else "")
+                + source_tag
+                + " "
                 + title
                 + "\n  Задача этого материала: предложить конкретное проверяемое улучшение самого kiborg."
             )
+        elif item.get("project_map"):
+            row = "- [КАРТА ПРОЕКТА] " + source_tag + " " + title
         else:
-            row = "- " + title
+            row = "- " + source_tag + (f" [роль: {role}]" if role else "") + " " + title
         if context:
-            row += "\n  Фрагмент: " + context
+            row += "\n  Факты материала:\n    " + context.replace("\n", "\n    ")
         rows.append(row)
     return "\n".join(rows)
 

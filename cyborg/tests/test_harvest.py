@@ -50,6 +50,12 @@ class TestHarvestGate(unittest.TestCase):
         c = harvest._titles_sig(["Идея А", "Идея Б", "Идея Г"])  # состав изменился
         self.assertNotEqual(a, c)  # изменение поймано
 
+    def test_items_sig_detects_local_context_change_below_same_title(self):
+        old = [{"title": "[demo] core.py — Ядро", "id": "f2:old", "source": "files"}]
+        changed = [{"title": "[demo] core.py — Ядро", "id": "f2:new", "source": "files"}]
+        self.assertNotEqual(harvest._items_sig(old), harvest._items_sig(changed))
+        self.assertEqual(harvest._items_sig(old), harvest._items_sig(list(reversed(old))))
+
     def test_source_env_carries_direction(self):
         # активное направление подкладывается в env ОБЕИХ кнопок (через _source_env)
         orig = harvest.direction.current

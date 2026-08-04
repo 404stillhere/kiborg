@@ -7,7 +7,7 @@ _harvest_env), и гейт «есть что нового?» (_source_signature/
 
     harvest_env.py    — _active_sources, _load_darbot_tg_creds, _source_env, wire_council,
                          _harvest_env (конфигурация источников + впайка совета)
-    harvest_gate.py   — _titles_sig, _status_from_out, _atomic_write, _persist_status,
+    harvest_gate.py   — _titles_sig/_items_sig, _status_from_out, _atomic_write, _persist_status,
                          _source_signature, _last_sig, _should_run, _save_sig
                          (гейт «есть что нового?» — дёшево без LLM)
     harvest_log.py    — council_note, _degrade_note, _log (форматтеры + запись в runs.md)
@@ -107,6 +107,7 @@ from harvest_env import (  # noqa: E402,F401
 from harvest_gate import (  # noqa: E402,F401
     _atomic_write,
     _last_sig,
+    _items_sig,
     _persist_status,
     _save_sig,
     _should_run,
