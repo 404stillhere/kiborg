@@ -433,7 +433,7 @@ def _run_readability(inputs, env):
         import ask_llm  # локально: используется только тут, top-level dep не плодим
 
         if llm is ask_llm.ask:
-            e["score_llm"] = lambda p: ask_llm.ask(p, temperature=0.2)
+            e["score_llm"] = lambda p: ask_llm.ask(p, temperature=config.READABILITY_SCORE_TEMPERATURE)
     if env.get("on_progress"):
         e["on_progress"] = env["on_progress"]  # живой суб-прогресс долетает до органа (иначе молчит)
     return wiring.readability_gate.run(inputs, e)

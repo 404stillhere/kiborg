@@ -304,6 +304,8 @@ COUNCIL_MAX_WEIGHT = 0.3
 COUNCIL_MMR_LAMBDA = 0.7
 # Размер топа для оценки согласия советников внутри breakdown (overlap rank_ideas×ask_llm).
 COUNCIL_AGREEMENT_TOP_K = 3
+# Температура для оценки читаемости readability_gate (score_llm) — детерминированный суд.
+READABILITY_SCORE_TEMPERATURE = 0.2
 
 # === НАБЛЮДАТЕЛЬ (observe_sources) ===
 # Пауза между постами (сек) — в пульте строки шли живым потоком, не пачкой.
@@ -336,6 +338,10 @@ ASK_LLM_ADVISOR_MAX_TOKENS = 256
 ASK_LLM_ADVISOR_TEMPERATURE = 0.2
 # Порог разброса топ-2 баллов: меньше — интуиция не уверена, поднимает флаг эскалации.
 ASK_LLM_ESCALATE_GAP = 0.15
+
+# === РЕДАКТОР ЧИТАЕМОСТИ (wiring_council) ===
+# Температура для детерминированного судейства читаемости (score_llm) — должен парситься в JSON.
+READABILITY_SCORE_TEMPERATURE = 0.2
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
