@@ -334,6 +334,8 @@ INTUITION_MAX_TOKENS = 8192
 ASK_LLM_ADVISOR_MAX_TOKENS = 256
 # Температура для ask_llm-советника ( scoring вариантов).
 ASK_LLM_ADVISOR_TEMPERATURE = 0.2
+# Порог разброса топ-2 баллов: меньше — интуиция не уверена, поднимает флаг эскалации.
+ASK_LLM_ESCALATE_GAP = 0.15
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.

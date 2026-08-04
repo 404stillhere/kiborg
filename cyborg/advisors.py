@@ -252,7 +252,7 @@ class AskLlmAdvisor:
         # ЭСКАЛАЦИЯ: интуиция САМА решает звать ли совет (think()). Эвристика — разброс:
         # два лучших варианта близки => интуиция не уверена => поднять флаг. Порог из ctx.
         # Считаем на ФАКТИЧЕСКИХ баллах (реальный разброс мнения), БЕЗ импутации.
-        gap = float(ctx.get("escalate_gap", 0.15))
+        gap = float(ctx.get("escalate_gap", config.ASK_LLM_ESCALATE_GAP))
         top = sorted(scores.values(), reverse=True)
         escalate = len(top) >= 2 and (top[0] - top[1]) < gap
         return mind.opinion(scores, rationale=f"модель оценила {len(options)}/{len(options)} вар.",
