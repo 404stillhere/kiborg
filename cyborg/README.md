@@ -19,12 +19,16 @@
 ## Запуск
 
 ```bash
-cd M:/projects/kiborg/cyborg
+cd M:/projects/kiborg
+
+# один файл-лаунчер (Windows)
+kiborg.bat
 
 # идеи
+cd cyborg
 python run.py "приноси свежие идеи"
 
-# oracle
+# oracle — цель минимум 3 слова и конкретная (не "test"/"fix"/"run")
 python run.py --mode oracle --project "M:/projects/myapp" --goal "добавить авторизацию"
 # или напрямую
 python oracle_mode.py --project "M:/projects/myapp" --goal "добавить авторизацию"
@@ -45,4 +49,4 @@ Telegram: задать `KIBORG_NOTIFY_TOKEN` и `KIBORG_NOTIFY_CHAT_ID`. При 
 
 ## Проверка
 
-`python ../run_tests.py` — 480 тестов cyborg + 172 idea_engine + 89 panel = 741 passed.
+`python ../run_tests.py` — 482 теста cyborg + 176 idea_engine + 89 panel = 747 passed.
