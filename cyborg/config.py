@@ -397,6 +397,15 @@ HARVEST_LOG_RESULT_MAX_CHARS = 120
 # Сколько символов ошибки печатать в консоль при best-effort пропуске feedback_cortex.
 HARVEST_RUNNER_ERROR_MAX_CHARS = 160
 
+# === ORCHESTRATOR (orchestrator.py / run.py / harvest_runner.py) ===
+# Сколько шагов максимально делает цикл оркестратора (предохранитель от бесконечного спина).
+CYBORG_MAX_STEPS = 8
+# Сколько органов отбирает роутер для мозга по умолчанию.
+CYBORG_ROUTE_K = 5
+# Сколько органов отбирает роутер в живом прогоне, чтобы точно влезла вся цепочка
+# (collect -> ideate -> rank -> readability -> scrub -> deliver = 6+) + finish.
+CYBORG_ROUTE_K_FULL_CHAIN = 6
+
 # === ASK_LLM (ask_llm.py) ===
 # Сколько символов smoke-ответа печатать в консоль при диагностике.
 ASK_LLM_SMOKE_MAX_CHARS = 160

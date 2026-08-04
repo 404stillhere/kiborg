@@ -60,7 +60,7 @@ def main(argv):
     )
 
     cy = harvest.Cyborg(
-        harvest.build_organs(), safe_mode=True, k=6
+        harvest.build_organs(), safe_mode=True, k=config.CYBORG_ROUTE_K_FULL_CHAIN
     )  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     total, skipped, total_dropped = 0, 0, 0
     try:

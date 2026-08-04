@@ -73,7 +73,9 @@ def main(argv):
         cat_n = len(load_catalog())
     except Exception as e:
         cat_n = "?(" + str(e)[: config.RUN_CATALOG_ERROR_MAX_CHARS] + ")"
-    cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
+    cy = Cyborg(
+        build_organs(), safe_mode=True, k=config.CYBORG_ROUTE_K_FULL_CHAIN
+    )  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     # ЕДИНЫЙ источник: те же каналы/настройки, что у автосбора (harvest._source_env), БЕЗ
     # фильтра «уже видели» — ручной клик приносит что нашёл сейчас. Раньше env был пуст → collect
     # молча падал на дефолт HN(n=8), и «Принеси идеи» ходила мимо телеграм-пула. Это чинит ту дырку.

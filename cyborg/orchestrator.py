@@ -11,13 +11,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import brain as brain_mod  # noqa: E402
+import config  # noqa: E402
 import executor as executor_mod  # noqa: E402
 import router as router_mod  # noqa: E402
 from core import Memory  # noqa: E402
 
 
 class Cyborg:
-    def __init__(self, organs, safe_mode=True, max_steps=8, k=5):
+    def __init__(self, organs, safe_mode=True, max_steps=config.CYBORG_MAX_STEPS, k=config.CYBORG_ROUTE_K):
         self.organs = organs
         self.safe_mode = safe_mode
         self.max_steps = max_steps
