@@ -78,10 +78,10 @@ def run(inputs, env):
     goal = str(env.get("oracle_goal", "")).strip()
     slug = _slug(project or plan.get("title", "oracle"))
     now = datetime.now()
-    date = now.strftime("%Y-%m-%d")
-    time = now.strftime("%H-%M-%S")
+    date = now.strftime(config.ORACLE_PLAN_DATE_FMT)
+    time_ = now.strftime(config.ORACLE_PLAN_TIME_FMT)
     plan_dir = ORACLES_DIR / slug
-    plan_path = plan_dir / f"{date}_{time}.md"
+    plan_path = plan_dir / f"{date}_{time_}.md"
 
     os.makedirs(plan_dir, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -116,7 +116,7 @@ def _render_plan(plan, goal, project):
         "",
         f"**Цель:** {goal}",
         f"**Проект:** {project}",
-        f"**Создан:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"**Создан:** {datetime.now().strftime(config.ORACLE_PLAN_INDEX_FMT)}",
         "",
         "## Краткое описание",
         plan.get("summary", "") or "(без описания)",
@@ -157,7 +157,7 @@ def _render_plan(plan, goal, project):
 
 
 def _index_entry(slug, plan, goal, plan_path):
-    date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    date = datetime.now().strftime(config.ORACLE_PLAN_INDEX_FMT)
     title = plan.get("title", "План")
     steps = len(plan.get("steps", []))
     return f"- [{title}]({slug}/{os.path.basename(plan_path)}) " f"— {goal} ({steps} шагов, {date})"

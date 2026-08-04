@@ -225,6 +225,11 @@ DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 # Формат таймстемпа для каталогов бэкапов / pre-restore копий / corrupted-дампов.
 # Лексикографическая сортировка = хронологическая — удобно для ротации и глаз.
 BACKUP_TS_FMT = "%Y-%m-%d_%H%M%S"
+# Форматы Oracle-планов (idea_engine/organs/deliver_oracle.py).
+# Имя файла: <date>_<time>.md; UI-пульта: date + time без секунд; индекс: полная метка.
+ORACLE_PLAN_DATE_FMT = "%Y-%m-%d"
+ORACLE_PLAN_TIME_FMT = "%H-%M-%S"
+ORACLE_PLAN_INDEX_FMT = "%Y-%m-%d %H:%M"
 
 # === HTTP-константы --------------------------------------------------------
 # OpenAI-совместимые провайдеры ждут application/json + Bearer; z.ai — application/json + x-api-key.
