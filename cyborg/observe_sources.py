@@ -93,13 +93,13 @@ def main():
         try:
             out = collect_source.run({}, env)
         except Exception as e:
-            say(f"│  🔴 сорвался: {type(e).__name__}: {str(e)[:80]}")
+            say(f"│  🔴 сорвался: {type(e).__name__}: {str(e)[: config.OBSERVE_ERROR_MAX_CHARS]}")
             say("│  ⏭  пропускаю\n")
             continue
         dt = time.time() - t0
 
         if out.get("degraded"):
-            why = str(out.get("degraded_reason", "нет ответа"))[:80]
+            why = str(out.get("degraded_reason", "нет ответа"))[: config.OBSERVE_DEGRADED_MAX_CHARS]
             say(f"│  🔴 не пустили / пусто — {why}")
             say("│  ⏭  пропускаю\n")
             continue
@@ -109,7 +109,7 @@ def main():
             read += 1
             # заголовок файла может содержать секрет (фильтр _files неполон) — чистим ДО показа
             # в консоли пульта (тот же класс, что защита в wiring._run_collect от утечки в промпт)
-            title = scrub_secrets.scrub_text((it.get("title") or "").strip())[:72]
+            title = scrub_secrets.scrub_text((it.get("title") or "").strip())[: config.OBSERVE_TITLE_MAX_CHARS]
             say(f"│  📖 прочитал: «{title}»", _ITEM_PAUSE)
             key = seen_items._item_key(it)
             if key is not None and key in seen:
