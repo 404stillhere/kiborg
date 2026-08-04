@@ -217,3 +217,29 @@ def test_with_deadline_kills_slow_loris():
     except TimeoutError:
         pass
     assert time.time() - t < 5  # уложился в ~1с (deadline), а не ждал 30с
+
+
+def test_keys_file_warning_when_not_gitignored():
+    # файл ключей не в .gitignore -> предупреждение
+    fd, p = tempfile.mkstemp(suffix=".env")
+    os.close(fd)
+    try:
+        assert keychain.keys_file_warning(p) is not None
+    finally:
+        os.remove(p)
+
+
+def test_keys_file_warning_none_when_gitignored():
+    # файл ключей в .gitignore -> предупреждение None
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "llm_keys.env")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("CLOSEROUTER_API_KEY=cr\n")
+    with open(os.path.join(d, ".gitignore"), "w", encoding="utf-8") as f:
+        f.write("# secrets\nllm_keys.env\n")
+    try:
+        assert keychain.keys_file_warning(p) is None
+    finally:
+        os.remove(p)
+        os.remove(os.path.join(d, ".gitignore"))
+        os.rmdir(d)

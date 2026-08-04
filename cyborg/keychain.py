@@ -9,6 +9,7 @@
 """
 
 import os
+from pathlib import Path
 
 _KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
 
@@ -44,6 +45,47 @@ def _read_env_file(fp):
         if k and v:  # пустое значение = ключ не задан, пропускаем
             out[k] = v
     return out
+
+
+def _gitignore_for(path):
+    """Найти ближайший .gitignore, начиная с директории файла и поднимаясь вверх."""
+    p = Path(path).resolve()
+    for parent in [p.parent] + list(p.parents):
+        gi = parent / ".gitignore"
+        if gi.is_file():
+            return gi
+    return None
+
+
+def _is_gitignored(file_path):
+    """Проверить, что имя файла явно упомянуто в ближайшем .gitignore."""
+    gi = _gitignore_for(file_path)
+    if not gi:
+        return False
+    name = Path(file_path).name
+    try:
+        lines = gi.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return False
+    for line in lines:
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        # убираем возможный префикс '/' и суффикс '/'
+        pattern = raw.strip("/")
+        if pattern == name:
+            return True
+    return False
+
+
+def keys_file_warning(path=None):
+    """Вернуть строку-предупреждение, если файл ключей не в .gitignore. Иначе None."""
+    fp = path or _KEYS_FILE
+    if not Path(fp).is_file():
+        return None
+    if _is_gitignored(fp):
+        return None
+    return f"ВНИМАНИЕ: {fp} НЕ в .gitignore — риск утечки секретов в git"
 
 
 def load_keys(path=None):
