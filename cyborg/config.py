@@ -190,6 +190,7 @@ MAX_BACKUPS = 10
 
 # === PANEL ===
 PANEL_PORT = 8737  # локальный HTTP пульт, слушает ТОЛЬКО 127.0.0.1
+PANEL_HOST = "127.0.0.1"  # loopback only — панель не должна быть доступна извне
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess
 # Рубильник авто-режима пульта (JSON с интервалом/last-run). Патчится в тестах: `serve.AUTO_FILE = tmp`.
 AUTO_JSON = os.path.join(PANEL_DIR, "auto.json")

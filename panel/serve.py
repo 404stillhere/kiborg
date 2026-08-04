@@ -730,7 +730,7 @@ class Handler(BaseHTTPRequestHandler):
         # анти-CSRF: чужой сайт в браузере юзера не должен дёргать наши действия.
         # Браузер на POST шлёт Origin — принимаем только свой (или его отсутствие: curl/скрипты).
         origin = self.headers.get("Origin", "")
-        if origin and origin not in (f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"):
+        if origin and origin not in (f"http://{config.PANEL_HOST}:{PORT}", f"http://localhost:{PORT}"):
             self._json({"ok": False, "msg": "чужой источник — отказано"}, 403)
             return
         ctype = (self.headers.get(config.HTTP_HEADER_CONTENT_TYPE) or "").lower()
@@ -867,9 +867,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    srv = ThreadingHTTPServer((config.PANEL_HOST, PORT), Handler)
     threading.Thread(target=_auto_loop, daemon=True).start()  # фон-рубильник (по умолчанию выключен)
-    print(f"Пульт киборга: http://127.0.0.1:{PORT}  (Ctrl+C — стоп)")
+    print(f"Пульт киборга: http://{config.PANEL_HOST}:{PORT}  (Ctrl+C — стоп)")
 
     # graceful shutdown: по SIGTERM/SIGINT — остановить run-процесс и сервер
     def _shutdown(signum, frame):
