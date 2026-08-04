@@ -58,6 +58,8 @@ LAST_PROVIDER_FILE = os.path.join(CYBORG_DATA_DIR, "last_provider.json")
 # === DATA-ФАЙЛЫ idea_engine/ (read-only со стороны cyborg — доставляет/читает через deliver) ===
 INBOX_MD = os.path.join(IDEA_ENGINE_DATA_DIR, "inbox.md")  # инбокс идей для человека
 IE_STATE_JSON = os.path.join(IDEA_ENGINE_DATA_DIR, "state.json")  # Store idea_engine (счётчик открытых)
+# Каталог Oracle-планов (внутри idea_engine/data), пишет deliver_oracle, читает panel/serve._read_oracles.
+ORACLES_DIR = os.path.join(IDEA_ENGINE_DATA_DIR, "oracles")
 
 # === ВНЕШНИЕ АРТЕФАКТЫ (только на прод-машине юзера; на CI их нет,代码 ловит исключения) ===
 # Backlog проектов для finish_step «доделай». Читается wiring_finish → finish_step.run(recon_path=...).

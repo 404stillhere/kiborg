@@ -558,7 +558,7 @@ def _read_oracles():
     Возвращает список [{slug, goal, path, ts, steps}], отсортированный по убыванию даты.
     Без индекса — читает файлы напрямую. Быстро: планов немного.
     """
-    oracles_dir = os.path.join(IDEA, "data", "oracles")
+    oracles_dir = config.ORACLES_DIR
     out = []
     try:
         for slug in os.listdir(oracles_dir):
