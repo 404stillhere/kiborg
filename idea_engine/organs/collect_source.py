@@ -31,12 +31,12 @@ import urllib.request
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cyborg"))
 import config  # noqa: E402
 
-HN_TOP = "https://hacker-news.firebaseio.com/v0/topstories.json"
-HN_SHOW = "https://hacker-news.firebaseio.com/v0/showstories.json"
-HN_ITEM = "https://hacker-news.firebaseio.com/v0/item/{}.json"
-REDDIT_TOP = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
-LOBSTERS_HOT = "https://lobste.rs/hottest.json"
-GH_TRENDING = "https://github.com/trending"
+HN_TOP = config.HN_TOP_URL
+HN_SHOW = config.HN_SHOW_URL
+HN_ITEM = config.HN_ITEM_URL
+REDDIT_TOP = config.REDDIT_TOP_URL
+LOBSTERS_HOT = config.LOBSTERS_HOT_URL
+GH_TRENDING = config.GH_TRENDING_URL
 _UA = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
 _GH_ENRICH_DEFAULT_LIMIT = config.GH_TRENDING_ENRICH_LIMIT  # GitHub без токена: максимум 60 API-запросов/час
 
@@ -114,7 +114,7 @@ def _gh_repo_description(owner, repo, timeout):
     # GitHub публичный API без токена: 60 запросов/час с IP. /repos/{o}/{r} даёт description,
     # превращая слепой «owner/repo» (из trending-скрейпа) в осмысленную карточку. Необязательный
     # enrich — при лимите/сбое вызывающий падает на голый owner/repo. Только stdlib (_get).
-    data = _get(f"https://api.github.com/repos/{owner}/{repo}", timeout)
+    data = _get(config.GH_REPO_API_URL.format(owner=owner, repo=repo), timeout)
     desc = (data.get("description") or "").strip() if isinstance(data, dict) else ""
     return desc[: config.GH_REPO_DESCRIPTION_MAX_CHARS]
 
