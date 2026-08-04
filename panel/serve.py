@@ -175,6 +175,14 @@ def _start_run(goal):
     return _start_proc(goal, ["run.py", goal])
 
 
+def _start_oracle(goal, project_path):
+    """Запуск Oracle-режима: фиксированная цепочка scan → plan → deliver."""
+    return _start_proc(
+        f"oracle: {goal}",
+        ["run.py", "--mode", "oracle", "--project", project_path, "--goal", goal],
+    )
+
+
 def _start_observe():
     """Наблюдательный обход органа-источника по кнопке — печатает от первого лица
     (зашёл в паблик → прочитал пост → подумал) в тот же живой вывод, что и прогоны.
@@ -701,6 +709,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "пустая цель"}, 400)
                 return
             ok = _start_run(goal)
+            self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
+        elif self.path == "/api/oracle":
+            goal = str(body.get("goal") or "").replace("\n", " ").strip()[:200]
+            project = str(body.get("project") or "").strip()[:500]
+            if not goal:
+                self._json({"ok": False, "msg": "пустая цель"}, 400)
+                return
+            if not project:
+                self._json({"ok": False, "msg": "не указан путь к проекту"}, 400)
+                return
+            ok = _start_oracle(goal, project)
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/observe":
             ok = _start_observe()

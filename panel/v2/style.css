@@ -834,6 +834,8 @@ input[type="number"]:focus,
   box-shadow: 3px 3px 0 var(--gray), 5px 5px 0 var(--fail);
 }
 .btn-action.danger:hover { box-shadow: 3px 3px 0 var(--gray), 7px 7px 0 var(--fail); }
+.btn-action.oracle   { background: var(--yellow); color: var(--ink); }
+.btn-action.oracle:hover { box-shadow: var(--shadow-2); }
 
 /* ── Секция прогона (видна при running) ── */
 #run-section {
@@ -1135,6 +1137,20 @@ input[type="number"]:focus,
   color: var(--ink);
   border-bottom: 2px solid var(--ink);
 }
+.idea-proof,
+.idea-evidence {
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--cyan) 14%, var(--paper));
+  border-bottom: 1px dashed var(--ink);
+  overflow-wrap: anywhere;
+}
+.idea-evidence {
+  background: color-mix(in srgb, var(--yellow) 18%, var(--paper));
+}
 
 .idea-meta {
   display: flex;
@@ -1360,6 +1376,14 @@ input[type="number"]:focus,
   text-transform: uppercase;
 }
 .done-detail-why { line-height: 1.5; }
+.done-detail-proof {
+  margin-top: 7px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .done-detail-meta {
   display: flex;
   flex-wrap: wrap;

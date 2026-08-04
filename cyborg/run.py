@@ -57,6 +57,11 @@ def _log_run(out):
 
 
 def main(argv):
+    # Oracle-режим: --mode oracle --project PATH --goal GOAL
+    if len(argv) >= 2 and argv[0] in ("--mode", "-m") and argv[1] == "oracle":
+        import oracle_mode
+
+        return oracle_mode.main(argv[2:])
     goal = argv[0] if argv else "приноси свежие идеи"
     try:
         cat_n = len(load_catalog())

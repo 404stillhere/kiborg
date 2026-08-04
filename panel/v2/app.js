@@ -87,6 +87,7 @@ class API {
   static genparams()          { return API._request('GET',  '/api/genparams'); }
   static setGenparams(p)      { return API._request('POST', '/api/genparams', p); }
   static probeFolders()       { return API._request('GET',  '/api/folders/probe'); }
+  static startOracle(goal, project) { return API._request('POST', '/api/oracle', { goal, project }); }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -333,7 +334,7 @@ class Renderer {
     // заблокирован busy-защитой (serve.py /api/idea: «идёт прогон — разбор отложен»).
     // Симметрия с Принести (та disabled при running=true). После клика stopRun() шлёт
     // POST /api/stop → RUN.running=False → следующий /api/state снимет disabled обратно.
-    const stopBtn = Renderer.$('.actions-list .btn-action.danger');
+    const stopBtn = Renderer.$('#btn-stop-left');
     if (stopBtn) stopBtn.disabled = !S.running;
 
     // авто в шапке
@@ -546,6 +547,23 @@ class Renderer {
 
     // why
     if (idea.why) card.appendChild(Renderer.el('div', { cls: 'idea-why', text: idea.why }));
+    if (idea.verification) {
+      card.appendChild(Renderer.el('div', {
+        cls: 'idea-proof',
+        text: 'Проверка: ' + idea.verification,
+      }));
+    }
+    if (Array.isArray(idea.source_refs) && idea.source_refs.length) {
+      const refs = idea.source_refs.slice(0, 3).map(ref =>
+        (ref && (ref.path || ref.title || ref.id)) || ''
+      ).filter(Boolean);
+      if (refs.length) {
+        card.appendChild(Renderer.el('div', {
+          cls: 'idea-evidence',
+          text: 'Основание: ' + refs.join(' · '),
+        }));
+      }
+    }
 
     // meta
     const meta = Renderer.el('div', { cls: 'idea-meta' });
@@ -671,6 +689,23 @@ class Renderer {
       cls: 'done-detail-why',
       text: i.why || 'Описание для этой идеи не сохранилось.',
     }));
+    if (i.verification) {
+      card.appendChild(Renderer.el('div', {
+        cls: 'done-detail-proof',
+        text: 'Проверка: ' + i.verification,
+      }));
+    }
+    if (Array.isArray(i.source_refs) && i.source_refs.length) {
+      const refs = i.source_refs.slice(0, 3).map(ref =>
+        (ref && (ref.path || ref.title || ref.id)) || ''
+      ).filter(Boolean);
+      if (refs.length) {
+        card.appendChild(Renderer.el('div', {
+          cls: 'done-detail-proof',
+          text: 'Основание: ' + refs.join(' · '),
+        }));
+      }
+    }
 
     const meta = Renderer.el('div', { cls: 'done-detail-meta' });
     const score = i.score != null ? i.score : i.read_score;
@@ -907,7 +942,7 @@ class Renderer {
       const lines = (run.lines || []).join('\n');
       const m = [...lines.matchAll(/иду: ([a-z_]+)/g)];
       const cur = m.length ? m[m.length - 1][1] : null;
-      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка' };
+      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка', oracle_scan: 'Oracle · скан', oracle_plan: 'Oracle · план', deliver_oracle: 'Oracle · сохранение' };
       header.appendChild(document.createTextNode('работает · ' + (NM[cur] || cur || '…')));
       // таймер по started
       const timer = Renderer.el('span', { cls: 'run-timer' });
@@ -920,8 +955,8 @@ class Renderer {
     if (prog) {
       prog.textContent = '';
       const lines = (run.lines || []).join('\n');
-      const order = ['collect_source', 'ideate', 'rank_ideas', 'readability_gate', 'scrub_secrets', 'deliver'];
-      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка' };
+      const order = ['collect_source', 'ideate', 'rank_ideas', 'readability_gate', 'scrub_secrets', 'deliver', 'oracle_scan', 'oracle_plan', 'deliver_oracle'];
+      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка', oracle_scan: 'Oracle · скан', oracle_plan: 'Oracle · план', deliver_oracle: 'Oracle · сохранение' };
       const cur = (lines.match(/иду: ([a-z_]+)/g) || []).slice(-1)[0];
       const curName = cur && cur.match(/иду: ([a-z_]+)/)[1];
       const done = new Set([...lines.matchAll(/✓ готов: ([a-z_]+)/g)].map(m => m[1]));
@@ -1533,10 +1568,14 @@ class UIController {
 
   // ── ДЕЙСТВИЯ В ЛЕВОЙ ПАНЕЛИ ──
   _bindLeftActions() {
-    const actions = Renderer.$$('.actions-list .btn-action');
-    if (actions[0]) actions[0].onclick = () => this.runGoal('приноси свежие идеи');
-    if (actions[1]) actions[1].onclick = () => this.runGoal('доделать существующие проекты');
-    if (actions[2]) actions[2].onclick = () => this.stopRun();
+    const bring = Renderer.$('#btn-bring-left');
+    if (bring) bring.onclick = () => this.runGoal('приноси свежие идеи');
+    const finish = Renderer.$('#btn-finish-left');
+    if (finish) finish.onclick = () => this.runGoal('доделать существующие проекты');
+    const oracle = Renderer.$('#btn-oracle-left');
+    if (oracle) oracle.onclick = () => this.openOracle();
+    const stop = Renderer.$('#btn-stop-left');
+    if (stop) stop.onclick = () => this.stopRun();
     // направление
     const applyBtn = Renderer.$('#left .dir-input-row .btn-mini[title="Применить"]');
     const input = Renderer.$('#left .dir-input-row input');
@@ -1685,6 +1724,30 @@ class UIController {
       this._refreshTimer = null;
       if (window.__kiborgPoller) window.__kiborgPoller.kickState();
     }, 200);
+  }
+
+  openOracle() {
+    const project = prompt('Путь к проекту:', 'M:/projects/');
+    if (!project) return;
+    const goal = prompt('Цель Oracle — что нужно получить?', '');
+    if (!goal) {
+      this.toasts.show('Цель не указана', 'warn');
+      return;
+    }
+    if (this.state.run && this.state.run.running) {
+      this.toasts.show('Прогон уже идёт', 'warn');
+      return;
+    }
+    this.api.startOracle(goal, project).then(r => {
+      if (!r.ok) {
+        this.toasts.show('Oracle: ' + (r.msg || 'не вышло'), 'error');
+        return;
+      }
+      this._runStartTime = Date.now();
+      this.toasts.show('Oracle запущен: «' + goal + '»', 'info');
+      const area = Renderer.$('#console-area');
+      if (area) { area.classList.remove('collapsed'); area.classList.add('expanded'); }
+    });
   }
 }
 
