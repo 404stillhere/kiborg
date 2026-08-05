@@ -83,8 +83,8 @@ def restore(backup_name):
 
     # Куда копируем (реальные пути state.json + seen_items.json).
     targets = {
-        "state.json": config.IE_STATE_JSON,
-        "seen_items.json": seen_items.PATH,
+        config.IE_STATE_FILE: config.IE_STATE_JSON,
+        config.SEEN_ITEMS_FILE: seen_items.PATH,
     }
     ts = datetime.datetime.now().strftime(config.BACKUP_TS_FMT)
 

@@ -59,8 +59,9 @@ KIBORG_TG_SESSION = os.path.join(CYBORG_DATA_DIR, "kiborg_tg.session")
 LAST_PROVIDER_FILE = os.path.join(CYBORG_DATA_DIR, "last_provider.json")
 
 # === DATA-ФАЙЛЫ idea_engine/ (read-only со стороны cyborg — доставляет/читает через deliver) ===
+IE_STATE_FILE = "state.json"
 INBOX_MD = os.path.join(IDEA_ENGINE_DATA_DIR, "inbox.md")  # инбокс идей для человека
-IE_STATE_JSON = os.path.join(IDEA_ENGINE_DATA_DIR, "state.json")  # Store idea_engine (счётчик открытых)
+IE_STATE_JSON = os.path.join(IDEA_ENGINE_DATA_DIR, IE_STATE_FILE)  # Store idea_engine (счётчик открытых)
 IE_NOTIFY_MD = os.path.join(IDEA_ENGINE_DATA_DIR, "notify.md")  # файловое уведомление о новых идеях
 # Каталог Oracle-планов (внутри idea_engine/data), пишет deliver_oracle, читает panel/serve._read_oracles.
 ORACLES_DIR = os.path.join(IDEA_ENGINE_DATA_DIR, "oracles")
