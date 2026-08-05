@@ -561,6 +561,14 @@ TELEGRAM_FETCH_TIMEOUT = 90
 # Потолок сообщений на один ТГ-канал по умолчанию.
 TELEGRAM_LIMIT_PER_CHANNEL = 50
 
+# === IDEA_ENGINE RUN (idea_engine/run.py) ===
+# Параметры legacy standalone-tick (режим без cyborg/orchestrator). Живой конвейер берёт
+# n из harvest.SOURCE_N, а здесь — дефолт для ручного `python idea_engine/run.py tick`.
+LEGACY_TICK_SOURCE_N = 8
+LEGACY_TICK_SOURCE = "hn"
+LEGACY_TICK_K = 3
+LEGACY_TICK_CAP = 0  # 0 = без потолка
+
 # === ПАНЕЛЬНЫЕ JSON-КОНФИГИ (cyborg/*.py) ===
 # Имена файлов-конфигов пульта (в cyborg/data/). Ссылки через _panel_config.data_dir_for.
 COUNCIL_CONFIG_FILE = "council.json"

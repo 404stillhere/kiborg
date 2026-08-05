@@ -34,10 +34,10 @@ INBOX = config.INBOX_MD
 NOTIFY = config.IE_NOTIFY_MD
 
 CFG = {
-    "cap": 0,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
-    "n": 8,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
-    "source": "hn",
-    "k": 3,  # сколько идей за раз
+    "cap": config.LEGACY_TICK_CAP,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
+    "n": config.LEGACY_TICK_SOURCE_N,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
+    "source": config.LEGACY_TICK_SOURCE,
+    "k": config.LEGACY_TICK_K,  # сколько идей за раз
     "recon_path": config.RECON_FILE,
     "skip_folders": [],  # folder'ы режима B, которые не толкать (пусто = не фильтровать); knob finish_step
 }
