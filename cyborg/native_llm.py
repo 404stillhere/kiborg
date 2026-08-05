@@ -51,7 +51,7 @@ def _call(spec, prompt, timeout_ms, max_tokens, temperature):
         data=body,
         headers={
             config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
-            config.HTTP_HEADER_AUTHORIZATION: "Bearer " + key,
+            config.HTTP_HEADER_AUTHORIZATION: config.HTTP_HEADER_AUTHORIZATION_BEARER_PREFIX + key,
         },
         method=config.HTTP_METHOD_POST,
     )
