@@ -101,7 +101,7 @@ class Store:
             "seen": [],        # память предложенного: сигнатуры заголовков (растёт, не чистится)
         }
         if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
+            with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
                 self.data.update(json.load(f))
         self.data["cap"] = cap  # cap — конфиг, а не состояние: конструктор авторитетен
         # старое состояние без «seen» — засеять из уже бывших идей, чтобы их не повторять
@@ -116,7 +116,7 @@ class Store:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = f"{self.path}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
         try:
-            with open(tmp, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self.path)
         except Exception:
