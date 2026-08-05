@@ -77,7 +77,7 @@ class TestFinishCursor(unittest.TestCase):
         try:
             got = [wiring._run_finish({}, {})["nudge"]["folder"] for _ in range(3)]
             self.assertEqual(got, ["proj0", "proj1", "proj2"])  # ротация, не залипание
-            with open(wiring._CURSOR_FILE, encoding="utf-8") as f:  # with — не течёт хэндл
+            with open(wiring._CURSOR_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:  # with — не течёт хэндл
                 self.assertEqual(json.load(f)["cursor"], 3)
         finally:
             wiring._CURSOR_FILE, wiring.finish_step = orig_file, orig_fs

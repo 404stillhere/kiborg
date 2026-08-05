@@ -18,6 +18,8 @@ sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
 
 class TestReadRuns(unittest.TestCase):
     def setUp(self):
@@ -31,7 +33,7 @@ class TestReadRuns(unittest.TestCase):
 
     def test_parses_real_line(self):
         p = os.path.join(self.tmp, "data", "runs.md")
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("# журнал\n")
             f.write(
                 "- [2026-07-11 11:52:34] «приноси свежие идеи» → " "collect_source -> ideate -> deliver | delivered=3\n"
@@ -49,7 +51,7 @@ class TestReadRuns(unittest.TestCase):
         # незакоммиченная правка: _read_runs парсит хвост « | ⚠ <flag>» в поле degraded
         # (то, что harvest._log пишет через _degrade_note → пульт показывает деградацию).
         p = os.path.join(self.tmp, "data", "runs.md")
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(
                 "- [2026-07-11 11:52:34] «приноси свежие идеи» → "
                 "collect_source -> deliver | delivered=1 | ⚠ stub-отсеяно=2 · дубликатов=1\n"
@@ -64,7 +66,7 @@ class TestReadRuns(unittest.TestCase):
         # оба хвоста в ОДНОЙ строке. Прод-порядок (harvest._log:317-321): совет ПЕРВЫМ,
         # потом ⚠. Парсер должен корректно разделить оба, не склеив совет в degraded.
         p = os.path.join(self.tmp, "data", "runs.md")
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(
                 "- [2026-07-11 11:52:34] «приноси свежие идеи» → ideate | ideas=2 "
                 "| совет: оркестр ПРОСНУЛСЯ | ⚠ источник в фолбэке\n"
@@ -99,7 +101,7 @@ class TestReadSourceStatus(unittest.TestCase):
                 "reddit": {"items": 0, "ok": False, "error": "reddit: 403"},
             },
         }
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(payload, f)
         r = serve._read_source_status()
         self.assertFalse(r["sources"]["reddit"]["ok"])
@@ -138,13 +140,13 @@ class TestReadInbox(unittest.TestCase):
         serve.rejected.DATA = self._saved["rejected_data"]
 
     def test_reads_taken_later_and_rejected_lists(self):
-        with open(os.path.join(self.data, "state.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(self.data, "state.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"ideas": [{"id": 1, "status": "open"}]}, f)
-        with open(serve.triage_store.TAKEN_PATH, "w", encoding="utf-8") as f:
+        with open(serve.triage_store.TAKEN_PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"taken": [{"id": 2, "title": "Взятая"}]}, f)
-        with open(serve.triage_store.LATER_PATH, "w", encoding="utf-8") as f:
+        with open(serve.triage_store.LATER_PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"later": [{"id": 3, "title": "Позже"}]}, f)
-        with open(serve.rejected.PATH, "w", encoding="utf-8") as f:
+        with open(serve.rejected.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"rejected": [{"title": "Отклонённая", "ts": "2026-07-25 12:00:00"}]}, f)
 
         inbox = serve._read_inbox()
@@ -282,12 +284,12 @@ class TestAutoConfig(unittest.TestCase):
         self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})  # нет файла -> off/30
 
     def test_load_defaults_on_corrupt_json(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             fh.write("{битый json")
         self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})
 
     def test_load_clamps_stored_out_of_range(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             json.dump({"on": True, "interval_min": 9999}, fh)
         self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)  # clamp и на чтении
 
@@ -356,7 +358,7 @@ class TestGenparamsInState(unittest.TestCase):
         serve.genparams.save({"gen_k": 16, "source_n": 300})
         serve.genparams.reset()
         # файл на диске должен содержать дефолты (не 16/300)
-        with open(serve.genparams.PATH, encoding="utf-8") as f:
+        with open(serve.genparams.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             on_disk = json.load(f)
         self.assertEqual(on_disk["gen_k"], 8)
         self.assertEqual(on_disk["source_n"], 105)
@@ -429,12 +431,12 @@ class TestReadLab(unittest.TestCase):
         self.assertEqual(serve._read_lab(), {"exists": False, "locked": False, "features": [], "needs_manual": 0})
 
     def test_corrupt_json_safe(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             fh.write("{битый json")
         self.assertFalse(serve._read_lab()["exists"])  # битый роутер не роняет /api/state
 
     def test_ready_unreviewed_is_locked(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             json.dump(
                 {
                     "features": [
@@ -449,7 +451,7 @@ class TestReadLab(unittest.TestCase):
         self.assertEqual(lab["features"][0]["slug"], "f1")
 
     def test_reviewed_not_locked(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             json.dump(
                 {"features": [{"slug": "f1", "status": "ready", "reviewed": True}], "needs_manual": ["x", "y"]}, fh
             )
@@ -517,7 +519,7 @@ class TestHealth(unittest.TestCase):
         os.makedirs(os.path.join(self.tmp, "data"), exist_ok=True)
         # state.json по умолчанию валиден — тесты, которым нужен сбой, патчат сами
         self._state_path = os.path.join(self.tmp, "state.json")
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"ideas": [], "seen": []}, f)
         serve.config.IE_STATE_JSON = self._state_path
         serve.ask_llm.available = lambda: True
@@ -536,7 +538,7 @@ class TestHealth(unittest.TestCase):
 
     def _write_source_status(self, sources_dict):
         """Положить source_status.json в {CYBORG}/data/ для теста источников."""
-        with open(os.path.join(self.tmp, "data", "source_status.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(self.tmp, "data", "source_status.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"sources": sources_dict}, f)
 
     def test_all_healthy(self):
@@ -555,7 +557,7 @@ class TestHealth(unittest.TestCase):
         self.assertFalse(h["llm"]["available"])
 
     def test_state_json_corrupted(self):
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ это не json !!!")
         h = serve._health()
         self.assertFalse(h["ok"])
@@ -646,7 +648,7 @@ class TestPurgeLowScore(unittest.TestCase):
         serve.RUN.update(self._orig_run)
 
     def _write_state(self, ideas):
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"ideas": ideas}, f)
 
     def test_purges_only_open_below_threshold(self):
@@ -711,7 +713,7 @@ class TestPurgeLowScore(unittest.TestCase):
 
     def test_state_corrupt_returns_error(self):
         # state.json битый → отказ с причиной, без падения
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ битый json !!!")
         r = serve._purge_low_score(8.0)
         self.assertFalse(r["ok"])

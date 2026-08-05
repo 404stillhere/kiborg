@@ -15,6 +15,7 @@ from unittest import mock
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import restore_backup  # noqa: E402
 
 
@@ -30,15 +31,15 @@ class TestInteractiveRestore(unittest.TestCase):
         restore_backup.config.IE_STATE_JSON = os.path.join(self.tmp, "state.json")
         restore_backup.seen_items.PATH = os.path.join(self.tmp, "seen_items.json")
         os.makedirs(restore_backup.config.BACKUPS_DIR)
-        with open(restore_backup.config.IE_STATE_JSON, "w", encoding="utf-8") as f:
+        with open(restore_backup.config.IE_STATE_JSON, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"ideas": ["current"]}')
-        with open(restore_backup.seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(restore_backup.seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"current": 1}')
         backup = os.path.join(restore_backup.config.BACKUPS_DIR, "2026-07-25_010000")
         os.makedirs(backup)
-        with open(os.path.join(backup, "state.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(backup, "state.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"ideas": ["backup"]}')
-        with open(os.path.join(backup, "seen_items.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(backup, "seen_items.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"backup": 1}')
 
     def tearDown(self):
@@ -58,7 +59,7 @@ class TestInteractiveRestore(unittest.TestCase):
             restore_backup._interactive()
 
         self.assertIn("отмена", out.getvalue())
-        with open(restore_backup.config.IE_STATE_JSON, encoding="utf-8") as f:
+        with open(restore_backup.config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), '{"ideas": ["current"]}')
         self.assertFalse(
             any(".pre-restore-" in name for name in os.listdir(self.tmp)),
@@ -73,9 +74,9 @@ class TestInteractiveRestore(unittest.TestCase):
         ):
             restore_backup._interactive()
 
-        with open(restore_backup.config.IE_STATE_JSON, encoding="utf-8") as f:
+        with open(restore_backup.config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), '{"ideas": ["backup"]}')
-        with open(restore_backup.seen_items.PATH, encoding="utf-8") as f:
+        with open(restore_backup.seen_items.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), '{"backup": 1}')
         pre_restore = [name for name in os.listdir(self.tmp) if ".pre-restore-" in name]
         self.assertEqual(len(pre_restore), 2)

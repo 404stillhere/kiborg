@@ -6,6 +6,9 @@ import sys
 import tempfile
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE)
+
+import config  # noqa: E402
 
 
 def _run(args):
@@ -15,8 +18,8 @@ def _run(args):
         [sys.executable, os.path.join(BASE, "run.py"), "--mode", "oracle"] + args,
         capture_output=True,
         text=True,
-        encoding="utf-8",
-        errors="replace",
+        encoding=config.HTTP_CHARSET_UTF8,
+        errors=config.HTTP_DECODE_ERRORS_REPLACE,
         env=env,
         cwd=BASE,
     )
@@ -26,7 +29,7 @@ def test_oracle_cli_success():
     with tempfile.TemporaryDirectory() as tmp:
         proj = os.path.join(tmp, "demo")
         os.makedirs(proj)
-        with open(os.path.join(proj, "main.py"), "w", encoding="utf-8") as f:
+        with open(os.path.join(proj, "main.py"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("print('hello')\n")
         r = _run(["--project", proj, "--goal", "add basic auth", "--root", tmp])
         assert r.returncode == 0, r.stderr

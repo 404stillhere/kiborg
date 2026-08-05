@@ -15,6 +15,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import seen_items  # noqa: E402
 
 
@@ -107,7 +108,7 @@ class TestSeenItems(unittest.TestCase):
         seen_items.mark_seen([{"source": "hn", "id": 1}])
         # подделываем древнюю запись напрямую в файле
         old_ts = seen_items._now() - (seen_items.TTL_DAYS + 5) * 86400
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"hn:ancient": old_ts}, f)
         # новый прогон mark_seen → _save должен выкинуть древнюю, оставить новую
         seen_items.mark_seen([{"source": "hn", "id": 2}])
@@ -146,7 +147,7 @@ class TestSeenItems(unittest.TestCase):
     def test_migrate_legacy_list_format(self):
         # старый формат (list[str], до 2026-07-21) должен мигрировать в dict[str,int]
         # при ближайшем load(): все ключи получают ts=сейчас (иначе TTL выкинул бы всё разом)
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(["hn:1", "hn:2", "reddit:5"], f)
         data = seen_items.load()
         self.assertIsInstance(data, dict)
@@ -162,33 +163,33 @@ class TestSeenItems(unittest.TestCase):
 
         expected = "files:legacy-" + hashlib.sha1(b"README.md").hexdigest()[:12]
         # list-форма
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(["files:M:\\projects\\kiborg\\README.md"], f)
         self.assertEqual(set(seen_items.load().keys()), {expected})
         # dict-форма (тоже может быть с legacy-ключами)
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"files:C:\\old\\proj\\notes.md": 12345}, f)
         expected_notes = "files:legacy-" + hashlib.sha1(b"notes.md").hexdigest()[:12]
         self.assertEqual(set(seen_items.load().keys()), {expected_notes})
         # уже мигрированный legacy и новый v2-ключи остаются как есть (idempotent)
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({expected: 12345, "files:f2:stable": 12345}, f)
         self.assertEqual(set(seen_items.load().keys()), {expected, "files:f2:stable"})
 
     def test_migrate_already_new_format_passes_through(self):
         # уже новый формат dict[str,int] проходит как есть
         ts = seen_items._now()
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"hn:1": ts, "hn:2": ts}, f)
         data = seen_items.load()
         self.assertEqual(data, {"hn:1": ts, "hn:2": ts})
 
     def test_migrate_garbage_returns_empty(self):
         # мусор в файле → пустой dict (не падаем, читаем как «ничего не видели»)
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("not json at all {{{")
         self.assertEqual(seen_items.load(), {})
-        with open(seen_items.PATH, "w", encoding="utf-8") as f:
+        with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("42")
         self.assertEqual(seen_items.load(), {})
 

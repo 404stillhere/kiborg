@@ -13,10 +13,12 @@ if _CY not in sys.path:
 
 import keychain  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
 
 def _keys_file(**pairs):
     fd, path = tempfile.mkstemp(suffix=".env")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
+    with os.fdopen(fd, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# test keys\n")
         for k, v in pairs.items():
             f.write(f"{k}={v}\n")
@@ -247,9 +249,9 @@ def test_keys_file_warning_none_when_gitignored():
     # файл ключей в .gitignore -> предупреждение None
     d = tempfile.mkdtemp()
     p = os.path.join(d, "llm_keys.env")
-    with open(p, "w", encoding="utf-8") as f:
+    with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("CLOSEROUTER_API_KEY=cr\n")
-    with open(os.path.join(d, ".gitignore"), "w", encoding="utf-8") as f:
+    with open(os.path.join(d, ".gitignore"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# secrets\nllm_keys.env\n")
     try:
         assert keychain.keys_file_warning(p) is None
