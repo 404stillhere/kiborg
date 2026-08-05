@@ -64,7 +64,7 @@ def _legacy_files_token(value):
     if _FILES_LEGACY_HASH_RE.match(basename):
         digest = basename
     else:
-        digest = hashlib.sha1(basename.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[:12]
+        digest = hashlib.sha1(basename.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[: config.SEEN_ITEMS_HASH_LEN]
     return _FILES_LEGACY_PREFIX + digest
 
 

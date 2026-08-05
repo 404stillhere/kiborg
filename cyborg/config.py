@@ -371,6 +371,8 @@ PANEL_HEALTH_LOCK_WINDOW_MINUTES = 60
 # UI-ограничения длины строк в ответах пульта (обрезка для читаемости/безопасности).
 PANEL_MSG_MAX_CHARS = 200
 PANEL_PURGE_MSG_MAX_CHARS = 120
+# Сколько деталей failed возвращает /api/purge (для UI).
+PANEL_PURGE_FAILED_DETAILS_MAX = 10
 PANEL_CARD_PURPOSE_MAX_CHARS = 220
 PANEL_CARD_WHY_MAX_CHARS = 300
 PANEL_ERROR_MAX_CHARS = 300
@@ -657,6 +659,16 @@ FILES_MAX_SCAN = 20000
 FILES_MAX_PROJECT_MAPS = 8
 # Сколько символов берём из description репозитория GitHub при обогащении.
 GH_REPO_DESCRIPTION_MAX_CHARS = 180
+# Длина SHA1-хеша для seen_items legacy-ключа (hex-символов).
+SEEN_ITEMS_HASH_LEN = 12
+# Длина SHA1-хеша для collect_source file-id (hex-символов).
+COLLECT_SOURCE_HASH_LEN = 16
+# Топ-N зон в файловой карте проекта.
+FILES_MAP_TOP_AREAS = 10
+# Топ-N форматов в файловой карте проекта.
+FILES_MAP_TOP_EXTS = 10
+# Количество опорных файлов в файловой карте проекта.
+FILES_MAP_ANCHORS = 12
 # Сколько символов печатаем из stderr Telegram-RPC при ошибке.
 TELEGRAM_RPC_ERROR_MAX_CHARS = 200
 # Сколько символов берём из первой строки поста Telegram.
@@ -783,6 +795,8 @@ PANEL_V1_BODIES_FILE = "bodies.js"
 # Роуты статики панели v2 (новый пульт).
 PANEL_V2_STATIC_ROUTES = ("/", "/index.html", "/style.css", "/app.js")
 PANEL_V2_INDEX_FILE = "index.html"
+# Сколько символов имени плана берём как fallback timestamp (YYYY-MM-DD).
+PANEL_ORACLE_FALLBACK_TS_LEN = 10
 
 # === FEEDBACK_CORTEX (feedback_cortex.py) ===
 # Допуск при проверке сходимости clamp+renormalize (модуль итеративно стабилизирует веса).

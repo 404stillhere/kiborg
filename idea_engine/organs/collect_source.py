@@ -615,7 +615,7 @@ def _files_item_id(path, base, headline, context=""):
     # Контекст входит в ID: изменение кода ниже неизменной первой строки должно снова стать
     # «свежим» сырьём. Иначе seen_items навсегда скрывал бы доработанный файл от саморефлексии.
     identity = f"{root_label}/{rel}\n{headline or ''}\n{context or ''}".casefold()
-    return "f2:" + hashlib.sha1(identity.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[:16]
+    return "f2:" + hashlib.sha1(identity.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[: config.COLLECT_SOURCE_HASH_LEN]
 
 
 _FILES_OVERVIEW_NAMES = {
@@ -812,9 +812,9 @@ def _files_project_map(records):
             fingerprint.append(f"{rec['rel']}:{stat.st_size}:{stat.st_mtime_ns}")
         except OSError:
             fingerprint.append(rec["rel"])
-    top_areas = sorted(areas.items(), key=lambda x: (-x[1], x[0].casefold()))[:10]
-    top_exts = sorted(exts.items(), key=lambda x: (-x[1], x[0]))[:10]
-    anchors = sorted(records, key=lambda r: (-r["score"], r["rel"].casefold()))[:12]
+    top_areas = sorted(areas.items(), key=lambda x: (-x[1], x[0].casefold()))[: config.FILES_MAP_TOP_AREAS]
+    top_exts = sorted(exts.items(), key=lambda x: (-x[1], x[0]))[: config.FILES_MAP_TOP_EXTS]
+    anchors = sorted(records, key=lambda r: (-r["score"], r["rel"].casefold()))[: config.FILES_MAP_ANCHORS]
     context = "\n".join(
         [
             f"Проект: {project}. Пригодных файлов: {len(records)}.",
@@ -825,7 +825,7 @@ def _files_project_map(records):
             "Эта карта описывает весь корень; фрагменты ниже — углубление в выбранные файлы.",
         ]
     )[: config.FILES_CONTEXT_CHARS]
-    digest = hashlib.sha1("\n".join(sorted(fingerprint)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()[:16]
+    digest = hashlib.sha1("\n".join(sorted(fingerprint)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()[: config.COLLECT_SOURCE_HASH_LEN]
     return {
         "title": f"[КАРТА ПРОЕКТА] {project}",
         "context": context,

@@ -344,7 +344,7 @@ def _purge_low_score(max_score):
         "ok": True,
         "purged": purged,
         "failed": len(failed),
-        "failed_details": failed[:10],  # первые 10 ошибок деталей (для UI)
+        "failed_details": failed[: config.PANEL_PURGE_FAILED_DETAILS_MAX],
         "threshold": max_score,
         "candidates": len(candidates),
     }
@@ -579,7 +579,7 @@ def _read_oracles():
                     st = os.path.getmtime(path)
                     ts = datetime.datetime.fromtimestamp(st).strftime(config.ORACLE_PLAN_INDEX_FMT)
                 except Exception:
-                    ts = fname[:10] + " 00:00"
+                    ts = fname[: config.PANEL_ORACLE_FALLBACK_TS_LEN] + " 00:00"
                 out.append({"slug": slug, "path": path, "ts": ts})
     except Exception:
         return []
