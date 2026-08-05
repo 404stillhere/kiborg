@@ -267,6 +267,13 @@ HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8 = f"text/javascript; charset={HTTP_CHARSET_
 HTTP_MEDIA_TYPE_OCTET_STREAM = "application/octet-stream"
 HTTP_CACHE_CONTROL_NO_STORE = "no-store"
 HTTP_METHOD_POST = "POST"
+# User-Agent для HTTP-источников idea_engine (collect_source), чтобы не дублировать строку
+# в замороженном органе. Имя заголовка вынесено отдельно, чтобы формировать dict headers
+# через константу.
+HTTP_HEADER_USER_AGENT = "User-Agent"
+HTTP_USER_AGENT = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
+# Суффикс pyrogram-файла сессии; collect_tg_news нормализует путь, убирая его.
+TELEGRAM_SESSION_SUFFIX = ".session"
 
 # --- LLM-провайдеры (OpenAI-совместимые endpoints) ---------------------------
 # Единый источник endpoint/model для провайдеров, чтобы не дублировать литералы

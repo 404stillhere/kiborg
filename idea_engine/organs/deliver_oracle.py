@@ -197,7 +197,7 @@ def _short(text, max_len=60):
 
 def _atomic_write(path, text):
     os.makedirs(Path(path).parent, exist_ok=True)
-    tmp = str(path) + ".tmp"
+    tmp = str(path) + config.ATOMIC_TMP_SUFFIX
     with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(text)
     os.replace(tmp, path)

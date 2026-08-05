@@ -37,7 +37,7 @@ HN_ITEM = config.HN_ITEM_URL
 REDDIT_TOP = config.REDDIT_TOP_URL
 LOBSTERS_HOT = config.LOBSTERS_HOT_URL
 GH_TRENDING = config.GH_TRENDING_URL
-_UA = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
+_UA = config.HTTP_USER_AGENT
 _GH_ENRICH_DEFAULT_LIMIT = config.GH_TRENDING_ENRICH_LIMIT  # GitHub без токена: максимум 60 API-запросов/час
 
 def _get(url_or_req, timeout):
@@ -83,7 +83,7 @@ def _hn(n, timeout, env):
 
 def _reddit(n, timeout, env):
     # без User-Agent reddit отвечает 429 — ставим свой (публичный .json-эндпоинт, без ключа)
-    req = urllib.request.Request(REDDIT_TOP.format(n), headers={"User-Agent": _UA})
+    req = urllib.request.Request(REDDIT_TOP.format(n), headers={config.HTTP_HEADER_USER_AGENT: _UA})
     data = _get(req, timeout)
     items = []
     for c in (data.get("data", {}).get("children") or [])[:n]:

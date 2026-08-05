@@ -44,8 +44,8 @@ def _make_client(env):
     from pyrogram import Client
 
     session = str(env["TELEGRAM_SESSION"])
-    if session.endswith(".session"):
-        session = session[: -len(".session")]
+    if session.endswith(config.TELEGRAM_SESSION_SUFFIX):
+        session = session[: -len(config.TELEGRAM_SESSION_SUFFIX)]
     workdir, name = os.path.split(session)
     return Client(
         name,
