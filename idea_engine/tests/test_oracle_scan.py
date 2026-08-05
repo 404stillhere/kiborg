@@ -7,6 +7,7 @@ import tempfile
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 from organs import oracle_scan  # noqa: E402
 
 
@@ -15,11 +16,11 @@ def _make_project():
     root = os.path.join(d, "note-bot")
     os.makedirs(root)
     os.makedirs(os.path.join(root, "src"))
-    with open(os.path.join(root, "README.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "README.md"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# Note bot\n")
-    with open(os.path.join(root, "main.py"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "main.py"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# TODO: add auth\nprint('hi')\n")
-    with open(os.path.join(root, "src", "db.py"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "src", "db.py"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# FIXME: use migrations\n")
     return root
 
@@ -77,11 +78,11 @@ def test_noise_files_filtered():
     root = _make_project()
     # шумовые файлы, которые не должны попасть в карту
     os.makedirs(os.path.join(root, "data", "oracles"))
-    with open(os.path.join(root, "data", "oracles", "plan.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "data", "oracles", "plan.md"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# plan\n")
-    with open(os.path.join(root, "serve.log"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "serve.log"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("log\n")
-    with open(os.path.join(root, "main.py.bak-2026-01-01"), "w", encoding="utf-8") as f:
+    with open(os.path.join(root, "main.py.bak-2026-01-01"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# TODO: old\n")
     out = oracle_scan.run({}, {"oracle_project": root})
     assert out["ok"] is True

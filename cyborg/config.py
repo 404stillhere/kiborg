@@ -285,6 +285,9 @@ HTTP_MEDIA_TYPE_JSON_UTF8 = f"{HTTP_MEDIA_TYPE_JSON}; charset={HTTP_CHARSET_UTF8
 HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8 = f"text/plain; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_TEXT_HTML_UTF8 = f"text/html; charset={HTTP_CHARSET_UTF8}"
 HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8 = f"text/javascript; charset={HTTP_CHARSET_UTF8}"
+# Расширения/файлы, которые oracle_scan считает точками входа в проекте.
+ORACLE_ENTRYPOINT_README = "README.md"
+ORACLE_ENTRYPOINT_MAIN = "main.py"
 HTTP_MEDIA_TYPE_OCTET_STREAM = "application/octet-stream"
 HTTP_MEDIA_TYPE_X_WWW_FORM_URLENCODED = "application/x-www-form-urlencoded"
 HTTP_CACHE_CONTROL_NO_STORE = "no-store"

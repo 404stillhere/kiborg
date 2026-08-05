@@ -103,7 +103,7 @@ class TestStore(unittest.TestCase):
         s = Store(self.path, cap=0)
         s.add_idea(_idea("идея одна"))
         s.save()
-        with open(self.path, encoding="utf-8") as f:
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # читается как валидный JSON
         self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
 
@@ -112,12 +112,12 @@ class TestStore(unittest.TestCase):
         s = Store(self.path, cap=0)
         s.add_idea(_idea("валидная идея"))
         s.save()
-        with open(self.path, encoding="utf-8") as f:  # with — не течёт хэндл (ResourceWarning)
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:  # with — не течёт хэндл (ResourceWarning)
             before = f.read()
         s.data["bad"] = {1, 2, 3}  # set не сериализуется json.dump -> TypeError
         with self.assertRaises(TypeError):
             s.save()
-        with open(self.path, encoding="utf-8") as f:
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             after = f.read()
         self.assertEqual(before, after)  # оригинал цел, не усечён
         self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
@@ -303,7 +303,7 @@ class TestDedup(unittest.TestCase):
                 }
             ],
         }
-        with open(self.path, "w", encoding="utf-8") as f:
+        with open(self.path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(legacy, f, ensure_ascii=False)
         s = Store(self.path, cap=3)  # без поля seen
         self.assertFalse(s.add_idea(_idea("старая идея")))  # засеяно из legacy -> не повторяем

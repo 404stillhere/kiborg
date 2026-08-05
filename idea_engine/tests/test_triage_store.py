@@ -11,6 +11,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import triage_store  # noqa: E402
 
 
@@ -81,13 +82,13 @@ class TestTriageStore(unittest.TestCase):
 
     def test_persists_atomic(self):
         triage_store.add(self.taken, self._idea(1))
-        with open(self.taken, encoding="utf-8") as f:
+        with open(self.taken, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)  # валидный JSON на диске
         self.assertEqual(d, {"taken": [json.loads(json.dumps(v)) for v in triage_store.load(self.taken)["taken"]]})
         self.assertFalse(any(p.endswith(".tmp") for p in os.listdir(self.tmp)))  # tmp убран
 
     def test_broken_file_falls_to_empty(self):
-        with open(self.taken, "w", encoding="utf-8") as f:
+        with open(self.taken, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{битый")
         self.assertEqual(triage_store.load(self.taken), {"taken": []})  # не падаем
         self.assertEqual(triage_store.count(self.taken), 0)

@@ -9,6 +9,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import rejected  # noqa: E402
 
 
@@ -55,12 +56,12 @@ class TestRejected(unittest.TestCase):
 
     def test_persists_atomic(self):
         rejected.add("одна")
-        with open(rejected.PATH, encoding="utf-8") as f:
+        with open(rejected.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
         self.assertFalse(any(p.endswith(".tmp") for p in os.listdir(self.tmp)))
 
     def test_broken_file_falls_to_empty(self):
-        with open(rejected.PATH, "w", encoding="utf-8") as f:
+        with open(rejected.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{битый")
         self.assertEqual(rejected.recent(), [])  # не падаем
 
