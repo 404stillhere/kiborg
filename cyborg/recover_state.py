@@ -51,7 +51,7 @@ def _find_latest_valid_backup(backups_dir):
     except OSError:
         return None
     for name in sorted(names, reverse=True):  # свежие первыми
-        candidate = os.path.join(backups_dir, name, "state.json")
+        candidate = os.path.join(backups_dir, name, config.IE_STATE_FILE)
         if _is_valid_json(candidate):
             return name
     return None
@@ -91,7 +91,7 @@ def auto_recover_state_if_needed(state_path, backups_dir, max_backups=None):
         print(f"[recover] {err} — восстановление невозможно, прогон продолжится как есть")
         return {"recovered": False, "backup_ts": None, "error": err}
 
-    src = os.path.join(backups_dir, backup_ts, "state.json")
+    src = os.path.join(backups_dir, backup_ts, config.IE_STATE_FILE)
 
     # Сохранить повреждённый файл для разбора (если он существует — при отсутствии
     # сохранять нечего). Имя со таймстемпом, чтобы не затирать предыдущие дампы.
