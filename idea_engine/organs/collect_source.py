@@ -90,7 +90,7 @@ def _reddit(n, timeout, env):
         d = c.get("data", {})
         title = d.get("title")
         if title:
-            url = d.get("url") or ("https://reddit.com" + d.get("permalink", ""))
+            url = d.get("url") or (config.REDDIT_URL_PREFIX + d.get("permalink", ""))
             items.append({"title": title, "url": url, "id": d.get("id")})
     if not items:
         raise ValueError("reddit returned empty")
@@ -154,7 +154,7 @@ def _gh_trending(n, timeout, env):
                         title = f"{owner}/{repo} — {desc}"
                 except Exception:
                     pass
-            items.append({"title": title, "url": f"https://github.com/{owner}/{repo}",
+            items.append({"title": title, "url": f"{config.GITHUB_URL_PREFIX}/{owner}/{repo}",
                           "id": f"{owner}/{repo}"})  # repo сам по себе стабильный id (для дедупа items)
     if not items:
         raise ValueError("gh_trending: no repos parsed")
