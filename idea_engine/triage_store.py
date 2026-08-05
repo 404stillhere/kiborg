@@ -34,7 +34,7 @@ def _load(path):
     except Exception:
         return []
     # принимаем оба ключа (taken/later) — caller передаёт путь, формат детерминирован
-    for k in ("taken", "later"):
+    for k in config.TRIAGE_STORE_KEYS:
         v = d.get(k)
         if isinstance(v, list):
             return v
@@ -63,7 +63,11 @@ def _save(path, items, key):
 def _key_for(path):
     """Имя ключа ('taken' / 'later') по пути файла — для atomic_save."""
     base = os.path.basename(path)
-    return "taken" if base.startswith("taken") else "later"
+    return (
+        config.TRIAGE_STORE_TAKEN_KEY
+        if base.startswith(config.TRIAGE_STORE_TAKEN_PREFIX)
+        else config.TRIAGE_STORE_LATER_KEY
+    )
 
 
 def add(path, idea):

@@ -584,6 +584,12 @@ SEEN_ITEMS_FILE = "seen_items.json"
 # Имена master-файлов разобранных идей (take / later).
 TAKEN_FILE = "taken.json"
 LATER_FILE = "later.json"
+# Ключи внутри taken.json / later.json.
+TRIAGE_STORE_TAKEN_KEY = "taken"
+TRIAGE_STORE_LATER_KEY = "later"
+TRIAGE_STORE_KEYS = (TRIAGE_STORE_TAKEN_KEY, TRIAGE_STORE_LATER_KEY)
+# Префикс имени файла для определения ключа: taken* → taken, иначе later.
+TRIAGE_STORE_TAKEN_PREFIX = "taken"
 # Суффикс атомарного tmp-файла: pid уникализирует имя при параллельной записи.
 ATOMIC_TMP_PID_SUFFIX = "{pid}.tmp"
 
