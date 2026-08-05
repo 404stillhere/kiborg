@@ -247,6 +247,8 @@ BACKUP_TS_FMT = "%Y-%m-%d_%H%M%S"
 ORACLE_PLAN_DATE_FMT = "%Y-%m-%d"
 ORACLE_PLAN_TIME_FMT = "%H-%M-%S"
 ORACLE_PLAN_INDEX_FMT = "%Y-%m-%d %H:%M"
+# ISO-формат timestamp'а без дробных секунд (triage_events, shadow_metrics).
+ISO_TIMESTAMP_SECONDS_FMT = "seconds"
 # Часы пульта (/api/state now) — только время, секунды нужны для live-ощущения.
 PANEL_CLOCK_FMT = "%H:%M:%S"
 

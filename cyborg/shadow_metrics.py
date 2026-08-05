@@ -42,7 +42,7 @@ def append(record):
     if not isinstance(record, dict):
         return
     if "ts" not in record:
-        record = {**record, "ts": datetime.datetime.now().isoformat(timespec="seconds")}
+        record = {**record, "ts": datetime.datetime.now().isoformat(timespec=config.ISO_TIMESTAMP_SECONDS_FMT)}
     parent = os.path.dirname(PATH) or "."
     os.makedirs(parent, exist_ok=True)
     with open(PATH, "a", encoding=config.HTTP_CHARSET_UTF8) as f:

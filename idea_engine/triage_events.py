@@ -39,7 +39,7 @@ def append(event):
     if not isinstance(event, dict):
         return
     if "ts" not in event:
-        event = {**event, "ts": datetime.datetime.now().isoformat(timespec="seconds")}
+        event = {**event, "ts": datetime.datetime.now().isoformat(timespec=config.ISO_TIMESTAMP_SECONDS_FMT)}
     parent = os.path.dirname(PATH) or "."
     os.makedirs(parent, exist_ok=True)
     with open(PATH, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
