@@ -192,7 +192,7 @@ def _count_markers(path, errors):
         data = path.read_bytes()
         if len(data) > CONTENT_MAX_BYTES:
             data = data[:CONTENT_MAX_BYTES]
-        text = data.decode("utf-8", errors="replace")
+        text = data.decode(config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_REPLACE)
         return len(MARKER_RE.findall(text))
     except OSError:
         errors.append(f"cannot read {path}")
@@ -215,7 +215,7 @@ def _read_inbox_state(root, errors):
         return None
     try:
         data = inbox_path.read_bytes()[: config.ORACLE_SCAN_CONTENT_MAX_BYTES]
-        text = data.decode("utf-8", errors="replace")
+        text = data.decode(config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_REPLACE)
     except OSError as e:
         errors.append(f"cannot read {inbox_path}: {e}")
         return None
@@ -245,7 +245,7 @@ def _read_readme(root, errors):
             continue
         try:
             data = path.read_bytes()[: config.ORACLE_SCAN_README_BYTES]
-            text = data.decode("utf-8", errors="replace")
+            text = data.decode(config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_REPLACE)
         except OSError as e:
             errors.append(f"cannot read {path}: {e}")
             return None

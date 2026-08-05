@@ -107,7 +107,7 @@ def _start_proc(goal, args):
         RUN.update(running=True, goal=goal, lines=[], rc=None, started=time.time())
 
     def worker():
-        env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        env = dict(os.environ, PYTHONIOENCODING=config.PYTHONIOENCODING_UTF8)
         p = None
 
         def _watchdog():  # прогон завис дольше RUN_TIMEOUT — убиваем, чтобы пульт не залип
@@ -125,8 +125,8 @@ def _start_proc(goal, args):
                 cwd=CYBORG,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                encoding="utf-8",
-                errors="replace",
+                encoding=config.HTTP_CHARSET_UTF8,
+                errors=config.HTTP_DECODE_ERRORS_REPLACE,
                 env=env,
             )
             with _LOCK:
@@ -202,7 +202,7 @@ _AUTO_LOOP_SLEEP = config.AUTO_LOOP_SLEEP_SECONDS
 
 def _load_auto():
     try:
-        with open(AUTO_FILE, encoding="utf-8") as f:
+        with open(AUTO_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)
         iv = int(d.get("interval_min", _AUTO_DEFAULT))
         return {"on": bool(d.get("on")), "interval_min": max(_AUTO_MIN, min(iv, _AUTO_MAX))}
@@ -213,7 +213,7 @@ def _load_auto():
 def _save_auto(on, interval_min):
     iv = max(_AUTO_MIN, min(int(interval_min), _AUTO_MAX))
     tmp = AUTO_FILE + config.ATOMIC_TMP_SUFFIX
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         json.dump({"on": bool(on), "interval_min": iv}, f, ensure_ascii=False)
     os.replace(tmp, AUTO_FILE)  # атомарно: обрыв записи не бьёт существующий флаг
     return {"on": bool(on), "interval_min": iv}
@@ -268,13 +268,13 @@ def _set_idea(idea_id, status):
                 "busy": True,
                 "msg": "идёт прогон — разбор отложен на секунду, повтори когда закончится",
             }
-    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    env = dict(os.environ, PYTHONIOENCODING=config.PYTHONIOENCODING_UTF8)
     p = subprocess.run(
         [sys.executable, "run.py", "status", str(int(idea_id)), status],
         cwd=IDEA,
         capture_output=True,
-        encoding="utf-8",
-        errors="replace",
+        encoding=config.HTTP_CHARSET_UTF8,
+        errors=config.HTTP_DECODE_ERRORS_REPLACE,
         env=env,
     )
     out = (p.stdout or "").strip() + (p.stderr or "").strip()
@@ -290,7 +290,7 @@ def _purge_low_score(max_score):
     оставшиеся идеи будут отбиты busy (частичная очистка безопасна: state.json под state_lock).
     Возвращает статистику: сколько зачищено, сколько ошиблось, порог.
     """
-    if not (0.0 <= max_score <= 10.0):
+    if not (config.SCORE_MIN <= max_score <= config.SCORE_MAX):
         return {"ok": False, "msg": "max_score должен быть в диапазоне 0..10"}
     with _LOCK:
         if RUN["running"]:
@@ -301,7 +301,7 @@ def _purge_low_score(max_score):
             }
     # читаем снимок state.json, чтобы найти кандидатов (сам триаж идёт через _set_idea)
     try:
-        with open(config.IE_STATE_JSON, encoding="utf-8") as f:
+        with open(config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             state = json.load(f)
     except Exception as e:
         return {"ok": False, "msg": f"state.json не читается: {str(e)[:200]}"}
@@ -356,7 +356,7 @@ _RUN_LINE = re.compile(r"^- \[(?P<ts>[^\]]+)\] «(?P<goal>.*?)» → (?P<chain>.
 def _read_runs():
     runs = []
     try:
-        with open(CYBORG + "/data/runs.md", encoding="utf-8") as f:
+        with open(os.path.join(CYBORG, "data", config.RUNS_MD_FILE), encoding=config.HTTP_CHARSET_UTF8) as f:
             for line in f:
                 m = _RUN_LINE.match(line.strip())
                 if not m:
@@ -388,9 +388,9 @@ def _read_runs():
 def _read_source_status():
     """Живой per-source статус (cyborg/data/source_status.json) — пишется harvest'ом на
     каждом авто-прогоне (не-force). Нет файла (ещё не гоняли) -> None, пульт не показывает."""
-    path = os.path.join(CYBORG, "data", "source_status.json")
+    path = os.path.join(CYBORG, "data", config.SOURCE_STATUS_FILE_NAME)
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             return json.load(f)
     except Exception:
         return None
@@ -421,7 +421,7 @@ def _health():
     # state.json: пытаемся json.load. Повреждён/нет файла — ok=False + error.
     state_err = None
     try:
-        with open(config.IE_STATE_JSON, encoding="utf-8") as f:
+        with open(config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)
     except Exception as e:
         state_err = str(e)[:200]
@@ -450,7 +450,7 @@ def _health():
 
 def _read_inbox():
     try:
-        with open(IDEA + "/data/state.json", encoding="utf-8") as f:
+        with open(config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             s = json.load(f)
         # state.json хранит только open (мастер-разделение 2026-07-22): take/later/trash физически
         # перенесены в taken.json / later.json / rejected.json при триаже. Отдаём все три списка
@@ -483,7 +483,7 @@ def _read_inbox():
 
 def _read_registry():
     try:
-        with open(REGISTRY, encoding="utf-8") as f:
+        with open(REGISTRY, encoding=config.HTTP_CHARSET_UTF8) as f:
             cards = json.load(f).get("organs", [])
         by_status, by_project = {}, {}
         slim = []
@@ -509,7 +509,7 @@ def _read_registry():
 
 def _read_lab():
     try:
-        with open(LAB_ROUTER, encoding="utf-8") as f:
+        with open(LAB_ROUTER, encoding=config.HTTP_CHARSET_UTF8) as f:
             r = json.load(f)
         feats = [
             {
@@ -546,7 +546,7 @@ def _last_provider():
     работает в отдельном Python-процессе и не видит память клиента.
     """
     try:
-        with open(config.LAST_PROVIDER_FILE, encoding="utf-8") as f:
+        with open(config.LAST_PROVIDER_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:
             return str(json.load(f).get("provider", "") or "")
     except Exception:
         return ""
@@ -677,19 +677,19 @@ class Handler(BaseHTTPRequestHandler):
         # Старая отдача index.html из HERE перекрыта этим блоком (v2 — приоритет),
         # но старый код ниже оставлен — не ломаем v1, просто он теперь недостижим
         # для '/' и '/index.html'. bodies.js отдаётся как и раньше из HERE.
-        if self.path in ("/", "/index.html", "/style.css", "/app.js"):
-            fname = "index.html" if self.path in ("/", "/index.html") else self.path.lstrip("/")
+        if self.path in config.PANEL_V2_STATIC_ROUTES:
+            fname = config.PANEL_V2_INDEX_FILE if self.path in ("/", "/index.html") else self.path.lstrip("/")
             self.serve_static(fname)
             return
         if self.path in ("/", "/index.html"):
             try:
-                with open(os.path.join(HERE, "index.html"), encoding="utf-8") as f:
+                with open(os.path.join(HERE, config.PANEL_V1_INDEX_FILE), encoding=config.HTTP_CHARSET_UTF8) as f:
                     self._send(200, f.read(), config.HTTP_MEDIA_TYPE_TEXT_HTML_UTF8)
             except Exception as e:
                 self._send(500, f"index.html не читается: {e}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
         elif self.path == "/bodies.js":
             try:
-                with open(os.path.join(HERE, "bodies.js"), encoding="utf-8") as f:
+                with open(os.path.join(HERE, config.PANEL_V1_BODIES_FILE), encoding=config.HTTP_CHARSET_UTF8) as f:
                     self._send(200, f.read(), config.HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8)
             except Exception as e:
                 self._send(500, f"// bodies.js: {e}", config.HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8)
@@ -744,8 +744,8 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         try:
-            n = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(n).decode("utf-8")) if n else {}
+            n = int(self.headers.get(config.HTTP_HEADER_CONTENT_LENGTH) or 0)
+            body = json.loads(self.rfile.read(n).decode(config.HTTP_CHARSET_UTF8)) if n else {}
         except Exception:
             self._json({"ok": False, "msg": "плохой JSON"}, 400)
             return
@@ -857,7 +857,7 @@ class Handler(BaseHTTPRequestHandler):
             # массовый триаж: все открытые идеи с score < threshold → мусор.
             # threshold по умолчанию 8.0 (зелёный круг = хорошая идея, ниже = на разбор).
             try:
-                threshold = float(body.get("threshold", 8.0))
+                threshold = float(body.get("threshold", config.DEFAULT_READ_MIN_SCORE))
             except (TypeError, ValueError):
                 self._json({"ok": False, "msg": "threshold должен быть числом"}, 400)
                 return

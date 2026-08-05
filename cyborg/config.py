@@ -42,7 +42,8 @@ IDEA_ENGINE_DATA_DIR = os.path.join(IDEA_ENGINE_DIR, "data")
 RUNS_MD_FILE = "runs.md"
 RUNS_MD = os.path.join(CYBORG_DATA_DIR, RUNS_MD_FILE)
 # Живой per-source статус для пульта — пишет harvest_gate._persist_status, читает serve._read_source_status.
-SOURCE_STATUS_FILE = os.path.join(CYBORG_DATA_DIR, "source_status.json")
+SOURCE_STATUS_FILE_NAME = "source_status.json"
+SOURCE_STATUS_FILE = os.path.join(CYBORG_DATA_DIR, SOURCE_STATUS_FILE_NAME)
 # Gate-отпечаток ленты («есть что новое?») — пишут/читают harvest_gate._save_sig/_last_sig.
 # Патчится в тестах: `harvest.STATE_FILE = tmp` (фасадный алиас).
 HARVEST_STATE_FILE = os.path.join(CYBORG_DATA_DIR, "harvest_state.json")
@@ -139,6 +140,9 @@ DEFAULT_RANK_KEEP = 3
 DEFAULT_SOURCE_N = SOURCE_N  # collect_source бюджет
 DEFAULT_READ_MIN_SCORE = 8.0
 DEFAULT_KEEP_MIN_SCORE = 0.6
+# Границы шкалы score идей (0..10).
+SCORE_MIN = 0.0
+SCORE_MAX = 10.0
 
 # Каналы под тематику kiborg (тех/AI/pet-проекты) — НЕ список darbot (тот про новости/политику).
 # @tproger (стартовый, подтверждён живым смоуком 2026-07-12) + 20 AI-каналов из папки юзера
@@ -248,6 +252,7 @@ PANEL_CLOCK_FMT = "%H:%M:%S"
 
 # === HTTP-константы --------------------------------------------------------
 # OpenAI-совместимые провайдеры ждут application/json + Bearer; z.ai — application/json + x-api-key.
+PYTHONIOENCODING_UTF8 = "utf-8"  # env-переменная для child-процессов, чтобы stdin/stdout были UTF-8
 HTTP_HEADER_CONTENT_TYPE = "Content-Type"
 HTTP_HEADER_AUTHORIZATION = "Authorization"
 HTTP_HEADER_CONTENT_LENGTH = "Content-Length"
@@ -677,6 +682,12 @@ SHADOW_METRICS_FILE = "shadow_metrics.jsonl"
 ORACLE_PLAN_EXT = ".md"
 # Имя индексного файла Oracle (внутри ORACLES_DIR).
 ORACLE_INDEX_FILE = "index.md"
+# Имена статики панели v1 (старый пульт, оставлен для обратной совместимости).
+PANEL_V1_INDEX_FILE = "index.html"
+PANEL_V1_BODIES_FILE = "bodies.js"
+# Роуты статики панели v2 (новый пульт).
+PANEL_V2_STATIC_ROUTES = ("/", "/index.html", "/style.css", "/app.js")
+PANEL_V2_INDEX_FILE = "index.html"
 
 # === FEEDBACK_CORTEX (feedback_cortex.py) ===
 # Допуск при проверке сходимости clamp+renormalize (модуль итеративно стабилизирует веса).
