@@ -73,11 +73,11 @@ def _source_env():
     # enrich-вызовов за прогон удерживает потолок. Остальные репо остаются обычными title.
     if "gh_trending" in active:
         env["gh_enrich"] = True
-        env["gh_enrich_limit"] = 5
+        env["gh_enrich_limit"] = config.GH_TRENDING_ENRICH_LIMIT
     # hn_show_mix: половина бюджета HN из showstories (Show HN — реальные проекты), половина из
     # topstories (тренды). Топ HN засорён новостями/некрологами; Show HN — чистое проектное топливо.
     if "hn" in active:
-        env["hn_show_mix"] = True
+        env["hn_show_mix"] = config.HN_SHOW_MIX_DEFAULT
     # Встроенный источник «Сам Киборг» не зависит от пользовательских папок:
     # он всегда смотрит только на корень этого проекта. Это отдельное сырьё,
     # поэтому обычные ленты продолжают работать и смешиваться с ним.

@@ -129,6 +129,10 @@ ALL_FEEDS = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "self"]
 # Дефолтный набор включённых лент (когда файла настроек ещё нет). Как было в harvest.SOURCES:
 # только telegram — лично курированный юзером источник.
 DEFAULT_FEEDS = ["telegram"]
+# Сколько репозиториев GitHub Trending обогащать description через API (лимит 60/час для IP без токена).
+GH_TRENDING_ENRICH_LIMIT = 5
+# HN: смешивать showstories + topstories (True) или только topstories (False).
+HN_SHOW_MIX_DEFAULT = True
 
 # === СОВЕТ СОВЕТНИКОВ (council_config) ===
 # Доступные советники при отборе идей. Порядок важен для фильтрации "unknown" в save().
@@ -644,8 +648,6 @@ REDDIT_TOP_URL = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
 LOBSTERS_HOT_URL = "https://lobste.rs/hottest.json"
 GH_TRENDING_URL = "https://github.com/trending"
 GH_REPO_API_URL = "https://api.github.com/repos/{owner}/{repo}"
-# GitHub Trending: сколько репо обогащать description через API (лимит 60/час для IP без токена).
-GH_TRENDING_ENRICH_LIMIT = 5
 # Таймаут git ls-files внутри _files_git_walk (сек).
 FILES_GIT_LSFILES_TIMEOUT = 8
 # Максимальный размер файла-папки-источника (байт), который читаем.
