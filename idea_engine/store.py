@@ -35,7 +35,7 @@ def state_lock(path, timeout=5.0, poll=0.03):
     (держат / стейл после краша) → ПРОХОДИМ без лока (дедлока НЕТ, редкий стейл сам разберётся).
     Полной сериализации не обещаем — это безопасное СМЯГЧЕНИЕ окна гонки. Чужой лок при проходе НЕ
     трогаем (снимаем только свой)."""
-    lockpath = path + ".lock"
+    lockpath = path + config.TG_LOCK_SUFFIX
     fd, waited = None, 0.0
     while waited < timeout:
         try:
@@ -114,7 +114,7 @@ class Store:
         # tmp с pid: state.json реально пишут РАЗНЫЕ процессы (живой deliver + триаж-спавн с пульта),
         # уникальное имя снимает гонку за общий .tmp. (Lost-update это НЕ лечит — нужен замок в serve.)
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        tmp = f"{self.path}.{os.getpid()}.tmp"
+        tmp = f"{self.path}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
         try:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
