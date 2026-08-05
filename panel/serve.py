@@ -4,10 +4,10 @@
   - разобрать идею (take/later/trash) — через idea_engine/run.py status
   - запустить прогон — через cyborg/run.py "<цель>" (вывод стримится в браузеру)
 
-Только stdlib, без venv. Слушает ТОЛЬКО 127.0.0.1. Ключ LLM не читает —
+Только stdlib, без venv. Слушает ТОЛЬКО loopback. Ключ LLM не читает —
 проверяет лишь его наличие через ask_llm.available().
 
-Запуск:  python M:/projects/kiborg/panel/serve.py   →  http://127.0.0.1:8737
+Запуск:  python panel/serve.py   →  http://{config.PANEL_HOST}:{config.PANEL_PORT}
 """
 
 # isort: skip_file
@@ -63,7 +63,7 @@ CYBORG = config.CYBORG_DIR  # каталог cyborg/ — subprocess cwd + чте
 IDEA = config.IDEA_ENGINE_DIR  # каталог idea_engine/ — subprocess cwd (status инбокса)
 REGISTRY = config.ORGANS_CATALOG  # внешний каталог органов (только прод-машина, на CI нет)
 LAB_ROUTER = config.LAB_ROUTER_FILE  # feature-lab статус (mutable — патчится в test_serve)
-PORT = config.PANEL_PORT  # 8737, локальный HTTP на 127.0.0.1
+PORT = config.PANEL_PORT  # локальный HTTP на loopback
 RUN_TIMEOUT = config.RUN_TIMEOUT_SEC  # watchdog на прогон (1200с = 20 мин)
 AUTO_FILE = config.AUTO_JSON  # рубильник авто-режима (mutable — патчится в test_serve/test_serve_routes)
 
