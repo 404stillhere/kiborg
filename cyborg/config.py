@@ -601,7 +601,8 @@ REJECTED_FILE = "rejected.json"
 REJECTED_KEY = "rejected"
 # Append-only журнал действий триажа (сигнал Feedback Cortex).
 TRIAGE_EVENTS_FILE_NAME = "triage_events.jsonl"
-# Потолок памяти отклонённых (файл не растёт бесконечно).
+# Дубль для модулей cyborg/, которым удобнее читать как «файл в data/» (feedback_cortex).
+TRIAGE_EVENTS_FILE = TRIAGE_EVENTS_FILE_NAME
 REJECTED_MAX_ITEMS = 200
 # Сколько последних подавать генератору/судье как «не повторяй» (промпт не раздуть).
 REJECTED_CONTEXT_N = 25
