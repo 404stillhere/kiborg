@@ -18,7 +18,7 @@ from cyborg import config  # noqa: E402
 
 
 def _load(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
         return json.load(f)
 
 

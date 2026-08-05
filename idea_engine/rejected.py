@@ -27,7 +27,7 @@ _CONTEXT_N = config.REJECTED_CONTEXT_N  # сколько подавать ген
 
 def _load():
     try:
-        with open(PATH, encoding="utf-8") as f:
+        with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)
         r = d.get("rejected")
         return r if isinstance(r, list) else []
@@ -41,7 +41,7 @@ def _save(items):
     os.makedirs(DATA, exist_ok=True)
     tmp = f"{PATH}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"rejected": items[-_MAX:]}, f, ensure_ascii=False, indent=2)
         os.replace(tmp, PATH)
     except Exception:

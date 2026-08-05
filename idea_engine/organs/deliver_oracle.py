@@ -56,7 +56,7 @@ def _find_duplicate(slug, goal, since):
             continue
         if mtime < since:
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding=config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_REPLACE)
         m = re.search(r"\*\*Цель:\*\*\s*(.+?)(?:\r?\n|\r)", text)
         if not m:
             continue
@@ -169,7 +169,7 @@ def _append_to_index(entry):
         header = "# Индекс планов Oracle\n\n"
         _atomic_write(INDEX_PATH, header + entry + "\n")
     else:
-        with open(INDEX_PATH, "a", encoding="utf-8") as f:
+        with open(INDEX_PATH, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(entry + "\n")
 
 
@@ -181,7 +181,7 @@ def _append_inbox_card(slug, plan, goal, plan_path):
             f"    - проект: `{os.path.basename(plan_path.parent)}`\n"
             f"    - план: `{plan_path}`\n"
         )
-        with open(INBOX_PATH, "a", encoding="utf-8") as f:
+        with open(INBOX_PATH, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(card)
         return True
     except Exception:
@@ -198,6 +198,6 @@ def _short(text, max_len=60):
 def _atomic_write(path, text):
     os.makedirs(Path(path).parent, exist_ok=True)
     tmp = str(path) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(text)
     os.replace(tmp, path)

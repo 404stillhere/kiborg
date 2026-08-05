@@ -30,7 +30,7 @@ LATER_PATH = os.path.join(DATA, config.LATER_FILE)
 def _load(path):
     """Прочитать {<key>: [...]} с диска. Нет файла / битый / не-dict → []."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)
     except Exception:
         return []
@@ -49,7 +49,7 @@ def _save(path, items, key):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({key: items}, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
     except Exception:

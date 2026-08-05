@@ -45,7 +45,7 @@ CFG = {
 
 def _seed_brain(seed_path):
     """Файл со строками JSON -> callable(prompt)->str. Стенд-ин ask_llm до ключа."""
-    with open(seed_path, encoding="utf-8") as f:
+    with open(seed_path, encoding=config.HTTP_CHARSET_UTF8) as f:
         blob = f.read()
     return lambda _prompt: blob
 
@@ -115,7 +115,7 @@ def _write_inbox(store):
         lines.append("_пока пусто_")
     lines.append("")
     os.makedirs(DATA, exist_ok=True)
-    with open(INBOX, "w", encoding="utf-8") as f:
+    with open(INBOX, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("\n".join(lines) + "\n")
 
 
@@ -126,7 +126,7 @@ def _notify(store, info):
         msg = f"tick {t}: режим A — добавлено идей {info['added']} (мозг {info['brain']}{', DEGRADED' if info['degraded'] else ''})"
     else:
         msg = f"tick {t}: режим B — очередь полна, напоминание доделать ({'есть' if info['nudge'] else 'нет'})"
-    with open(NOTIFY, "a", encoding="utf-8") as f:
+    with open(NOTIFY, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(msg + "\n")
 
 
@@ -201,7 +201,7 @@ def _cli(argv):
                     pass  # журнал — best-effort, триаж уже сохранён
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")
     elif cmd == "show":
-        print(open(INBOX, encoding="utf-8").read() if os.path.exists(INBOX) else "(инбокса ещё нет)")
+        print(open(INBOX, encoding=config.HTTP_CHARSET_UTF8).read() if os.path.exists(INBOX) else "(инбокса ещё нет)")
     else:
         print("неизвестная команда:", cmd)
         print(__doc__)

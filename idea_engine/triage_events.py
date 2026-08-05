@@ -42,7 +42,7 @@ def append(event):
         event = {**event, "ts": datetime.datetime.now().isoformat(timespec="seconds")}
     parent = os.path.dirname(PATH) or "."
     os.makedirs(parent, exist_ok=True)
-    with open(PATH, "a", encoding="utf-8") as f:
+    with open(PATH, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
@@ -51,7 +51,7 @@ def load():
     if not os.path.exists(PATH):
         return []
     out = []
-    with open(PATH, encoding="utf-8") as f:
+    with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
         for line in f:
             line = line.strip()
             if not line:
