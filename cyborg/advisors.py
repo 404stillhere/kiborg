@@ -27,7 +27,7 @@ import mind
 # --- пути к внешним модулям-органам (провод к другим проектам) ---------------
 _ASK_LLM_JS = os.environ.get(config.ASK_LLM_JS_ENV, config.DEFAULT_ASK_LLM_JS)
 _ORCHESTRA_PY = os.environ.get(config.ORCHESTRA_PY_ENV, config.DEFAULT_ORCHESTRA_PY)
-_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, "node")
+_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, config.DEFAULT_NODE_EXE)
 
 
 _TEXT_FIELDS = ("title", "text", "value", "name")

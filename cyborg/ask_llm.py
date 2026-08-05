@@ -21,7 +21,7 @@ import keychain
 import native_llm
 import zai_ask
 
-_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, "node")
+_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, config.DEFAULT_NODE_EXE)
 _ORGAN_JS = os.environ.get(config.ASK_LLM_JS_ENV, config.DEFAULT_ASK_LLM_JS)
 _TIMEOUT_MS = int(os.environ.get(config.ASK_LLM_TIMEOUT_MS_ENV, str(config.DEFAULT_LLM_TIMEOUT_MS)))
 
