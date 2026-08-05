@@ -49,7 +49,7 @@ def _log_run(out):
     line += "\n"
     # защита класса: даже если в результат/цель просочился секрет — в лог он не ляжет
     runs_path = os.path.join(DATA, config.RUNS_MD_FILE)
-    with open(runs_path, "a", encoding="utf-8") as f:
+    with open(runs_path, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(scrub_secrets.scrub_text(line))
     # ротация: обрезать до config.MAX_LOG_ENTRIES, если вырос (общий хелпер с harvest_log)
     from harvest_log import _rotate_if_needed

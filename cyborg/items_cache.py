@@ -65,7 +65,7 @@ def _item_hash(item):
 def _load():
     """Прочитать кэш с диска. Битый/отсутствующий → {'runs': []} (всё свежее)."""
     try:
-        with open(PATH, encoding="utf-8") as f:
+        with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)
     except Exception:
         return {"runs": []}
@@ -82,7 +82,7 @@ def _atomic_write(path, text):
     parent = os.path.dirname(path) or "."
     os.makedirs(parent, exist_ok=True)
     tmp = path + config.ATOMIC_TMP_SUFFIX
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(text)
     os.replace(tmp, path)
 

@@ -36,7 +36,7 @@ def _load_darbot_tg_creds():
     if not os.path.exists(darbot_env):
         return None, None
     vals = {}
-    with open(darbot_env, encoding="utf-8") as f:
+    with open(darbot_env, encoding=config.HTTP_CHARSET_UTF8) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:

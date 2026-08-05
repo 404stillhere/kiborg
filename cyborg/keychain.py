@@ -39,7 +39,7 @@ def _read_env_file(fp):
     """KEY=value -> dict. Пустые значения и комментарии игнорируются. Кавычки снимаются."""
     out = {}
     try:
-        with open(fp, encoding="utf-8") as f:
+        with open(fp, encoding=config.HTTP_CHARSET_UTF8) as f:
             raw = f.read()
     except Exception:
         return out
@@ -73,7 +73,7 @@ def _is_gitignored(file_path):
         return False
     name = Path(file_path).name
     try:
-        lines = gi.read_text(encoding="utf-8").splitlines()
+        lines = gi.read_text(encoding=config.HTTP_CHARSET_UTF8).splitlines()
     except Exception:
         return False
     for line in lines:

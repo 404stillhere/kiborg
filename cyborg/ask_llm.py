@@ -41,7 +41,7 @@ last_provider = ""
 def _load_provider():
     """Прочитать сохранённого провайдера из файла (используется при старте)."""
     try:
-        with open(config.LAST_PROVIDER_FILE, encoding="utf-8") as f:
+        with open(config.LAST_PROVIDER_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:
             return json.load(f).get("provider", "") or ""
     except Exception:
         return ""
@@ -52,7 +52,7 @@ def _save_provider(provider):
     path = config.LAST_PROVIDER_FILE
     tmp = path + config.ATOMIC_TMP_SUFFIX
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"provider": provider or "", "ts": time.time()}, f, ensure_ascii=False)
         os.replace(tmp, path)
     except Exception:
@@ -99,7 +99,7 @@ def _run_chain(chain, prompt, timeout_ms, temperature=config.INTUITION_TEMPERATU
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            encoding="utf-8",
+            encoding=config.HTTP_CHARSET_UTF8,
         )
         stdout, stderr = proc.communicate(
             input=json.dumps(payload),

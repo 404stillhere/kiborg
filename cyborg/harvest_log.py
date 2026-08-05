@@ -81,7 +81,7 @@ def _log(goal, out):
         line += f" | ⚠ {dn}"  # деградация видна в истории пульта, не только в консоли
     line += "\n"
     runs_path = config.RUNS_MD
-    with open(runs_path, "a", encoding="utf-8") as f:
+    with open(runs_path, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(harvest.scrub_secrets.scrub_text(line))
     _rotate_if_needed(runs_path)
     # АЛЕРТЫ при семантических сбоях (не python-traceback — те видны по rc≠0). brain_down =
@@ -102,7 +102,7 @@ def _rotate_if_needed(path):
     harvest_gate, чтобы обрыв записи не бил файл). Нет файла — no-op (первый прогон).
     Идемпотентна: файлы ≤ лимита не трогает."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             lines = f.readlines()
     except FileNotFoundError:
         return  # первый прогон / файл удалён вручную — нечего ротировать
@@ -111,6 +111,6 @@ def _rotate_if_needed(path):
     keep = "".join(lines[-config.MAX_LOG_ENTRIES :])
     # атомарно: во временный рядом + os.replace (обрыв записи НЕ обрежет runs.md)
     tmp = path + config.ATOMIC_TMP_SUFFIX
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(keep)
     os.replace(tmp, path)

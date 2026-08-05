@@ -130,7 +130,7 @@ def load():
     НЕ чистит TTL (read-only) — чистка только в _save (write-path). count_fresh/filter_fresh
     читают без мутации, TTL-уборка им не нужна — она и так случится при ближайшей записи."""
     try:
-        with open(PATH, encoding="utf-8") as f:
+        with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             return _migrate(json.load(f))
     except Exception:
         return {}
@@ -154,7 +154,7 @@ def _save(seen):
     os.makedirs(DATA, exist_ok=True)
     seen = _prune(seen)
     tmp = PATH + config.ATOMIC_TMP_SUFFIX
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         json.dump(seen, f, ensure_ascii=False, sort_keys=True)
     os.replace(tmp, PATH)
 

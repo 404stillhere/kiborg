@@ -94,7 +94,7 @@ if __name__ == "__main__":
     import sys
 
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding=config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_REPLACE)
     except Exception:
         pass
     sys.exit(main(sys.argv[1:]))

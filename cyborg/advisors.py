@@ -189,7 +189,7 @@ class AskLlmAdvisor:
         try:
             proc = subprocess.run(
                 [self._node, self._js], input=json.dumps(payload),
-                capture_output=True, text=True, encoding="utf-8",
+                capture_output=True, text=True, encoding=config.HTTP_CHARSET_UTF8,
                 timeout=max(config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC, budget_ms // 1000 + config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC),
             )  # весь бюджет цепочки + запас
         except Exception:
