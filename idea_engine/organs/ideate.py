@@ -188,7 +188,7 @@ def run(inputs, env):
     env = env or {}
     inputs = inputs or {}
     items = inputs.get("items", [])
-    k = int(env.get("k", 3))
+    k = int(env.get("k", config.DEFAULT_GEN_K))
     llm = env.get("llm")
     if callable(llm):
         op = env.get("on_progress")  # опц. живой суб-прогресс (один вызов, но ~5с — даём знать)
