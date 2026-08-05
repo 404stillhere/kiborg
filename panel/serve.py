@@ -629,7 +629,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _send(self, code, body, ctype=config.HTTP_MEDIA_TYPE_JSON_UTF8):
-        raw = body if isinstance(body, bytes) else body.encode("utf-8")
+        raw = body if isinstance(body, bytes) else body.encode(config.HTTP_CHARSET_UTF8)
         self.send_response(code)
         self.send_header(config.HTTP_HEADER_CONTENT_TYPE, ctype)
         self.send_header(config.HTTP_HEADER_CONTENT_LENGTH, str(len(raw)))

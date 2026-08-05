@@ -131,7 +131,7 @@ def _gh_trending(n, timeout, env):
         },
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        html = r.read().decode("utf-8", errors="replace")
+        html = r.read().decode(config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_REPLACE)
     blocks = re.findall(r'<h2[^>]*class="[^"]*lh-condensed[^"]*"[^>]*>(.*?)</h2>', html, re.DOTALL)
     items = []
     try:
@@ -195,7 +195,7 @@ def _telegram(n, timeout, env):
     payload = json.dumps({
         "inputs": {"channels": list(channels), "limit_per_channel": limit_per_channel},
         "env": {"TELEGRAM_API_ID": api_id, "TELEGRAM_API_HASH": api_hash, "TELEGRAM_SESSION": session},
-    }).encode("utf-8")
+    }).encode(config.HTTP_CHARSET_UTF8)
     # timeout шире, чем у HTTP-источников: логин pyrogram-клиента + запуск отдельного питона —
     # дороже одного GET; env["telegram_timeout"] можно поднять отдельно, не трогая общий timeout.
     tg_timeout = float(env.get("telegram_timeout", max(timeout, 25)))
@@ -615,7 +615,7 @@ def _files_item_id(path, base, headline, context=""):
     # Контекст входит в ID: изменение кода ниже неизменной первой строки должно снова стать
     # «свежим» сырьём. Иначе seen_items навсегда скрывал бы доработанный файл от саморефлексии.
     identity = f"{root_label}/{rel}\n{headline or ''}\n{context or ''}".casefold()
-    return "f2:" + hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
+    return "f2:" + hashlib.sha1(identity.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[:16]
 
 
 _FILES_OVERVIEW_NAMES = {
@@ -825,7 +825,7 @@ def _files_project_map(records):
             "Эта карта описывает весь корень; фрагменты ниже — углубление в выбранные файлы.",
         ]
     )[: config.FILES_CONTEXT_CHARS]
-    digest = hashlib.sha1("\n".join(sorted(fingerprint)).encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha1("\n".join(sorted(fingerprint)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()[:16]
     return {
         "title": f"[КАРТА ПРОЕКТА] {project}",
         "context": context,

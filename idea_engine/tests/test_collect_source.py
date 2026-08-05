@@ -174,7 +174,7 @@ class TestNewSources(unittest.TestCase):
                 return False
 
             def read(self):
-                return html.encode("utf-8")
+                return html.encode(config.HTTP_CHARSET_UTF8)
 
         collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
         out = collect_source.run({}, {"n": 5, "source": "gh_trending"})
@@ -214,7 +214,7 @@ class TestNewSources(unittest.TestCase):
                 return False
 
             def read(self):
-                return html.encode("utf-8")
+                return html.encode(config.HTTP_CHARSET_UTF8)
 
         collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
 
@@ -245,7 +245,7 @@ class TestNewSources(unittest.TestCase):
                 return False
 
             def read(self):
-                return html.encode("utf-8")
+                return html.encode(config.HTTP_CHARSET_UTF8)
 
         calls = []
         collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
@@ -279,7 +279,7 @@ class TestNewSources(unittest.TestCase):
                 return False
 
             def read(self):
-                return html.encode("utf-8")
+                return html.encode(config.HTTP_CHARSET_UTF8)
 
         collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
         collect_source._get = lambda url, timeout: (_ for _ in ()).throw(OSError("rate limited"))
@@ -378,7 +378,7 @@ class TestTelegramSource(unittest.TestCase):
                 "items": [{"channel": "@a", "id": 5, "text": "Идея из ТГ\nвторая строка", "url": "https://t.me/a/5"}],
                 "warnings": [],
             }
-            return _FakeProc(0, json.dumps(payload).encode("utf-8"))
+            return _FakeProc(0, json.dumps(payload).encode(config.HTTP_CHARSET_UTF8))
 
         collect_source.subprocess.run = fake_run
         out = collect_source.run({}, self._creds_env())
@@ -399,7 +399,7 @@ class TestTelegramSource(unittest.TestCase):
     def test_all_channels_unresolved_degrades(self):
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
             payload = {"items": [], "warnings": ["@a: Username not found: a"]}
-            return _FakeProc(0, json.dumps(payload).encode("utf-8"))
+            return _FakeProc(0, json.dumps(payload).encode(config.HTTP_CHARSET_UTF8))
 
         collect_source.subprocess.run = fake_run
         out = collect_source.run({}, self._creds_env())
@@ -414,7 +414,7 @@ class TestTelegramSource(unittest.TestCase):
 
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
             payload = {"items": [{"channel": "@a", "id": 1, "text": "TG idea"}], "warnings": []}
-            return _FakeProc(0, json.dumps(payload).encode("utf-8"))
+            return _FakeProc(0, json.dumps(payload).encode(config.HTTP_CHARSET_UTF8))
 
         collect_source._get = fake_get
         collect_source.subprocess.run = fake_run
@@ -434,7 +434,10 @@ class TestTelegramSource(unittest.TestCase):
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
             captured["payload"] = json.loads(input.decode(config.HTTP_CHARSET_UTF8))
             return _FakeProc(
-                0, json.dumps({"items": [{"channel": "@a", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8")
+                0,
+                json.dumps({"items": [{"channel": "@a", "id": 1, "text": "t"}], "warnings": []}).encode(
+                    config.HTTP_CHARSET_UTF8
+                ),
             )
 
         collect_source.subprocess.run = fake_run
@@ -451,7 +454,10 @@ class TestTelegramSource(unittest.TestCase):
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
             captured["payload"] = json.loads(input.decode(config.HTTP_CHARSET_UTF8))
             return _FakeProc(
-                0, json.dumps({"items": [{"channel": "@x", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8")
+                0,
+                json.dumps({"items": [{"channel": "@x", "id": 1, "text": "t"}], "warnings": []}).encode(
+                    config.HTTP_CHARSET_UTF8
+                ),
             )
 
         collect_source.subprocess.run = fake_run
@@ -514,7 +520,7 @@ class _TmpDirTest(unittest.TestCase):
         p = os.path.join(self.tmp, rel)
         os.makedirs(os.path.dirname(p) or self.tmp, exist_ok=True)
         mode = "wb" if isinstance(content, bytes) else "w"
-        with open(p, mode, **({} if mode == "wb" else {"encoding": "utf-8"})) as f:
+        with open(p, mode, **({} if mode == "wb" else {"encoding": config.HTTP_CHARSET_UTF8})) as f:
             f.write(content)
         return p
 
@@ -691,13 +697,13 @@ class TestFilesSource(_TmpDirTest):
         self.assertEqual(collect_source._files_headline(p), "Coding standards")
 
     def test_headline_skips_pep263_coding(self):
-        p = self._write("m2.py", "# -*- coding: utf-8 -*-\n# настоящий смысл\nx=1\n")
+        p = self._write("m2.py", f"# -*- coding: {config.HTTP_CHARSET_UTF8} -*-\n# настоящий смысл\nx=1\n")
         self.assertEqual(collect_source._files_headline(p), "настоящий смысл")
 
     def test_headline_handles_utf8_bom(self):
         p = os.path.join(self.tmp, "bom.md")
         with open(p, "wb") as f:
-            f.write("﻿# Заголовок с BOM\nтекст\n".encode("utf-8"))
+            f.write("﻿# Заголовок с BOM\nтекст\n".encode(config.HTTP_CHARSET_UTF8))
         self.assertEqual(collect_source._files_headline(p), "Заголовок с BOM")
 
     def test_walk_bounded_by_scan_cap(self):
