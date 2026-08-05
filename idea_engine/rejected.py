@@ -28,7 +28,7 @@ def _load():
     try:
         with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)
-        r = d.get("rejected")
+        r = d.get(config.REJECTED_KEY)
         return r if isinstance(r, list) else []
     except Exception:
         return []
@@ -41,7 +41,7 @@ def _save(items):
     tmp = f"{PATH}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
     try:
         with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
-            json.dump({"rejected": items[-_MAX:]}, f, ensure_ascii=False, indent=2)
+            json.dump({config.REJECTED_KEY: items[-_MAX:]}, f, ensure_ascii=False, indent=2)
         os.replace(tmp, PATH)
     except Exception:
         if os.path.exists(tmp):
@@ -83,7 +83,7 @@ def count():
 
 def load():
     """Полный список для пульта, если понадобится показать."""
-    return {"rejected": _load()}
+    return {config.REJECTED_KEY: _load()}
 
 
 if __name__ == "__main__":

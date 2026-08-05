@@ -596,6 +596,8 @@ ATOMIC_TMP_PID_SUFFIX = "{pid}.tmp"
 # === REJECTED / TRIAGE_EVENTS (idea_engine/rejected.py, triage_events.py) ===
 # Мастер-файл отклонённых идей (title+why) — учит генератор/судью.
 REJECTED_FILE = "rejected.json"
+# Ключ внутри rejected.json.
+REJECTED_KEY = "rejected"
 # Append-only журнал действий триажа (сигнал Feedback Cortex).
 TRIAGE_EVENTS_FILE_NAME = "triage_events.jsonl"
 # Потолок памяти отклонённых (файл не растёт бесконечно).
