@@ -461,9 +461,9 @@ def _read_inbox():
             "cap": s.get("cap", 0),
             "tick": s.get("tick", 0),
             "ideas": s.get("ideas", []),  # только open (остальные вырезаны при триаже)
-            "taken": triage_store.load(triage_store.TAKEN_PATH).get("taken", []),
-            "later": triage_store.load(triage_store.LATER_PATH).get("later", []),
-            "rejected": rejected.load().get("rejected", []),
+            "taken": triage_store.load(triage_store.TAKEN_PATH).get(config.TRIAGE_STORE_TAKEN_KEY, []),
+            "later": triage_store.load(triage_store.LATER_PATH).get(config.TRIAGE_STORE_LATER_KEY, []),
+            "rejected": rejected.load().get(config.REJECTED_KEY, []),
             "finish": s.get("finish"),
             "seen_count": len(s.get("seen", [])),
         }
