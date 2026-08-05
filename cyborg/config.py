@@ -338,6 +338,7 @@ AUTO_INTERVAL_DEFAULT_MINUTES = 30
 # но не запускает прогон чаще заданного interval_min.
 AUTO_LOOP_SLEEP_SECONDS = 30
 # Окно lock-monitor в /api/health (минуты). Сколько времени считаем "недавними" таймауты state_lock.
+# Дублирует LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES — оставлено отдельно, т.к. патчится в тестах независимо.
 PANEL_HEALTH_LOCK_WINDOW_MINUTES = 60
 # === SEEN ITEMS (дедуп сырых заголовков) ===
 # Время жизни записи "source:id" → unix-ts (дней). Старше — выкидывается при mark_seen/_save.

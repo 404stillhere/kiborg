@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import config
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-_DATETIME_FMT = getattr(config, "DATETIME_FMT", "%Y-%m-%d %H:%M:%S")
 TAKEN_PATH = os.path.join(DATA, config.TAKEN_FILE)
 LATER_PATH = os.path.join(DATA, config.LATER_FILE)
 
@@ -77,7 +76,7 @@ def add(path, idea):
     if iid is not None and any(it.get("id") == iid for it in items):
         return items  # уже разобрана — не дублируем
     idea = dict(idea)  # не мутируем вызывающий словарь
-    idea.setdefault("triaged_ts", datetime.datetime.now().strftime(_DATETIME_FMT))
+    idea.setdefault("triaged_ts", datetime.datetime.now().strftime(config.DATETIME_FMT))
     items.append(idea)
     _save(path, items, key)
     return items

@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import config
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-_DATETIME_FMT = getattr(config, "DATETIME_FMT", "%Y-%m-%d %H:%M:%S")
 PATH = os.path.join(DATA, config.REJECTED_FILE)
 
 _MAX = config.REJECTED_MAX_ITEMS  # помним последние N отклонённых (файл не растёт бесконечно)
@@ -66,7 +65,7 @@ def add(title, why=""):
         {
             "title": title[: config.REJECTED_TITLE_MAX_CHARS],
             "why": (why or "")[: config.REJECTED_WHY_MAX_CHARS],
-            "ts": datetime.datetime.now().strftime(_DATETIME_FMT),
+            "ts": datetime.datetime.now().strftime(config.DATETIME_FMT),
         }
     )
     _save(items)
