@@ -46,7 +46,8 @@ SOURCE_STATUS_FILE_NAME = "source_status.json"
 SOURCE_STATUS_FILE = os.path.join(CYBORG_DATA_DIR, SOURCE_STATUS_FILE_NAME)
 # Gate-отпечаток ленты («есть что новое?») — пишут/читают harvest_gate._save_sig/_last_sig.
 # Патчится в тестах: `harvest.STATE_FILE = tmp` (фасадный алиас).
-HARVEST_STATE_FILE = os.path.join(CYBORG_DATA_DIR, "harvest_state.json")
+HARVEST_STATE_FILE_NAME = "harvest_state.json"
+HARVEST_STATE_FILE = os.path.join(CYBORG_DATA_DIR, HARVEST_STATE_FILE_NAME)
 # Курсор ротации finish_step («доделай») — пишет/читает wiring_finish._run_finish.
 # Патчится в тестах: `wiring._CURSOR_FILE = tmp` (фасадный алиас).
 CURSOR_FILE = os.path.join(CYBORG_DATA_DIR, "finish_cursor.json")
@@ -526,6 +527,17 @@ RANK_IDEAS_REF_TITLE_MAX_CHARS = 100
 # === WIRING_SCRUB (wiring_scrub.py) ===
 # Сколько source_refs сканируем на утечку секретов при финальной чистке идей.
 WIRING_SCRUB_MAX_REFS = 4
+
+# === STRESS-ТЕСТ (stress/stress_test_harvest.py) ===
+# Дефолтное число прогонов stress-теста (аргумент по умолчанию и верхняя граница clamp'а).
+STRESS_DEFAULT_ITERATIONS = 50
+STRESS_MAX_ITERATIONS = 1000
+# Префикс временной директории, куда редиректятся state/data/runs.
+STRESS_TMPDIR_PREFIX = "stress_"
+# Источник и заголовки фейковых items в моке collect_source.run.
+STRESS_FAKE_SOURCE = "stress"
+STRESS_FAKE_TITLE_TEMPLATE = "stub-idea-{i}"
+STRESS_FAKE_URL_TEMPLATE = "http://example.com/{i}"
 
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
