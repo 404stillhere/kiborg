@@ -42,7 +42,7 @@ _GH_ENRICH_DEFAULT_LIMIT = config.GH_TRENDING_ENRICH_LIMIT  # GitHub без то
 
 def _get(url_or_req, timeout):
     with urllib.request.urlopen(url_or_req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+        return json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
 
 
 def _hn_fetch_ids(list_url, n, timeout):
@@ -202,8 +202,8 @@ def _telegram(n, timeout, env):
     proc = subprocess.run([python_exe, _TG_RUNNER, "--rpc"], input=payload,
                            capture_output=True, timeout=tg_timeout)
     if proc.returncode != 0:
-        raise ValueError(f"telegram: rpc exit {proc.returncode}: {proc.stderr.decode('utf-8', 'replace')[: config.TELEGRAM_RPC_ERROR_MAX_CHARS]}")
-    result = json.loads(proc.stdout.decode("utf-8"))
+        raise ValueError(f"telegram: rpc exit {proc.returncode}: {proc.stderr.decode(config.HTTP_CHARSET_UTF8, config.HTTP_DECODE_ERRORS_REPLACE)[: config.TELEGRAM_RPC_ERROR_MAX_CHARS]}")
+    result = json.loads(proc.stdout.decode(config.HTTP_CHARSET_UTF8))
 
     items = []
     for it in result.get("items", []):
@@ -329,12 +329,12 @@ def _files_decode(raw):
         if idx == 0 and line.startswith(b"\xef\xbb\xbf"):
             line = line[3:]
         try:
-            decoded.append(line.decode("utf-8"))
+            decoded.append(line.decode(config.HTTP_CHARSET_UTF8))
         except UnicodeDecodeError:
             try:
-                decoded.append(line.decode("cp1251"))
+                decoded.append(line.decode(config.FILES_DECODE_ENCODING_CP1251))
             except UnicodeDecodeError:
-                decoded.append(line.decode("latin-1", errors="replace"))
+                decoded.append(line.decode(config.FILES_DECODE_ENCODING_LATIN1, errors=config.HTTP_DECODE_ERRORS_REPLACE))
     return "\n".join(decoded)
 
 
@@ -566,7 +566,7 @@ def _files_git_walk(root):
     for raw in proc.stdout.split(b"\0"):
         if not raw:
             continue
-        rel = raw.decode("utf-8", errors="surrogateescape")
+        rel = raw.decode(config.HTTP_CHARSET_UTF8, errors=config.HTTP_DECODE_ERRORS_SURROGATEESCAPE)
         path = os.path.join(root, *rel.split("/"))
         if os.path.isfile(path) and _files_path_allowed(path, root):
             paths.append(path)

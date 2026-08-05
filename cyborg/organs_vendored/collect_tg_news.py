@@ -125,12 +125,13 @@ def _rpc_main():
     import json
     import sys
 
-    payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    _UTF8 = "utf-8"
+    payload = json.loads(sys.stdin.buffer.read().decode(_UTF8))
     try:
         result = run(payload.get("inputs", {}), payload.get("env", {}))
     except Exception as e:
         result = {"items": [], "warnings": [f"rpc: {type(e).__name__}: {e}"]}
-    sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+    sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode(_UTF8))
 
 
 if __name__ == "__main__":
