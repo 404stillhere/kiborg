@@ -42,7 +42,7 @@ MIN_WEIGHT = config.FEEDBACK_CORTEX_MIN_WEIGHT  # никто не выключа
 UNIFORM = 1.0 / config.FEEDBACK_CORTEX_N_ADVISORS  # равномерное распределение
 
 ALL_ADVISORS = list(config.ALL_ADVISORS)
-TRIAGE_ACTIONS = {"take", "later", "trash"}
+TRIAGE_ACTIONS = config.STORE_CLEARED_STATUSES
 
 
 def _is_triage_event(event):
@@ -94,9 +94,9 @@ def adapt_weights(events, current, previous_count=0, enabled=False):
         if not isinstance(ev, dict):
             continue
         action = ev.get("action")
-        if action == "take":
+        if action == config.STORE_STATUS_TAKE:
             action_sign = config.UNIT_WEIGHT
-        elif action == "trash":
+        elif action == config.STORE_STATUS_TRASH:
             action_sign = -config.UNIT_WEIGHT
         else:
             continue  # later нейтрально
