@@ -254,7 +254,7 @@ def _auto_loop():
 
 def _set_idea(idea_id, status):
     """Разбор идеи — через канонический CLI idea_engine (он же перерисует inbox.md)."""
-    if status not in ("take", "later", "trash"):
+    if status not in config.STORE_CLEARED_STATUSES:
         return {"ok": False, "msg": "статус должен быть take|later|trash"}
     # НЕ мутируем state.json, пока идёт прогон: deliver в подпроцессе пишет ТОТ ЖЕ файл, а триаж
     # делает свой read-modify-write — с одного снимка = lost-update (порчу-JSON снял atomic-write
@@ -308,7 +308,7 @@ def _purge_low_score(max_score):
 
     candidates = []
     for idea in state.get("ideas", []):
-        if idea.get("status") != "open":
+        if idea.get("status") != config.STORE_STATUS_OPEN:
             continue
         score = idea.get("score")
         if score is None:
@@ -331,7 +331,7 @@ def _purge_low_score(max_score):
 
     purged, failed = 0, []
     for idea_id in candidates:
-        r = _set_idea(idea_id, "trash")
+        r = _set_idea(idea_id, config.STORE_STATUS_TRASH)
         if r.get("ok"):
             purged += 1
         else:

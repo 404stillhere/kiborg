@@ -146,7 +146,7 @@ def _cli(argv):
         print("inbox ->", INBOX)
     elif cmd == "status":
         idea_id, st = int(argv[1]), argv[2]
-        if st not in ("take", "later", "trash"):
+        if st not in config.STORE_CLEARED_STATUSES:
             print("статус должен быть take|later|trash")
             return
         with state_lock(STATE):  # триаж пульта: замок вокруг load→set_status→save
@@ -161,7 +161,7 @@ def _cli(argv):
                 # статус в victim — забираем victim с обновлённым статусом, потом удаляем.
                 victim = next((i for i in store.data["ideas"] if i["id"] == idea_id), None)
                 if victim:
-                    if st == "trash":
+                    if st == config.STORE_STATUS_TRASH:
                         # мусор = отклонена: СУТЬ (title+why) → rejected.json — учит генератор/судью
                         # не приносить похожее. Полная идея здесь не нужна (храним суть, не архив).
                         rejected.add(victim.get("title", ""), victim.get("why", ""))
@@ -169,7 +169,7 @@ def _cli(argv):
                         # взять/позже: ПОЛНАЯ идея (id/title/why/score/born_tick/…) → taken/later,
                         # с меткой triaged_ts. Без потолка — разобранные идеи не должны теряться.
                         triage_store.add(
-                            triage_store.TAKEN_PATH if st == "take" else triage_store.LATER_PATH,
+                            triage_store.TAKEN_PATH if st == config.STORE_STATUS_TAKE else triage_store.LATER_PATH,
                             victim,
                         )
                     store.data["ideas"] = [i for i in store.data["ideas"] if i["id"] != idea_id]
