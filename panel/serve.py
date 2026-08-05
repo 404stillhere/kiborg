@@ -278,7 +278,7 @@ def _set_idea(idea_id, status):
         env=env,
     )
     out = (p.stdout or "").strip() + (p.stderr or "").strip()
-    return {"ok": p.returncode == 0 and "NOT_FOUND" not in out, "msg": out[:200]}
+    return {"ok": p.returncode == 0 and "NOT_FOUND" not in out, "msg": out[: config.PANEL_MSG_MAX_CHARS]}
 
 
 def _purge_low_score(max_score):
@@ -304,7 +304,7 @@ def _purge_low_score(max_score):
         with open(config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             state = json.load(f)
     except Exception as e:
-        return {"ok": False, "msg": f"state.json не читается: {str(e)[:200]}"}
+        return {"ok": False, "msg": f"state.json не читается: {str(e)[: config.PANEL_ERROR_MAX_CHARS]}"}
 
     candidates = []
     for idea in state.get("ideas", []):
@@ -339,7 +339,7 @@ def _purge_low_score(max_score):
             if r.get("busy"):
                 failed.append({"id": idea_id, "msg": "прогон стартовал — пропущено"})
                 break
-            failed.append({"id": idea_id, "msg": (r.get("msg") or "")[:120]})
+            failed.append({"id": idea_id, "msg": (r.get("msg") or "")[: config.PANEL_PURGE_MSG_MAX_CHARS]})
     return {
         "ok": True,
         "purged": purged,
@@ -424,7 +424,7 @@ def _health():
         with open(config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)
     except Exception as e:
-        state_err = str(e)[:200]
+        state_err = str(e)[: config.PANEL_ERROR_MAX_CHARS]
     # Источники: per-source статус из source_status.json (если есть). Упавший = есть error,
     # но только для ленты, включённой ПРЯМО СЕЙЧАС: файл статуса может помнить старый обход.
     sources = _read_source_status()
@@ -469,7 +469,7 @@ def _read_inbox():
         }
     except Exception as e:
         return {
-            "error": str(e)[:200],
+            "error": str(e)[: config.PANEL_ERROR_MAX_CHARS],
             "cap": 0,
             "tick": 0,
             "ideas": [],
@@ -497,14 +497,20 @@ def _read_registry():
                     "name": c.get("name"),
                     "project": pr,
                     "status": st,
-                    "purpose": (c.get("purpose") or "")[:220],
+                    "purpose": (c.get("purpose") or "")[: config.PANEL_CARD_PURPOSE_MAX_CHARS],
                     "needs_keys": c.get("needs_keys") or [],
                     "language": c.get("language", ""),
                 }
             )
         return {"total": len(cards), "by_status": by_status, "by_project": by_project, "cards": slim}
     except Exception as e:
-        return {"error": str(e)[:200], "total": 0, "by_status": {}, "by_project": {}, "cards": []}
+        return {
+            "error": str(e)[: config.PANEL_ERROR_MAX_CHARS],
+            "total": 0,
+            "by_status": {},
+            "by_project": {},
+            "cards": [],
+        }
 
 
 def _read_lab():
@@ -518,7 +524,7 @@ def _read_lab():
                 "status": x.get("status"),
                 "reviewed": bool(x.get("reviewed")),
                 "enabled": bool(x.get("enabled")),
-                "why": (x.get("why") or "")[:300],
+                "why": (x.get("why") or "")[: config.PANEL_CARD_WHY_MAX_CHARS],
             }
             for x in r.get("features", [])
         ]
@@ -578,7 +584,7 @@ def _read_oracles():
     except Exception:
         return []
     out.sort(key=lambda x: x["ts"], reverse=True)
-    return out[:100]
+    return out[: config.PANEL_ORACLE_LIST_MAX_ITEMS]
 
 
 def _api_state():
@@ -697,27 +703,27 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self._json(_api_state())
             except Exception as e:
-                self._json({"error": str(e)[:300]}, 500)
+                self._json({"error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         elif self.path == "/api/run":
             try:
                 with _LOCK:
                     self._json({k: RUN[k] for k in ("running", "goal", "lines", "rc")})
             except Exception as e:
-                self._json({"error": str(e)[:300]}, 500)
+                self._json({"error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         elif self.path == "/api/folders/probe":
             # проба текущих папок при загрузке пульта (счётчики не на каждом poll /api/state —
             # обход дорог; отдельный редкий вызов). Валиден ли путь + сколько в нём файлов.
             try:  # проба ВСЕХ папок (вкл+выкл) — счётчик файлов виден
                 self._json({"probe": collect_source.probe_paths(folders.all_paths())})
             except Exception as e:
-                self._json({"error": str(e)[:300]}, 500)
+                self._json({"error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         elif self.path == "/api/genparams":
             # метаданные параметров генерации (min/max/default/value для каждого) — UI строит
             # range-инпуты в drawer «Настройки». GET — чтение, POST — save/reset.
             try:
                 self._json(genparams.meta())
             except Exception as e:
-                self._json({"error": str(e)[:300]}, 500)
+                self._json({"error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         elif self.path == "/api/health":
             # healthcheck: статус ключевых компонентов для мониторинга/алертинга.
             # ok=True когда LLM-цепочка жива, state.json парсится, и НИ ОДИН источник не упал
@@ -753,15 +759,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "msg": "тело должно быть JSON-объектом"}, 400)
             return
         if self.path == "/api/run":
-            goal = str(body.get("goal") or "").replace("\n", " ").strip()[:200]
+            goal = str(body.get("goal") or "").replace("\n", " ").strip()[: config.PANEL_GOAL_MAX_CHARS]
             if not goal:
                 self._json({"ok": False, "msg": "пустая цель"}, 400)
                 return
             ok = _start_run(goal)
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/oracle":
-            goal = str(body.get("goal") or "").replace("\n", " ").strip()[:200]
-            project = str(body.get("project") or "").strip()[:500]
+            goal = str(body.get("goal") or "").replace("\n", " ").strip()[: config.PANEL_GOAL_MAX_CHARS]
+            project = str(body.get("project") or "").strip()[: config.PANEL_ORACLE_PROJECT_MAX_CHARS]
             if not goal:
                 self._json({"ok": False, "msg": "пустая цель"}, 400)
                 return
@@ -851,7 +857,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 res = _set_idea(idea_id, str(body.get("status")))
             except Exception as e:
-                res = {"ok": False, "msg": ("не вышло: " + str(e))[:200]}
+                res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
             self._json(res)
         elif self.path == "/api/ideas/purge":
             # массовый триаж: все открытые идеи с score < threshold → мусор.
@@ -864,7 +870,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 res = _purge_low_score(threshold)
             except Exception as e:
-                res = {"ok": False, "msg": ("не вышло: " + str(e))[:200]}
+                res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
             self._json(res)
         else:
             self._json({"error": "нет такого пути"}, 404)

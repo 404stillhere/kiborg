@@ -368,6 +368,15 @@ AUTO_LOOP_SLEEP_SECONDS = 30
 # Окно lock-monitor в /api/health (минуты). Сколько времени считаем "недавними" таймауты state_lock.
 # Дублирует LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES — оставлено отдельно, т.к. патчится в тестах независимо.
 PANEL_HEALTH_LOCK_WINDOW_MINUTES = 60
+# UI-ограничения длины строк в ответах пульта (обрезка для читаемости/безопасности).
+PANEL_MSG_MAX_CHARS = 200
+PANEL_PURGE_MSG_MAX_CHARS = 120
+PANEL_CARD_PURPOSE_MAX_CHARS = 220
+PANEL_CARD_WHY_MAX_CHARS = 300
+PANEL_ERROR_MAX_CHARS = 300
+PANEL_GOAL_MAX_CHARS = 200
+PANEL_ORACLE_PROJECT_MAX_CHARS = 500
+PANEL_ORACLE_LIST_MAX_ITEMS = 100
 # === SEEN ITEMS (дедуп сырых заголовков) ===
 # Время жизни записи "source:id" → unix-ts (дней). Старше — выкидывается при mark_seen/_save.
 SEEN_ITEMS_TTL_DAYS = 90
