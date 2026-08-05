@@ -19,6 +19,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import feedback_cortex  # noqa: E402
 
 
@@ -184,7 +185,7 @@ class TestMainCursorIntegration(unittest.TestCase):
                 "orchestra": {"score": 0.95},
             },
         }
-        with open(self.events_path, "a", encoding="utf-8") as f:
+        with open(self.events_path, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
             for _ in range(count):
                 f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
@@ -226,9 +227,9 @@ class TestMainCursorIntegration(unittest.TestCase):
         self._append(20)
         feedback_cortex.main(events_path=self.events_path)
         before = council_weights.load()
-        with open(self.events_path, encoding="utf-8") as f:
+        with open(self.events_path, encoding=config.HTTP_CHARSET_UTF8) as f:
             first_five = f.readlines()[:5]
-        with open(self.events_path, "w", encoding="utf-8") as f:
+        with open(self.events_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.writelines(first_five)
 
         feedback_cortex.main(events_path=self.events_path)
@@ -244,7 +245,7 @@ class TestMainCursorIntegration(unittest.TestCase):
 
         original_path = triage_events.PATH
         other_path = os.path.join(self.tmp, "other_events.jsonl")
-        with open(other_path, "w", encoding="utf-8") as f:
+        with open(other_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"action":"later"}\n')
         feedback_cortex.main(events_path=other_path)
         self.assertEqual(triage_events.PATH, original_path)

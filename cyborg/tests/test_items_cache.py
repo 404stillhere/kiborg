@@ -7,9 +7,14 @@
 """
 
 import os
+import sys
 import unittest
 
-import items_cache
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE)
+
+import config  # noqa: E402
+import items_cache  # noqa: E402
 
 
 class TestItemsCacheFilter(unittest.TestCase):
@@ -84,7 +89,7 @@ class TestItemsCacheFilter(unittest.TestCase):
 
     def test_corrupt_cache_file_treated_as_empty(self):
         # битый JSON в кэше — не роняет фильтр, всё считается свежим
-        with open(self.tmp, "w", encoding="utf-8") as f:
+        with open(self.tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{не валидный json")
         items = [{"title": "после-сбоя", "id": "1"}]
         out = items_cache.filter_fresh(items)

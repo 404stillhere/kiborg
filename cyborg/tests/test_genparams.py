@@ -13,6 +13,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import genparams  # noqa: E402
 
 
@@ -95,7 +96,7 @@ class TestGenparams(unittest.TestCase):
         self.assertEqual(d["rank_keep"], 2)
 
     def test_hand_edited_file_cross_clamps_rank_keep(self):
-        with open(genparams.PATH, "w", encoding="utf-8") as f:
+        with open(genparams.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"gen_k": 3, "rank_keep": 8}, f)
         d = genparams.load()
         self.assertEqual(d["rank_keep"], 3)
@@ -119,18 +120,18 @@ class TestGenparams(unittest.TestCase):
         self.assertEqual(genparams.load(), genparams.defaults())
 
     def test_broken_file_falls_back_to_default(self):
-        with open(genparams.PATH, "w", encoding="utf-8") as f:
+        with open(genparams.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ не json")
         self.assertEqual(genparams.load(), genparams.defaults())
 
     def test_non_dict_file_falls_back_to_default(self):
-        with open(genparams.PATH, "w", encoding="utf-8") as f:
+        with open(genparams.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump([1, 2, 3], f)  # валидный JSON, но не dict
         self.assertEqual(genparams.load(), genparams.defaults())
 
     def test_save_atomic_no_tmp_left(self):
         genparams.save({"gen_k": 6})
-        with open(genparams.PATH, encoding="utf-8") as f:
+        with open(genparams.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON
         self.assertFalse(os.path.exists(genparams.PATH + ".tmp"))  # tmp убран os.replace
 

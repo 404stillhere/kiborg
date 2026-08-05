@@ -20,6 +20,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import recover_state  # noqa: E402
 
 
@@ -36,12 +37,12 @@ class _Base(unittest.TestCase):
         """Создать поддиректорию backups/<ts>/state.json с данным содержимым."""
         bdir = os.path.join(self.backups, ts)
         os.makedirs(bdir, exist_ok=True)
-        with open(os.path.join(bdir, "state.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(bdir, "state.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(payload, f)
         return bdir
 
     def _write_state(self, content):
-        with open(self.state, "w", encoding="utf-8") as f:
+        with open(self.state, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(content)
 
 
@@ -54,7 +55,7 @@ class TestNoOpWhenValid(_Base):
         self.assertIsNone(result["backup_ts"])
         self.assertIsNone(result["error"])
         # файл на месте, содержимое не изменилось
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(json.load(f)["tick"], 42)
 
 
@@ -68,7 +69,7 @@ class TestRecoverFromCorrupted(_Base):
         self.assertEqual(result["backup_ts"], "2026-07-21_100000")
         self.assertIsNone(result["error"])
         # state.json теперь содержит бэкап
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             data = json.load(f)
         self.assertEqual(data["ideas"], ["из бэкапа"])
 
@@ -80,7 +81,7 @@ class TestRecoverFromCorrupted(_Base):
         corrupted_copies = [f for f in os.listdir(self.tmp) if f.startswith("state.json.corrupted-")]
         self.assertEqual(len(corrupted_copies), 1)
         # содержимое дампа = оригинальный битый текст (для разбора)
-        with open(os.path.join(self.tmp, corrupted_copies[0]), encoding="utf-8") as f:
+        with open(os.path.join(self.tmp, corrupted_copies[0]), encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), "{ битый")
 
 
@@ -95,7 +96,7 @@ class TestRecoverFromMissing(_Base):
         self.assertEqual(result["backup_ts"], "2026-07-21_090000")
         # файл создан из бэкапа
         self.assertTrue(os.path.exists(self.state))
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(json.load(f)["ideas"], ["восстановлено"])
 
     def test_missing_state_no_corrupted_copy_created(self):
@@ -115,7 +116,7 @@ class TestNoBackupAvailable(_Base):
         self.assertIsNotNone(result["error"])
         self.assertIn("no valid backup", result["error"])
         # оригинал на месте, не перезаписан
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), "{ битый")
 
     def test_corrupted_backup_also_corrupted_returns_error(self):
@@ -124,12 +125,12 @@ class TestNoBackupAvailable(_Base):
         # создаём подкаталог бэкапа, но state.json внутри — тоже мусор
         bdir = os.path.join(self.backups, "2026-07-21_100000")
         os.makedirs(bdir)
-        with open(os.path.join(bdir, "state.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(bdir, "state.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ тоже битый")
         result = recover_state.auto_recover_state_if_needed(self.state, self.backups)
         self.assertFalse(result["recovered"])
         self.assertIsNotNone(result["error"])
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), "{ битый текущий")
 
     def test_fresh_install_no_state_no_backup(self):
@@ -154,7 +155,7 @@ class TestSelectsLatestBackup(_Base):
         result = recover_state.auto_recover_state_if_needed(self.state, self.backups)
         self.assertTrue(result["recovered"])
         self.assertEqual(result["backup_ts"], "2026-07-21_100000")  # самый свежий
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(json.load(f)["ideas"], ["новый бэкап"])
 
     def test_skips_corrupted_backups_to_older_valid(self):
@@ -193,7 +194,7 @@ class TestEdgeCases(_Base):
         self._make_backup("2026-07-21_100000", {"ideas": ["из бэкапа"]})
         result = recover_state.auto_recover_state_if_needed(self.state, self.backups)
         self.assertTrue(result["recovered"])
-        with open(self.state, encoding="utf-8") as f:
+        with open(self.state, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(json.load(f)["ideas"], ["из бэкапа"])
 
 

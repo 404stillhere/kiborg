@@ -10,6 +10,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import feeds  # noqa: E402
 
 
@@ -39,7 +40,7 @@ class TestFeeds(unittest.TestCase):
 
     def test_save_persists_to_disk_atomic(self):
         feeds.save(["reddit", "hn"])
-        with open(feeds.PATH, encoding="utf-8") as f:
+        with open(feeds.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
         self.assertFalse(os.path.exists(feeds.PATH + ".tmp"))  # временный файл убран
         self.assertEqual(feeds.load()["enabled"], ["hn", "reddit"])
@@ -64,13 +65,13 @@ class TestFeeds(unittest.TestCase):
         self.assertEqual(feeds.enabled(), [])
 
     def test_broken_file_falls_back_to_default(self):
-        with open(feeds.PATH, "w", encoding="utf-8") as f:
+        with open(feeds.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ не json")
         self.assertEqual(feeds.enabled(), feeds.DEFAULT_FEEDS)  # битый файл → дефолт
 
     def test_missing_key_falls_back_to_default(self):
         # файл есть, но ключа enabled нет (или битого типа) → дефолт, а не пусто
-        with open(feeds.PATH, "w", encoding="utf-8") as f:
+        with open(feeds.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"foo": "bar"}, f)
         self.assertEqual(feeds.enabled(), feeds.DEFAULT_FEEDS)
 

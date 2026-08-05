@@ -9,6 +9,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import folders  # noqa: E402
 
 
@@ -31,7 +32,7 @@ class TestFolders(unittest.TestCase):
 
     def test_save_persists_to_disk_atomic(self):
         folders.save(["M:/a", "C:/b"])
-        with open(folders.PATH, encoding="utf-8") as f:
+        with open(folders.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
         self.assertFalse(os.path.exists(folders.PATH + ".tmp"))
         self.assertEqual(folders.load()["paths"], ["M:/a", "C:/b"])
@@ -62,7 +63,7 @@ class TestFolders(unittest.TestCase):
         self.assertEqual(folders.current(), [])
 
     def test_broken_file_falls_to_empty(self):
-        with open(folders.PATH, "w", encoding="utf-8") as f:
+        with open(folders.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{битый json")
         self.assertEqual(folders.current(), [])  # не падаем, источник выключен
 
@@ -94,7 +95,7 @@ class TestFolders(unittest.TestCase):
         )
 
     def test_legacy_paths_format_reads_as_all_on(self):
-        with open(folders.PATH, "w", encoding="utf-8") as f:
+        with open(folders.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"paths": ["M:/old1", "M:/old2"]}, f)  # старый формат до тумблеров
         self.assertEqual(folders.current(), ["M:/old1", "M:/old2"])
         self.assertEqual(folders.load()["folders"], [{"path": "M:/old1", "on": True}, {"path": "M:/old2", "on": True}])

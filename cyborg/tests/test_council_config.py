@@ -12,6 +12,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import council_config  # noqa: E402
 
 
@@ -36,7 +37,7 @@ class TestCouncilConfig(unittest.TestCase):
 
     def test_save_persists_to_disk_atomic(self):
         council_config.save(["ask_llm"])
-        with open(council_config.PATH, encoding="utf-8") as f:
+        with open(council_config.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
         self.assertFalse(os.path.exists(council_config.PATH + ".tmp"))  # tmp убран
         self.assertEqual(council_config.load()["enabled"], ["ask_llm"])
@@ -51,13 +52,13 @@ class TestCouncilConfig(unittest.TestCase):
         self.assertEqual(council_config.load()["enabled"], [])
 
     def test_broken_file_falls_back_to_default(self):
-        with open(council_config.PATH, "w", encoding="utf-8") as f:
+        with open(council_config.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ не json")
         self.assertEqual(council_config.load()["enabled"], council_config.DEFAULT_ENABLED)
 
     def test_missing_key_falls_back_to_default(self):
         # файл есть, но ключа enabled нет (или битого типа) → дефолт
-        with open(council_config.PATH, "w", encoding="utf-8") as f:
+        with open(council_config.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"foo": "bar"}, f)
         self.assertEqual(council_config.load()["enabled"], council_config.DEFAULT_ENABLED)
 

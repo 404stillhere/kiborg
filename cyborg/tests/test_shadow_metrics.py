@@ -6,10 +6,15 @@ lazy orchestra Фазу 2 (расхождение советников) или �
 """
 
 import os
+import sys
 import tempfile
 import unittest
 
-import shadow_metrics
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE)
+
+import config  # noqa: E402
+import shadow_metrics  # noqa: E402
 
 
 class TestShadowMetricsAppendLoad(unittest.TestCase):
@@ -88,7 +93,7 @@ class TestShadowMetricsAppendLoad(unittest.TestCase):
 
     def test_load_skips_broken_lines(self):
         # в файле битые строки вперемешку с валидными → валидные читаются, битые пропущены
-        with open(self.path, "w", encoding="utf-8") as f:
+        with open(self.path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"overlap": 0.5, "would_call_phase2": true}\n')
             f.write("this is not json\n")
             f.write('{"overlap": 0.9, "would_call_phase2": false}\n')

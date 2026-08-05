@@ -16,6 +16,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import council_weights  # noqa: E402
 
 
@@ -49,18 +50,18 @@ class TestCouncilWeights(unittest.TestCase):
 
     def test_save_persists_atomic(self):
         council_weights.save({"enabled": False, "weights": council_weights.DEFAULT_WEIGHTS})
-        with open(council_weights.PATH, encoding="utf-8") as f:
+        with open(council_weights.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)
         self.assertFalse(os.path.exists(council_weights.PATH + ".tmp"))
 
     def test_broken_file_falls_back_to_default(self):
-        with open(council_weights.PATH, "w", encoding="utf-8") as f:
+        with open(council_weights.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ не json")
         self.assertFalse(council_weights.is_enabled())  # disabled = безопасный дефолт
         self.assertEqual(council_weights.current_weights(), council_weights.DEFAULT_WEIGHTS)
 
     def test_missing_weights_key_uses_default(self):
-        with open(council_weights.PATH, "w", encoding="utf-8") as f:
+        with open(council_weights.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"enabled": True}, f)  # нет weights → дефолт
         self.assertTrue(council_weights.is_enabled())
         self.assertEqual(council_weights.current_weights(), council_weights.DEFAULT_WEIGHTS)

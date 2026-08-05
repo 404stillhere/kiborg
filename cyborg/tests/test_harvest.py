@@ -146,10 +146,10 @@ class TestHarvestGate(unittest.TestCase):
         tmp = tempfile.mkdtemp(prefix="harvest_aw_")
         path = os.path.join(tmp, "sub", "f.json")  # несуществующая подпапка — создаётся
         harvest._atomic_write(path, '{"a":1}')
-        with open(path, encoding="utf-8") as f:  # with — не течёт хэндл (Windows: temp удалится)
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:  # with — не течёт хэндл (Windows: temp удалится)
             self.assertEqual(f.read(), '{"a":1}')
         harvest._atomic_write(path, '{"a":2}')  # перезапись поверх
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), '{"a":2}')
         self.assertFalse(os.path.exists(path + ".tmp"))
 
