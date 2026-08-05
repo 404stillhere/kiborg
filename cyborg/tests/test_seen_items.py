@@ -107,7 +107,7 @@ class TestSeenItems(unittest.TestCase):
         # запись старше TTL_DAYS выкидывается при ближайшем _save (файл сам себя чистит)
         seen_items.mark_seen([{"source": "hn", "id": 1}])
         # подделываем древнюю запись напрямую в файле
-        old_ts = seen_items._now() - (seen_items.TTL_DAYS + 5) * 86400
+        old_ts = seen_items._now() - (seen_items.TTL_DAYS + 5) * config.SECONDS_PER_DAY
         with open(seen_items.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"hn:ancient": old_ts}, f)
         # новый прогон mark_seen → _save должен выкинуть древнюю, оставить новую

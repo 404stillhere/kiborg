@@ -75,7 +75,7 @@ class TestTriageStore(unittest.TestCase):
         self.assertEqual(triage_store.load(self.later)["later"][0]["title"], "позже")
 
     def test_no_cap_keeps_all(self):
-        """В отличие от rejected (cap=200), taken/later не урезаются — взятые не теряются."""
+        """В отличие от rejected (cap=config.REJECTED_MAX_ITEMS), taken/later не урезаются — взятые не теряются."""
         for i in range(300):
             triage_store.add(self.taken, self._idea(i))
         self.assertEqual(triage_store.count(self.taken), 300)
