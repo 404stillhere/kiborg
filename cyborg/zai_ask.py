@@ -76,4 +76,9 @@ if __name__ == "__main__":
         print("SMOKE SKIP: ZAI_API_KEY не задан")
     else:
         out = ask('Верни РОВНО одну строку JSON и ничего больше: {"ok":true}')
-        print("SMOKE", "OK" if '"ok"' in out or "ok" in out.lower() else "FAIL", "|", repr(out[:160]))
+        print(
+            "SMOKE",
+            "OK" if '"ok"' in out or "ok" in out.lower() else "FAIL",
+            "|",
+            repr(out[: config.NATIVE_LLM_SMOKE_MAX_CHARS]),
+        )

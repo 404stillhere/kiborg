@@ -731,7 +731,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self._json(_health())
             except Exception as e:
-                self._json({"ok": False, "error": str(e)[:300]}, 500)
+                self._json({"ok": False, "error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         else:
             self._json({"error": "нет такого пути"}, 404)
 
