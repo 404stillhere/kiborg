@@ -25,12 +25,17 @@ except Exception:
     pass
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-PACKAGES = ["cyborg", "idea_engine", "panel"]
+
+# Импорт config после bootstrap: run_tests.py лежит в корне проекта, cyborg/ — рядом.
+sys.path.insert(0, os.path.join(BASE, "cyborg"))
+import config  # noqa: E402
+
+PACKAGES = config.TEST_RUNNER_PACKAGES
 
 # «N passed», «N failed», «N error(s)» из хвоста вывода pytest -q.
-_PASS = re.compile(r"(\d+) passed")
-_FAIL = re.compile(r"(\d+) failed")
-_ERR = re.compile(r"(\d+) error")
+_PASS = re.compile(config.TEST_RUNNER_PASSED_RE)
+_FAIL = re.compile(config.TEST_RUNNER_FAILED_RE)
+_ERR = re.compile(config.TEST_RUNNER_ERROR_RE)
 
 
 def _count(pat, text):
@@ -60,7 +65,7 @@ def run_package(pkg):
     if res["failed"] or res["errors"] or proc.returncode != 0 or res["passed"] == 0:
         # печатаем сырой хвост при ЛЮБОЙ аномалии: падения/ошибки, ненулевой rc (вкл. rc=1
         # «нет модуля pytest» и rc=5 «нет собранных тестов»), либо 0 прогнанных тестов
-        res["tail"] = "\n".join(out.strip().splitlines()[-15:])
+        res["tail"] = "\n".join(out.strip().splitlines()[-config.TEST_RUNNER_TAIL_LINES :])
     return res
 
 
@@ -99,11 +104,11 @@ def main(argv):
         bad_pkg = _package_bad(r)
         any_bad = any_bad or bad_pkg
         if not bad_pkg:
-            mark = "OK   "
+            mark = config.TEST_RUNNER_STATUS_OK.ljust(5)
         elif r["failed"] or r["errors"]:
-            mark = "FAIL "
+            mark = config.TEST_RUNNER_STATUS_FAIL.ljust(5)
         else:
-            mark = "NORUN"  # pytest не выполнился / 0 тестов / rc!=0 — НЕ зелёное
+            mark = config.TEST_RUNNER_STATUS_NORUN.ljust(5)  # pytest не выполнился / 0 тестов / rc!=0 — НЕ зелёное
         line = (
             f"  [{mark}] {r['pkg']:<12} passed={r['passed']} failed={r['failed']} "
             f"errors={r['errors']} rc={r.get('rc', '?')}"
@@ -114,7 +119,7 @@ def main(argv):
             for tl in r["tail"].splitlines():
                 print(f"        {tl}")
 
-    verdict = "ВСЕ ЗЕЛЁНЫЕ" if not any_bad else "ЕСТЬ ПРОБЛЕМЫ (падения / pytest не выполнился)"
+    verdict = config.TEST_RUNNER_VERDICT_ALL_GOOD if not any_bad else config.TEST_RUNNER_VERDICT_PROBLEMS
     print(f"\nИТОГО: passed={total_pass} failed={total_fail} errors={total_err} -> {verdict}\n")
     return 1 if any_bad else 0
 

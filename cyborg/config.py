@@ -539,6 +539,22 @@ STRESS_FAKE_SOURCE = "stress"
 STRESS_FAKE_TITLE_TEMPLATE = "stub-idea-{i}"
 STRESS_FAKE_URL_TEMPLATE = "http://example.com/{i}"
 
+# === TEST RUNNER (run_tests.py) ===
+# Пакеты, которые раннер прогоняет в раздельных subprocess'ах.
+TEST_RUNNER_PACKAGES = ["cyborg", "idea_engine", "panel"]
+# Regex-паттерны для парсинга сводки pytest -q.
+TEST_RUNNER_PASSED_RE = r"(\d+) passed"
+TEST_RUNNER_FAILED_RE = r"(\d+) failed"
+TEST_RUNNER_ERROR_RE = r"(\d+) error"
+# Ключи результирующего dict (используются и как имена полей, и как строки в выводе).
+TEST_RUNNER_STATUS_OK = "OK"
+TEST_RUNNER_STATUS_FAIL = "FAIL"
+TEST_RUNNER_STATUS_NORUN = "NORUN"
+TEST_RUNNER_VERDICT_ALL_GOOD = "ВСЕ ЗЕЛЁНЫЕ"
+TEST_RUNNER_VERDICT_PROBLEMS = "ЕСТЬ ПРОБЛЕМЫ (падения / pytest не выполнился)"
+# Сколько строк хвоста pytest печатать при аномалии.
+TEST_RUNNER_TAIL_LINES = 15
+
 # === TELEGRAM-ФЕТЧ (collect_tg_news) ===
 # Таймаут фетча телеграм-каналов (сек). 21 канал × 5 постов — глубже фетч, шире таймаут.
 TELEGRAM_FETCH_TIMEOUT = 90
