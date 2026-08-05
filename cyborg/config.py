@@ -286,6 +286,8 @@ HTTP_METHOD_POST = "POST"
 # через константу.
 HTTP_HEADER_USER_AGENT = "User-Agent"
 HTTP_USER_AGENT = "kiborg-idea-engine/1.0 (personal script, non-commercial)"
+HTTP_USER_AGENT_MOZILLA_PREFIX = "Mozilla/5.0 ("
+HTTP_USER_AGENT_MOZILLA_SUFFIX = ")"
 # Суффикс pyrogram-файла сессии; collect_tg_news нормализует путь, убирая его.
 TELEGRAM_SESSION_SUFFIX = ".session"
 

@@ -122,7 +122,14 @@ def _gh_repo_description(owner, repo, timeout):
 def _gh_trending(n, timeout, env):
     # официального API нет -> HTML-скрейп; парсим ТЕРПИМО (только class~lh-condensed + href
     # owner/repo), любая непонятная разметка -> ValueError -> честный degrade, не краш.
-    req = urllib.request.Request(GH_TRENDING, headers={"User-Agent": "Mozilla/5.0 (" + _UA + ")"})
+    req = urllib.request.Request(
+        GH_TRENDING,
+        headers={
+            config.HTTP_HEADER_USER_AGENT: (
+                config.HTTP_USER_AGENT_MOZILLA_PREFIX + _UA + config.HTTP_USER_AGENT_MOZILLA_SUFFIX
+            )
+        },
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         html = r.read().decode("utf-8", errors="replace")
     blocks = re.findall(r'<h2[^>]*class="[^"]*lh-condensed[^"]*"[^>]*>(.*?)</h2>', html, re.DOTALL)
