@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 from cyborg import config
-from cyborg.config import PANEL_PORT
+from cyborg.config import PANEL_HOST, PANEL_PORT
 
 # fmt: off
 PROMPT_TMPL = """Ты технический планировщик. Построй пошаговый план от текущего состояния проекта к цели.
@@ -37,7 +37,7 @@ PROMPT_TMPL = """Ты технический планировщик. Постр�
 Расширения файлов: {extensions}
 
 Контекст kiborg:
-- Пульт (panel) — локальный веб-UI на http://127.0.0.1:{panel_port}, эндпоинт статуса /api/state.
+- Пульт (panel) — локальный веб-UI на http://{panel_host}:{panel_port}, эндпоинт статуса /api/state.
 - Код пульта: panel/serve.py (сервер), panel/v2/app.js (логика), panel/v2/index.html (разметка).
 - Ядро агента: cyborg/ask_llm.py, cyborg/brain.py, cyborg/mind.py, cyborg/harvest.py.
 - Данные хранятся в cyborg/data/ и idea_engine/data/, но ЭТО НЕ файлы для редактирования в плане.
@@ -49,12 +49,12 @@ PROMPT_TMPL = """Ты технический планировщик. Постр�
 4. files — только файлы из списка "Файли". НЕ придумывай пути. НЕ указывай README.md как рабочий файл, если задача не в редактировании документации. НЕ указывай файлы данных (*.json в data/) как цели правок.
 5. effort — S (<2ч), M (2-6ч), L (день+). Клиентская пагинация, добавление поля в JSON-ответ, правка рендера UI — S. Новый модуль/интеграция — M. Архитектурный рефакторинг — L.
 6. depends_on — id предыдущих шагов, без циклов.
-7. verification — конкретная команда или наблюдение. Для API пульта используй порт {panel_port}: curl -s http://127.0.0.1:{panel_port}/api/state | grep ... . Для тестов: pytest <file>::<test>. Для UI: открыть http://127.0.0.1:{panel_port} и увидеть изменение.
+7. verification — конкретная команда или наблюдение. Для API пульта используй порт {panel_port}: curl -s http://{panel_host}:{panel_port}/api/state | grep ... . Для тестов: pytest <file>::<test>. Для UI: открыть http://{panel_host}:{panel_port} и увидеть изменение.
 8. risks — реальные риски, связанные с проектом (не общие).
 9. warnings — если цель требует файла, которого нет в карте. Если все файлы есть — оставь пустым.
 
 Ответь ОДНОЙ строкой JSON compact. Пример:
-{{"title":"Добавить авторизацию","summary":"Встроить JWT-аутентификацию в API и пульт.","steps":[{{"id":"S1","title":"Изучить точки входа","description":"Прочитать panel/serve.py и panel/v2/app.js, найти где отдаётся /api/state.","files":["panel/serve.py","panel/v2/app.js"],"effort":"S","depends_on":[],"verification":"curl -s http://127.0.0.1:{panel_port}/api/state | grep -i auth"}}],"risks":["Секреты могут попасть в логи"],"warnings":[]}}
+{{"title":"Добавить авторизацию","summary":"Встроить JWT-аутентификацию в API и пульт.","steps":[{{"id":"S1","title":"Изучить точки входа","description":"Прочитать panel/serve.py и panel/v2/app.js, найти где отдаётся /api/state.","files":["panel/serve.py","panel/v2/app.js"],"effort":"S","depends_on":[],"verification":"curl -s http://{panel_host}:{panel_port}/api/state | grep -i auth"}}],"risks":["Секреты могут попасть в логи"],"warnings":[]}}
 
 Ничего кроме JSON не пиши.
 """
@@ -126,6 +126,7 @@ def _prompt(goal, project_map):
         markers=json.dumps(markers, ensure_ascii=False) if markers else "(нет)",
         extensions=json.dumps(project_map.get("extensions", {}), ensure_ascii=False),
         panel_port=PANEL_PORT,
+        panel_host=PANEL_HOST,
     )
 
 
