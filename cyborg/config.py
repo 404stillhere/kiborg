@@ -683,6 +683,19 @@ ORACLE_PLAN_MIN_GOAL_WORDS = 3
 # Порог Jaccard для дедупликации идей по значимым словам заголовка.
 # Используется только когда ни одна из сигнатур не является подмножеством другой.
 STORE_DEDUP_JACCARD_THRESHOLD = 0.6
+# Дефолтный потолок открытых идей (дорожка A). 0/None = копилка без потолка.
+STORE_DEFAULT_CAP = 3
+# Потолок памяти предложенного: помним последние N сигнатур заголовков.
+STORE_SEEN_CAP = 5000
+# Валидные статусы идей. OPEN — открытая, остальные — разобранные (take/later/trash).
+STORE_STATUS_OPEN = "open"
+STORE_STATUS_TAKE = "take"
+STORE_STATUS_LATER = "later"
+STORE_STATUS_TRASH = "trash"
+# Множество «разобранных» статусов (take/later/trash).
+STORE_CLEARED_STATUSES = {STORE_STATUS_TAKE, STORE_STATUS_LATER, STORE_STATUS_TRASH}
+# Все валидные статусы.
+STORE_VALID_STATUSES = STORE_CLEARED_STATUSES | {STORE_STATUS_OPEN}
 
 # === FINISH_STEP (idea_engine/organs/finish_step.py) ===
 # Сколько символов next_step брежем в nudge.

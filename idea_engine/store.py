@@ -18,9 +18,11 @@ import os
 import re
 import time
 
-DEFAULT_CAP = 3
-_SEEN_CAP = 5000       # потолок памяти предложенного: помним последние N заголовков. Поднят 500→5000
-                       # (режим «максимум качества»): больше памяти новизны = меньше повторов со временем
+import config  # noqa: E402
+
+DEFAULT_CAP = config.STORE_DEFAULT_CAP
+_SEEN_CAP = config.STORE_SEEN_CAP       # потолок памяти предложенного: помним последние N заголовков. Поднят 500→5000
+                                        # (режим «максимум качества»): больше памяти новизны = меньше повторов со временем
 
 
 @contextlib.contextmanager
@@ -78,12 +80,12 @@ def _content(title):
 def _sig(title):
     return " ".join(_content(title))
 
-OPEN = "open"
-TAKE = "take"
-LATER = "later"
-TRASH = "trash"
-_CLEARED = {TAKE, LATER, TRASH}
-_VALID = _CLEARED | {OPEN}
+OPEN = config.STORE_STATUS_OPEN
+TAKE = config.STORE_STATUS_TAKE
+LATER = config.STORE_STATUS_LATER
+TRASH = config.STORE_STATUS_TRASH
+_CLEARED = config.STORE_CLEARED_STATUSES
+_VALID = config.STORE_VALID_STATUSES
 
 
 class Store:
