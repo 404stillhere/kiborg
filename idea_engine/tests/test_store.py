@@ -9,6 +9,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import rejected  # noqa: E402
 import run  # noqa: E402
 import triage_store  # noqa: E402
@@ -22,7 +23,7 @@ def _idea(title="x"):
 class TestStore(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmp, "state.json")
+        self.path = os.path.join(self.tmp, config.IE_STATE_FILE)
 
     def test_cap_enforced(self):
         s = Store(self.path, cap=3)
@@ -160,9 +161,9 @@ class TestTickModes(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         run.DATA = self.tmp
-        run.STATE = os.path.join(self.tmp, "state.json")
-        run.INBOX = os.path.join(self.tmp, "inbox.md")
-        run.NOTIFY = os.path.join(self.tmp, "notify.md")
+        run.STATE = os.path.join(self.tmp, config.IE_STATE_FILE)
+        run.INBOX = os.path.join(self.tmp, config.INBOX_MD_FILE)
+        run.NOTIFY = os.path.join(self.tmp, config.IE_NOTIFY_MD_FILE)
         # подменяем органы: без сети и без recon
         self._orig_collect = run.collect_source.run
         self._orig_ideate = run.ideate.run
@@ -206,7 +207,7 @@ class TestDedup(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmp, "state.json")
+        self.path = os.path.join(self.tmp, config.IE_STATE_FILE)
 
     def test_duplicate_not_readded(self):
         s = Store(self.path, cap=3)
@@ -327,8 +328,8 @@ class TestRunTriageMoves(unittest.TestCase):
             triage_store.DATA,
             triage_events.PATH,
         )
-        run.STATE = os.path.join(self.tmp, "state.json")
-        run.INBOX = os.path.join(self.tmp, "inbox.md")
+        run.STATE = os.path.join(self.tmp, config.IE_STATE_FILE)
+        run.INBOX = os.path.join(self.tmp, config.INBOX_MD_FILE)
         rejected.DATA = self.tmp
         rejected.PATH = os.path.join(self.tmp, "rejected.json")
         triage_store.DATA = self.tmp
