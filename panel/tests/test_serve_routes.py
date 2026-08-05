@@ -22,16 +22,19 @@ sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
 # Роуты гоняются через локальный сервер. Не наследуем системный proxy Windows: на части
-# машин он пытается проксировать даже 127.0.0.1 и даёт ложный ConnectionReset/502.
+# машин он пытается проксировать даже loopback и даёт ложный ConnectionReset/502.
 _LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_LOOPBACK = config.PANEL_HOST
 
 
 class TestServeRoutes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # свой сервер на 127.0.0.1:0 (эфемерный порт) — не конфликтует с живым пультом на 8737
-        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
+        # свой сервер на loopback:0 (эфемерный порт) — не конфликтует с живым пультом
+        cls.srv = ThreadingHTTPServer((_LOOPBACK, 0), serve.Handler)
         cls.port = cls.srv.server_address[1]
         cls.t = threading.Thread(target=cls.srv.serve_forever, daemon=True)
         cls.t.start()
@@ -67,23 +70,26 @@ class TestServeRoutes(unittest.TestCase):
         serve.council_config.PATH = self._saved["cc"]
         serve.genparams.PATH = self._saved["gp"]
 
-    def _post(self, path, body=None, ctype="application/json", raw=None):
-        data = raw if raw is not None else json.dumps(body).encode("utf-8")
+    def _post(self, path, body=None, ctype=config.HTTP_MEDIA_TYPE_JSON, raw=None):
+        data = raw if raw is not None else json.dumps(body).encode(config.HTTP_CHARSET_UTF8)
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}{path}", data=data, headers={"Content-Type": ctype}, method="POST"
+            f"http://{_LOOPBACK}:{self.port}{path}",
+            data=data,
+            headers={config.HTTP_HEADER_CONTENT_TYPE: ctype},
+            method="POST",
         )
         try:
             with _LOCAL_OPENER.open(req, timeout=5) as r:
-                return r.status, json.loads(r.read().decode("utf-8"))
+                return r.status, json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read().decode("utf-8"))
+            return e.code, json.loads(e.read().decode(config.HTTP_CHARSET_UTF8))
 
     def _get(self, path):
         try:
-            with _LOCAL_OPENER.open(f"http://127.0.0.1:{self.port}{path}", timeout=5) as r:
-                return r.status, json.loads(r.read().decode("utf-8"))
+            with _LOCAL_OPENER.open(f"http://{_LOOPBACK}:{self.port}{path}", timeout=5) as r:
+                return r.status, json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read().decode("utf-8"))
+            return e.code, json.loads(e.read().decode(config.HTTP_CHARSET_UTF8))
 
     def test_folders_valid_saves_and_normalizes(self):
         code, body = self._post("/api/folders", {"paths": ["M:/x", "M:\\x", "C:/y/"]})
@@ -100,7 +106,7 @@ class TestServeRoutes(unittest.TestCase):
         # ответ на сохранение папок несёт пробу: путь валиден? сколько текстовых файлов?
         d = tempfile.mkdtemp(prefix="probe_post_")
         try:
-            with open(os.path.join(d, "a.py"), "w", encoding="utf-8") as f:
+            with open(os.path.join(d, "a.py"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
                 f.write('"""a."""\n')
             code, body = self._post("/api/folders", {"paths": [d]})
             self.assertEqual(code, 200)
@@ -114,7 +120,7 @@ class TestServeRoutes(unittest.TestCase):
     def test_folders_probe_get_reads_current(self):
         d = tempfile.mkdtemp(prefix="probe_get_")
         try:
-            with open(os.path.join(d, "b.md"), "w", encoding="utf-8") as f:
+            with open(os.path.join(d, "b.md"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
                 f.write("# b\n")
             self._post("/api/folders", {"paths": [d]})  # сохранили в temp folders.json
             code, body = self._get("/api/folders/probe")
@@ -273,16 +279,19 @@ class TestServeRoutes(unittest.TestCase):
         # открытый в браузере юзера, дёргает наш локальный пульт) → 403. Гейт в do_POST был, но без
         # теста. Свой Origin / его отсутствие (curl/скрипты) проходят — проверено остальными тестами.
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}/api/feeds",
-            data=json.dumps({"enabled": []}).encode("utf-8"),
-            headers={"Content-Type": "application/json", "Origin": "http://evil.example.com"},
-            method="POST",
+            f"http://{_LOOPBACK}:{self.port}/api/feeds",
+            data=json.dumps({"enabled": []}).encode(config.HTTP_CHARSET_UTF8),
+            headers={
+                config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
+                config.HTTP_HEADER_ORIGIN: "http://evil.example.com",
+            },
+            method=config.HTTP_METHOD_POST,
         )
         try:
             with _LOCAL_OPENER.open(req, timeout=5) as r:
-                code, resp = r.status, json.loads(r.read().decode("utf-8"))
+                code, resp = r.status, json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
         except urllib.error.HTTPError as e:
-            code, resp = e.code, json.loads(e.read().decode("utf-8"))
+            code, resp = e.code, json.loads(e.read().decode(config.HTTP_CHARSET_UTF8))
         self.assertEqual(code, 403)
         self.assertFalse(resp["ok"])
 

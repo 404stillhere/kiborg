@@ -337,6 +337,9 @@ PANEL_PORT = 8737  # локальный HTTP пульт, слушает ТОЛЬ
 PANEL_HOST = "127.0.0.1"  # loopback only — панель не должна быть доступна извне
 # Допустимое имя хоста в Origin для CSRF-защиты пульта (браузеры могут шить localhost вместо 127.0.0.1).
 PANEL_LOCALHOST_ALIAS = "localhost"
+PANEL_HOST_PORT_TEMPLATE = "{host}:{port}"  # для HTTP-заголовка Host
+PANEL_HTTP_SCHEME = "http"
+PANEL_URL_TEMPLATE = "{scheme}://{host}:{port}"  # базовый URL пульта
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess
 # Рубильник авто-режима пульта (JSON с интервалом/last-run). Патчится в тестах: `serve.AUTO_FILE = tmp`.
 AUTO_JSON = os.path.join(PANEL_DIR, "auto.json")

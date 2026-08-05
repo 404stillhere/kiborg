@@ -13,6 +13,8 @@ sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
 
 class _FakeSocket:
     def __init__(self, request_bytes):
@@ -51,18 +53,18 @@ class TestOracleEndpoint(unittest.TestCase):
         serve._PROC.update(self._orig_proc)
 
     def _post(self, path, body):
-        raw_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        raw_body = json.dumps(body, ensure_ascii=False).encode(config.HTTP_CHARSET_UTF8)
         request = (
-            f"POST {path} HTTP/1.1\r\n"
-            f"Host: 127.0.0.1:{serve.PORT}\r\n"
-            f"Content-Type: application/json\r\n"
+            f"{config.HTTP_METHOD_POST} {path} HTTP/1.1\r\n"
+            f"Host: {config.PANEL_HOST_PORT_TEMPLATE.format(host=config.PANEL_HOST, port=serve.PORT)}\r\n"
+            f"Content-Type: {config.HTTP_MEDIA_TYPE_JSON}\r\n"
             f"Content-Length: {len(raw_body)}\r\n"
-            f"\r\n".encode("utf-8") + raw_body
+            f"\r\n".encode(config.HTTP_CHARSET_UTF8) + raw_body
         )
         sock = _FakeSocket(request)
         handler = serve.Handler.__new__(serve.Handler)
         handler.request = sock
-        handler.client_address = ("127.0.0.1", 55555)
+        handler.client_address = (config.PANEL_HOST, 55555)
         handler.server = None
         handler.setup()
         handler.handle_one_request()
@@ -70,7 +72,7 @@ class TestOracleEndpoint(unittest.TestCase):
         response = sock._wfile.read()
         head, body = response.split(b"\r\n\r\n", 1)
         code = int(head.split(b" ")[1])
-        return code, json.loads(body.decode("utf-8"))
+        return code, json.loads(body.decode(config.HTTP_CHARSET_UTF8))
 
     def test_oracle_endpoint_requires_goal_and_project(self):
         code, resp = self._post("/api/oracle", {"goal": "add auth"})
