@@ -386,7 +386,7 @@ def _rank_by_council(inputs, env, keep):
     _KEEP_MIN_SCORE = float(env.get("keep_min_score", config.DEFAULT_KEEP_MIN_SCORE))
     passing = [oid for oid in ranked if float(scores.get(oid, 0.0)) >= _KEEP_MIN_SCORE]
     if not passing:
-        passing = ranked[:1]  # все слабые — отдаём лучшую по баллу, не пустоту (минимум 1)
+        passing = ranked[: config.COUNCIL_PASSING_MIN_ITEMS]
     candidates = passing[:keep] if len(passing) <= keep else _mmr_select(passing, orig, scores, keep)
     picked = candidates if len(candidates) <= keep else candidates[:keep]
     # Feedback Cortex (Фаза 1): проекция verdict["breakdown"] → per-idea голоса советников.

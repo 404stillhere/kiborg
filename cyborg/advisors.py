@@ -153,7 +153,7 @@ class RankIdeasAdvisor:
         if callable(llm) and not was_live:
             return mind.opinion(None, reason_code="parse_fail", raw=out)
         judged = "llm" if was_live else "fallback(порядок)"
-        return mind.opinion(scores, rationale=f"рубрика/{judged}: топ {order[:3]}", raw=out)
+        return mind.opinion(scores, rationale=f"рубрика/{judged}: топ {order[: config.ADVISORS_ORDER_PREVIEW_LEN]}", raw=out)
 
 
 # =============================================================================

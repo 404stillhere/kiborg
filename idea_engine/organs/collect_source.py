@@ -484,12 +484,12 @@ def _files_context(path, headline=""):
     usable = [row for row in rows if not is_headline(row)]
     technical = ("import ", "from ", "package ", "use ", "#include", "using ")
     content_rows = [row for row in usable if not row[1].strip().lower().startswith(technical)]
-    head = content_rows[:3]
-    risks = _spread_pick([row for row in content_rows if _FILES_RISK_RE.search(row[1])], 4)
-    symbols = _spread_pick([row for row in content_rows if _FILES_SYMBOL_RE.search(row[1])], 7)
-    configs = _spread_pick([row for row in content_rows if _FILES_CONFIG_RE.search(row[1])], 4)
-    distributed = _spread_pick(content_rows, 4)
-    tail = content_rows[-2:]
+    head = content_rows[: config.FILES_HEAD_LINES]
+    risks = _spread_pick([row for row in content_rows if _FILES_RISK_RE.search(row[1])], config.FILES_RISK_SPREAD)
+    symbols = _spread_pick([row for row in content_rows if _FILES_SYMBOL_RE.search(row[1])], config.FILES_SYMBOL_SPREAD)
+    configs = _spread_pick([row for row in content_rows if _FILES_CONFIG_RE.search(row[1])], config.FILES_CONFIG_SPREAD)
+    distributed = _spread_pick(content_rows, config.FILES_DISTRIBUTED_SPREAD)
+    tail = content_rows[-config.FILES_TAIL_LINES :]
 
     selected, seen = [], set()
     # Сначала самые доказательные сигналы, чтобы они не отпали по символьному потолку.
@@ -675,7 +675,7 @@ def _files_area(rel):
     if len(parts) > 2 and parts[1].casefold() in {
         "tests", "test", "docs", "doc", "knowledge", "archive", "legacy", "audit", "audits", "codex_update",
     }:
-        return "/".join(parts[:2])
+        return "/".join(parts[: config.FILES_AREA_PREFIX_PARTS])
     return parts[0]
 
 

@@ -449,6 +449,11 @@ ASK_LLM_ESCALATE_GAP = 0.15
 ASK_LLM_MIN_PER_PROVIDER_MS = 3000
 ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC = 5
 
+# Сколько идентификаторов идей показываем в rationale органа rank_ideas.
+ADVISORS_ORDER_PREVIEW_LEN = 3
+# Если все идеи ниже порога keep_min_score, берём минимум N лучших.
+COUNCIL_PASSING_MIN_ITEMS = 1
+
 # === РЕДАКТОР ЧИТАЕМОСТИ (wiring_council) ===
 # Температура для детерминированного судейства читаемости (score_llm) — должен парситься в JSON.
 READABILITY_SCORE_TEMPERATURE = 0.2
@@ -659,6 +664,17 @@ FILES_MAX_SCAN = 20000
 FILES_MAX_PROJECT_MAPS = 8
 # Сколько символов берём из description репозитория GitHub при обогащении.
 GH_REPO_DESCRIPTION_MAX_CHARS = 180
+# Сколько строк берём в "head" фрагмент файла.
+FILES_HEAD_LINES = 3
+# Сколько строк рисков/конфигов/распределённых фрагментов берём.
+FILES_RISK_SPREAD = 4
+FILES_SYMBOL_SPREAD = 7
+FILES_CONFIG_SPREAD = 4
+FILES_DISTRIBUTED_SPREAD = 4
+# Сколько строк берём с хвоста файла.
+FILES_TAIL_LINES = 2
+# Сколько первых компонентов пути показываем в зоне файла.
+FILES_AREA_PREFIX_PARTS = 2
 # Длина SHA1-хеша для seen_items legacy-ключа (hex-символов).
 SEEN_ITEMS_HASH_LEN = 12
 # Длина SHA1-хеша для collect_source file-id (hex-символов).
@@ -749,6 +765,10 @@ IDEATE_MAX_SOURCE_IDS = 4
 IDEATE_SOURCE_ID_MAX_CHARS = 120
 # Максимальная длина verification в карточке идеи.
 IDEATE_VERIFICATION_MAX_CHARS = 500
+
+# === ADVISORS (cyborg/advisors.py) ===
+# Сколько вариантов показываем в rationale арбитра rank_ideas.
+ADVISORS_ORDER_PREVIEW_LEN = 3
 
 # === DELIVER_ORACLE (idea_engine/organs/deliver_oracle.py) ===
 # План с той же целью/проектом, созданный не позднее этого окна, считается дубликатом (часы).
