@@ -14,7 +14,9 @@ import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
+sys.path.insert(0, os.path.join(BASE, "..", "cyborg"))
 
+import config  # noqa: E402
 from organs import collect_source  # noqa: E402
 
 
@@ -430,7 +432,7 @@ class TestTelegramSource(unittest.TestCase):
         captured = {}
 
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
-            captured["payload"] = json.loads(input.decode("utf-8"))
+            captured["payload"] = json.loads(input.decode(config.HTTP_CHARSET_UTF8))
             return _FakeProc(
                 0, json.dumps({"items": [{"channel": "@a", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8")
             )
@@ -447,7 +449,7 @@ class TestTelegramSource(unittest.TestCase):
         captured = {}
 
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
-            captured["payload"] = json.loads(input.decode("utf-8"))
+            captured["payload"] = json.loads(input.decode(config.HTTP_CHARSET_UTF8))
             return _FakeProc(
                 0, json.dumps({"items": [{"channel": "@x", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8")
             )

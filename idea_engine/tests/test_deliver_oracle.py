@@ -7,7 +7,9 @@ from pathlib import Path
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
+sys.path.insert(0, os.path.join(BASE, "..", "cyborg"))
 
+import config  # noqa: E402
 from organs import deliver_oracle  # noqa: E402
 
 PLAN = {
@@ -49,7 +51,7 @@ def test_deliver_creates_plan_and_index():
             assert out["slug"] == "note-bot"
             assert os.path.exists(out["plan_path"])
             assert os.path.exists(out["index_path"])
-            text = open(out["plan_path"], encoding="utf-8").read()
+            text = open(out["plan_path"], encoding=config.HTTP_CHARSET_UTF8).read()
             assert "Auth plan" in text
             assert "add Telegram auth" in text
             assert "S1 — Model" in text

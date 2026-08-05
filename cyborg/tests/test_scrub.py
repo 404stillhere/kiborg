@@ -15,6 +15,7 @@ _run_spec = importlib.util.spec_from_file_location("cyborg_run", os.path.join(BA
 run = importlib.util.module_from_spec(_run_spec)
 _run_spec.loader.exec_module(run)
 
+import config  # noqa: E402
 import wiring  # noqa: E402
 from organs_vendored import scrub_secrets  # noqa: E402
 
@@ -109,7 +110,7 @@ class TestScrub(unittest.TestCase):
                 "result": {"why": "ротировать sk-ant-api03-DEADBEEF0000000000000000secret"},
             }
             run._log_run(out)
-            with open(os.path.join(tmp, "runs.md"), encoding="utf-8") as f:
+            with open(os.path.join(tmp, "runs.md"), encoding=config.HTTP_CHARSET_UTF8) as f:
                 body = f.read()
             self.assertNotIn("sk-ant-api03-DEADBEEF", body)
             self.assertIn("[REDACTED]", body)
