@@ -753,7 +753,7 @@ class TestFilesSource(_TmpDirTest):
         self.assertRegex(context, r"L1[0-9]{3}:")
 
     def test_cp1251_file_decodes_without_mojibake(self):
-        self._write("legacy.txt", "Старый русский проект\nважная логика\n".encode("cp1251"))
+        self._write("legacy.txt", "Старый русский проект\nважная логика\n".encode(config.FILES_DECODE_ENCODING_CP1251))
         out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
         blob = " ".join(item["title"] + " " + item.get("context", "") for item in out["items"])
         self.assertIn("Старый русский проект", blob)
