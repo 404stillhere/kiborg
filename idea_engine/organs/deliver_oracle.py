@@ -188,7 +188,7 @@ def _append_inbox_card(slug, plan, goal, plan_path):
         return False
 
 
-def _short(text, max_len=60):
+def _short(text, max_len=config.DELIVER_ORACLE_SHORT_MAX_CHARS):
     text = text.replace("\n", " ")
     if len(text) <= max_len:
         return text

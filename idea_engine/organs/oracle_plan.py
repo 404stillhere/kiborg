@@ -141,15 +141,15 @@ def _prioritize_files(files, entrypoints, goal):
     for f in files:
         s = 0
         if f in entrypoints:
-            s += 100
+            s += config.ORACLE_PLAN_ENTRYPOINT_SCORE
         if "test" not in f and "__pycache__" not in f:
             f_lower = f.lower()
             for tok in goal_tokens:
                 if tok in f_lower:
-                    s += 10
+                    s += config.ORACLE_PLAN_KEYWORD_SCORE
             for key in ("main", "app", "serve", "index", "run", "config", "core"):
                 if key in f_lower:
-                    s += 3
+                    s += config.ORACLE_PLAN_NAME_SCORE
         score[f] = s
     return sorted(files, key=lambda f: (-score.get(f, 0), f))
 

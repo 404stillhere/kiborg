@@ -677,6 +677,18 @@ FILES_DISTRIBUTED_SPREAD = 4
 FILES_TAIL_LINES = 2
 # Сколько первых компонентов пути показываем в зоне файла.
 FILES_AREA_PREFIX_PARTS = 2
+# Ролевые score для файлового сбора (collect_source._files_role).
+FILES_ROLE_SCORE_ARCHIVE = 12
+FILES_ROLE_SCORE_AUDIT = 30
+FILES_ROLE_SCORE_GENERATED = 5
+FILES_ROLE_SCORE_OVERVIEW = 120
+FILES_ROLE_SCORE_MANIFEST = 112
+FILES_ROLE_SCORE_ENTRYPOINT = 104
+FILES_ROLE_SCORE_TEST = 36
+FILES_ROLE_SCORE_DOCS = 62
+FILES_ROLE_SCORE_CONFIG = 78
+FILES_ROLE_SCORE_CORE = 82
+FILES_ROLE_SCORE_SOURCE = 58
 # Длина SHA1-хеша для seen_items legacy-ключа (hex-символов).
 SEEN_ITEMS_HASH_LEN = 12
 # Длина SHA1-хеша для collect_source file-id (hex-символов).
@@ -790,6 +802,16 @@ MAX_DIRECTION_THEME_LEN = 120
 MAX_DIRECTION_PRESETS = 40
 # Feature-lab статус фич (внутренний). Патчится в тестах: `serve.LAB_ROUTER = tmp`.
 LAB_ROUTER_FILE = os.path.join(PROJECT_ROOT, ".feature-lab", "router.json")
+
+# === DELIVER_ORACLE (idea_engine/organs/deliver_oracle.py) ===
+# Максимальная длина короткого представления текста в карточке плана.
+DELIVER_ORACLE_SHORT_MAX_CHARS = 60
+
+# === ORACLE_PLAN (idea_engine/organs/oracle_plan.py) ===
+# Базовые score за попадание файла в entrypoints, keyword, значимое имя.
+ORACLE_PLAN_ENTRYPOINT_SCORE = 100
+ORACLE_PLAN_KEYWORD_SCORE = 10
+ORACLE_PLAN_NAME_SCORE = 3
 
 # === ФАЙЛОВЫЕ СУФФИКСЫ / ИМЕНА (живой код + тесты патчат пути, но строковые суффиксы
 # исторически дублировались в 4+ модулях — собраны здесь как единый источник истины) ===

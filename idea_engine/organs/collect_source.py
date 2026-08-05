@@ -646,26 +646,26 @@ def _files_role(path, base):
     parts = low.split("/")
     ext = os.path.splitext(name)[1]
     if any(p in {"archive", "archives", "legacy", "deprecated"} for p in parts[:-1]):
-        return "archive", 12
+        return "archive", config.FILES_ROLE_SCORE_ARCHIVE
     if any(p in {"audit", "audits", "codex_update"} for p in parts[:-1]):
-        return "audit", 30
+        return "audit", config.FILES_ROLE_SCORE_AUDIT
     if name in _FILES_OVERVIEW_NAMES:
-        return "overview", 120
+        return "overview", config.FILES_ROLE_SCORE_OVERVIEW
     if name in _FILES_MANIFEST_NAMES or name in _FILES_TEXT_NAMES:
-        return "manifest", 112
+        return "manifest", config.FILES_ROLE_SCORE_MANIFEST
     if name in _FILES_ENTRY_NAMES:
-        return "entrypoint", 104
+        return "entrypoint", config.FILES_ROLE_SCORE_ENTRYPOINT
     if name in _FILES_LOW_SIGNAL_NAMES or ".min." in name or name.endswith(".map"):
-        return "generated", 5
+        return "generated", config.FILES_ROLE_SCORE_GENERATED
     if any(p in {"tests", "test", "spec", "specs"} for p in parts[:-1]) or name.startswith("test_"):
-        return "test", 36
+        return "test", config.FILES_ROLE_SCORE_TEST
     if any(p in {"docs", "doc", "knowledge"} for p in parts[:-1]) or ext in {".md", ".rst", ".adoc"}:
-        return "docs", 62
+        return "docs", config.FILES_ROLE_SCORE_DOCS
     if ext in {".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".xml", ".tf", ".hcl"}:
-        return "config", 78
+        return "config", config.FILES_ROLE_SCORE_CONFIG
     if any(word in name for word in ("core", "config", "router", "service", "controller", "model", "store", "api")):
-        return "core", 82
-    return "source", 58
+        return "core", config.FILES_ROLE_SCORE_CORE
+    return "source", config.FILES_ROLE_SCORE_SOURCE
 
 
 def _files_area(rel):
