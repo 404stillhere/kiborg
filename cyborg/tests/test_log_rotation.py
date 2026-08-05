@@ -73,7 +73,7 @@ class TestRotateIfNeeded(unittest.TestCase):
         # После ротации .tmp-файла рядом быть не должно (atomic_write через os.replace)
         self._write_lines(12)
         harvest_log._rotate_if_needed(self.path)
-        self.assertFalse(os.path.exists(self.path + ".tmp"))
+        self.assertFalse(os.path.exists(self.path + config.ATOMIC_TMP_SUFFIX))
 
     def test_respects_patched_max(self):
         # Поставили лимит 3 (не дефолт 1000) → обрезает до 3

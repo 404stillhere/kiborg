@@ -105,7 +105,7 @@ class TestStore(unittest.TestCase):
         s.save()
         with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # читается как валидный JSON
-        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(config.ATOMIC_TMP_SUFFIX)], [])
 
     def test_save_atomic_keeps_original_on_failure(self):
         # обрыв сериализации НЕ усекает существующий state.json + чистит огрызок
@@ -120,12 +120,12 @@ class TestStore(unittest.TestCase):
         with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             after = f.read()
         self.assertEqual(before, after)  # оригинал цел, не усечён
-        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(config.ATOMIC_TMP_SUFFIX)], [])
 
     def test_state_lock_acquires_and_releases(self):
         from store import state_lock
 
-        lp = self.path + ".lock"
+        lp = self.path + config.TG_LOCK_SUFFIX
         with state_lock(self.path, timeout=1.0) as held:
             self.assertTrue(held)  # взяли эксклюзивно
             self.assertTrue(os.path.exists(lp))  # lockfile существует, пока держим
@@ -136,7 +136,7 @@ class TestStore(unittest.TestCase):
 
         from store import state_lock
 
-        lp = self.path + ".lock"
+        lp = self.path + config.TG_LOCK_SUFFIX
         open(lp, "w").close()  # «другой процесс» держит лок
         t0 = _t.time()
         with state_lock(self.path, timeout=0.2, poll=0.05) as held:
@@ -152,7 +152,7 @@ class TestStore(unittest.TestCase):
             self.assertTrue(first)
             with state_lock(self.path, timeout=0.15, poll=0.05) as second:
                 self.assertFalse(second)  # второй не взял, пока первый держит
-        self.assertFalse(os.path.exists(self.path + ".lock"))  # первый вышел -> снято
+        self.assertFalse(os.path.exists(self.path + config.TG_LOCK_SUFFIX))  # первый вышел -> снято
 
 
 class TestTickModes(unittest.TestCase):

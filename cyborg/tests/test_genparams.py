@@ -133,7 +133,7 @@ class TestGenparams(unittest.TestCase):
         genparams.save({"gen_k": 6})
         with open(genparams.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON
-        self.assertFalse(os.path.exists(genparams.PATH + ".tmp"))  # tmp убран os.replace
+        self.assertFalse(os.path.exists(genparams.PATH + config.ATOMIC_TMP_SUFFIX))  # tmp убран os.replace
 
     def test_meta_has_all_fields_for_ui(self):
         # meta() отдаёт min/max/default/is_float/value для UI (range-инпуты строятся по ним)

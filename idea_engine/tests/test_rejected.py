@@ -58,7 +58,7 @@ class TestRejected(unittest.TestCase):
         rejected.add("одна")
         with open(rejected.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(any(p.endswith(".tmp") for p in os.listdir(self.tmp)))
+        self.assertFalse(any(p.endswith(config.ATOMIC_TMP_SUFFIX) for p in os.listdir(self.tmp)))
 
     def test_broken_file_falls_to_empty(self):
         with open(rejected.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:

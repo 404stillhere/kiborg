@@ -85,7 +85,7 @@ class TestTriageStore(unittest.TestCase):
         with open(self.taken, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)  # валидный JSON на диске
         self.assertEqual(d, {"taken": [json.loads(json.dumps(v)) for v in triage_store.load(self.taken)["taken"]]})
-        self.assertFalse(any(p.endswith(".tmp") for p in os.listdir(self.tmp)))  # tmp убран
+        self.assertFalse(any(p.endswith(config.ATOMIC_TMP_SUFFIX) for p in os.listdir(self.tmp)))  # tmp убран
 
     def test_broken_file_falls_to_empty(self):
         with open(self.taken, "w", encoding=config.HTTP_CHARSET_UTF8) as f:

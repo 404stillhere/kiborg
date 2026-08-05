@@ -295,7 +295,7 @@ class TestAutoConfig(unittest.TestCase):
 
     def test_save_is_atomic_no_tmp_leftover(self):
         serve._save_auto(False, 45)
-        self.assertFalse(os.path.exists(self.f + ".tmp"))  # os.replace убрал tmp
+        self.assertFalse(os.path.exists(self.f + config.ATOMIC_TMP_SUFFIX))  # os.replace убрал tmp
         self.assertTrue(os.path.exists(self.f))
 
 

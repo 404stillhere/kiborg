@@ -38,7 +38,7 @@ class TestDirection(unittest.TestCase):
         direction.save(current="игры", presets=["игры", "здоровье"])
         with open(direction.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(os.path.exists(direction.PATH + ".tmp"))
+        self.assertFalse(os.path.exists(direction.PATH + config.ATOMIC_TMP_SUFFIX))
         self.assertEqual(direction.load()["current"], "игры")
         self.assertEqual(direction.load()["presets"], ["игры", "здоровье"])
 

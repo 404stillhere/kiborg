@@ -151,7 +151,7 @@ class TestHarvestGate(unittest.TestCase):
         harvest._atomic_write(path, '{"a":2}')  # перезапись поверх
         with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), '{"a":2}')
-        self.assertFalse(os.path.exists(path + ".tmp"))
+        self.assertFalse(os.path.exists(path + config.ATOMIC_TMP_SUFFIX))
 
     def test_sig_persist_roundtrip(self):
         tmp = tempfile.mkdtemp(prefix="harvest_")
@@ -161,7 +161,7 @@ class TestHarvestGate(unittest.TestCase):
             self.assertIsNone(harvest._last_sig())  # пусто -> None
             harvest._save_sig("deadbeef")
             self.assertEqual(harvest._last_sig(), "deadbeef")
-            self.assertFalse(os.path.exists(harvest.STATE_FILE + ".tmp"))  # атомарно, без хвоста
+            self.assertFalse(os.path.exists(harvest.STATE_FILE + config.ATOMIC_TMP_SUFFIX))  # атомарно, без хвоста
         finally:
             harvest.STATE_FILE = orig
 

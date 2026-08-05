@@ -42,7 +42,7 @@ class TestFeeds(unittest.TestCase):
         feeds.save(["reddit", "hn"])
         with open(feeds.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(os.path.exists(feeds.PATH + ".tmp"))  # временный файл убран
+        self.assertFalse(os.path.exists(feeds.PATH + config.ATOMIC_TMP_SUFFIX))  # временный файл убран
         self.assertEqual(feeds.load()["enabled"], ["hn", "reddit"])
 
     def test_canonical_order_and_dedup(self):

@@ -39,7 +39,7 @@ class TestCouncilConfig(unittest.TestCase):
         council_config.save(["ask_llm"])
         with open(council_config.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(os.path.exists(council_config.PATH + ".tmp"))  # tmp убран
+        self.assertFalse(os.path.exists(council_config.PATH + config.ATOMIC_TMP_SUFFIX))  # tmp убран
         self.assertEqual(council_config.load()["enabled"], ["ask_llm"])
 
     def test_unknown_advisors_dropped(self):

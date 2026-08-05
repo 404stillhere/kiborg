@@ -52,7 +52,7 @@ class TestCouncilWeights(unittest.TestCase):
         council_weights.save({"enabled": False, "weights": council_weights.DEFAULT_WEIGHTS})
         with open(council_weights.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)
-        self.assertFalse(os.path.exists(council_weights.PATH + ".tmp"))
+        self.assertFalse(os.path.exists(council_weights.PATH + config.ATOMIC_TMP_SUFFIX))
 
     def test_broken_file_falls_back_to_default(self):
         with open(council_weights.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:

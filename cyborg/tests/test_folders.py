@@ -34,7 +34,7 @@ class TestFolders(unittest.TestCase):
         folders.save(["M:/a", "C:/b"])
         with open(folders.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(os.path.exists(folders.PATH + ".tmp"))
+        self.assertFalse(os.path.exists(folders.PATH + config.ATOMIC_TMP_SUFFIX))
         self.assertEqual(folders.load()["paths"], ["M:/a", "C:/b"])
 
     def test_cleaned_dedup_trim_and_empty(self):

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ask_llm  # noqa: E402  (last_provider мок для provider-проброса в _run_ideate)
+import config  # noqa: E402
 import seen_items  # noqa: E402
 import shadow_metrics  # noqa: E402
 import wiring  # noqa: E402
@@ -1550,20 +1551,20 @@ class TestCollectLockedTgSession(unittest.TestCase):
         held = {}
 
         def fake(inputs, env):
-            held["lock"] = os.path.exists(self.sess + ".lock")  # замок держится В МОМЕНТ фетча
+            held["lock"] = os.path.exists(self.sess + config.TG_LOCK_SUFFIX)  # замок держится В МОМЕНТ фетча
             return {"items": [], "degraded": False}
 
         wiring.collect_source.run = fake
         wiring._collect_locked({}, {"telegram_session": self.sess})
         self.assertTrue(held["lock"])  # держали эксклюзивно во время фетча
-        self.assertFalse(os.path.exists(self.sess + ".lock"))  # снят после выхода
+        self.assertFalse(os.path.exists(self.sess + config.TG_LOCK_SUFFIX))  # снят после выхода
 
     def test_no_lock_without_telegram(self):
         seen = {}
 
         def fake(inputs, env):
             seen["called"] = True
-            seen["any_lock"] = any(f.endswith(".lock") for f in os.listdir(self.tmp))
+            seen["any_lock"] = any(f.endswith(config.TG_LOCK_SUFFIX) for f in os.listdir(self.tmp))
             return {"items": []}
 
         wiring.collect_source.run = fake
@@ -1573,7 +1574,7 @@ class TestCollectLockedTgSession(unittest.TestCase):
 
     def test_second_caller_waits_then_proceeds_no_deadlock(self):
         # «чужой процесс» держит лок -> ждём до таймаута и ПРОХОДИМ (без дедлока), чужой лок не трогаем
-        open(self.sess + ".lock", "w").close()
+        open(self.sess + config.TG_LOCK_SUFFIX, "w").close()
         orig_to = wiring._TG_LOCK_TIMEOUT
         wiring._TG_LOCK_TIMEOUT = 0.2  # короткий таймаут — тест быстрый
         proceeded = {}
@@ -1645,7 +1646,7 @@ class TestRemoveStaleLock(unittest.TestCase):
 
     def _make_lock(self, age_minutes):
         """Создать lock-файл с mtime age_minutes минут назад."""
-        path = self.sess + ".lock"
+        path = self.sess + config.TG_LOCK_SUFFIX
         open(path, "w").close()
         old_ts = time.time() - age_minutes * 60
         os.utime(path, (old_ts, old_ts))
@@ -1670,7 +1671,7 @@ class TestRemoveStaleLock(unittest.TestCase):
 
     def test_no_lock_file_no_error(self):
         # lock-файла нет → функция не падает, возвращает False
-        self.assertFalse(os.path.exists(self.sess + ".lock"))
+        self.assertFalse(os.path.exists(self.sess + config.TG_LOCK_SUFFIX))
         removed = wiring._remove_stale_lock(self.sess, max_age_seconds=30 * 60)
         self.assertFalse(removed)
 
@@ -1692,7 +1693,7 @@ class TestRemoveStaleLock(unittest.TestCase):
         self._make_lock(age_minutes=29)
         removed = wiring._remove_stale_lock(self.sess, max_age_seconds=30 * 60)
         self.assertFalse(removed)
-        self.assertTrue(os.path.exists(self.sess + ".lock"))
+        self.assertTrue(os.path.exists(self.sess + config.TG_LOCK_SUFFIX))
 
     def test_stale_logs_message(self):
         # факт очистки попадает в stdout (читается в логах прогона)
@@ -1710,7 +1711,7 @@ class TestRemoveStaleLock(unittest.TestCase):
         out = captured.getvalue()
         self.assertIn("[stale-lock]", out)
         self.assertIn("удалён зависший lock", out)
-        self.assertIn(self.sess + ".lock", out)  # путь к lock в логе
+        self.assertIn(self.sess + config.TG_LOCK_SUFFIX, out)  # путь к lock в логе
 
     def test_empty_session_returns_false(self):
         # пустой путь сессии → ничего не делаем (защита от None/пустого env)
@@ -1737,7 +1738,7 @@ class TestCollectLockedStaleLockCleanup(unittest.TestCase):
         # _collect_locked должен: (1) снести труп через _remove_stale_lock,
         # (2) вызвать state_lock, который сразу получит O_EXCL (файла-то уже нет),
         # (3) выполниться быстро (без ожидания таймаута).
-        stale_path = self.sess + ".lock"
+        stale_path = self.sess + config.TG_LOCK_SUFFIX
         open(stale_path, "w").close()
         old_ts = time.time() - 31 * 60
         os.utime(stale_path, (old_ts, old_ts))
@@ -1757,7 +1758,7 @@ class TestCollectLockedStaleLockCleanup(unittest.TestCase):
     def test_fresh_lock_kept_cleanup_skipped(self):
         # свежий lock (1 мин) → _remove_stale_lock его НЕ трогает, state_lock честно
         # ждёт до _TG_LOCK_TIMEOUT, потом проходит без лока. Поведение прежнее.
-        fresh_path = self.sess + ".lock"
+        fresh_path = self.sess + config.TG_LOCK_SUFFIX
         open(fresh_path, "w").close()  # mtime = now → свежий
 
         orig_to = wiring._TG_LOCK_TIMEOUT
