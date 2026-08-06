@@ -855,3 +855,182 @@ SECONDS_PER_DAY = 86400
 # или прямой запуск старого сценария). Эти же значения покрывают регресс-тест 2026-07-12.
 COLLECT_DEFAULT_N = 8
 COLLECT_DEFAULT_SOURCE = "hn"
+
+# === COLLECT_SOURCE (idea_engine/organs/collect_source.py) ===
+# Текстовые расширения файлов, которые читаем как сырьё для идей (код + доки + конфиг).
+COLLECT_SOURCE_TEXT_EXT = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".rb",
+    ".php",
+    ".c",
+    ".h",
+    ".hpp",
+    ".cpp",
+    ".cc",
+    ".cs",
+    ".swift",
+    ".m",
+    ".mm",
+    ".scala",
+    ".dart",
+    ".lua",
+    ".r",
+    ".jl",
+    ".sh",
+    ".sql",
+    ".vue",
+    ".svelte",
+    ".html",
+    ".md",
+    ".txt",
+    ".rst",
+    ".markdown",
+    ".adoc",
+    # Конфигурация и инфраструктура — без них «анализ проекта» слеп к реальной сборке.
+    ".json",
+    ".jsonl",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".properties",
+    ".xml",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".ps1",
+    ".psm1",
+    ".bat",
+    ".cmd",
+    ".gradle",
+    ".proto",
+    ".graphql",
+    ".gql",
+    ".tf",
+    ".hcl",
+}
+# Имена файлов без расширения, которые тоже считаем текстовым сырьём.
+COLLECT_SOURCE_TEXT_NAMES = {
+    "dockerfile",
+    "makefile",
+    "rakefile",
+    "gemfile",
+    "procfile",
+    "justfile",
+    "go.mod",
+    "go.work",
+    "cargo.lock",
+}
+# Lock-файлы и прочий low-signal шум: читаем, но помечаем ролью generated (низкий score).
+COLLECT_SOURCE_LOW_SIGNAL_NAMES = {
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "go.sum",
+    "cargo.lock",
+}
+# Папки, которые полностью пропускаем при обходе проекта.
+COLLECT_SOURCE_SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    "venv",
+    ".venv",
+    "env",
+    "node_modules",
+    "__pycache__",
+    ".idea",
+    ".vscode",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".next",
+    ".cache",
+    "dist",
+    "build",
+    "target",
+    "vendor",
+    "coverage",
+    "htmlcov",
+    # История чатов и бэкапы забивают случайную выборку устаревшими снимками. Если нужны как сырьё,
+    # их можно указать отдельным корнем: _files_walk не отбрасывает сам root.
+    "handoffs",
+    "backups",
+}
+# Скрытые папки, которые НЕ личный мусор, а часть архитектуры/деплоя проекта.
+COLLECT_SOURCE_KEEP_HIDDEN_DIRS = {".github", ".openai"}
+# Расширения файлов, которые считаем секретами и не читаем вообще.
+COLLECT_SOURCE_SECRET_EXT = {
+    ".env",
+    ".session",
+    ".key",
+    ".pem",
+    ".pfx",
+    ".p12",
+    ".crt",
+    ".cer",
+    ".keystore",
+    ".jks",
+    ".ppk",
+}
+# Подстроки в имени файла, по которым отсекаем секреты.
+COLLECT_SOURCE_SECRET_HINTS = (
+    "secret",
+    "password",
+    "credential",
+    "token",
+    "apikey",
+    "api_key",
+    "id_rsa",
+    ".htpasswd",
+)
+# Имена файлов, которые раскрывают обзор проекта.
+COLLECT_SOURCE_OVERVIEW_NAMES = {
+    "readme.md",
+    "readme.txt",
+    "agents.md",
+    "contributing.md",
+    "architecture.md",
+    "design.md",
+    "decisions.md",
+    "roadmap.md",
+    "runbook.md",
+}
+# Имена манифестов проекта.
+COLLECT_SOURCE_MANIFEST_NAMES = {
+    "pyproject.toml",
+    "package.json",
+    "cargo.toml",
+    "go.mod",
+    "go.work",
+    "requirements.txt",
+    "dockerfile",
+    "compose.yaml",
+    "compose.yml",
+    "docker-compose.yaml",
+    "docker-compose.yml",
+    "makefile",
+}
+# Имена точек входа в приложение.
+COLLECT_SOURCE_ENTRY_NAMES = {
+    "main.py",
+    "app.py",
+    "server.py",
+    "cli.py",
+    "index.js",
+    "index.ts",
+    "main.go",
+    "main.rs",
+    "program.cs",
+}

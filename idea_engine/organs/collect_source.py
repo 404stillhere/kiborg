@@ -227,37 +227,13 @@ def _telegram(n, timeout, env):
 # БЕЗОПАСНОСТЬ: секреты (*.env/*.session/ключи и имена с secret/token/…) и мусор
 # (.git/venv/node_modules/__pycache__/…) НЕ читаем. Строки, похожие на креды, выкидываются здесь,
 # а wiring_collect повторно скрабит title+context перед LLM. Только текст (код+доки).
-_FILES_TEXT_EXT = {
-    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".rb", ".php",
-    ".c", ".h", ".hpp", ".cpp", ".cc", ".cs", ".swift", ".m", ".mm", ".scala", ".dart",
-    ".lua", ".r", ".jl", ".sh", ".sql", ".vue", ".svelte", ".html",
-    ".md", ".txt", ".rst", ".markdown", ".adoc",
-    # Конфигурация и инфраструктура — без них «анализ проекта» слеп к реальной сборке.
-    ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".properties",
-    ".xml", ".css", ".scss", ".sass", ".less", ".ps1", ".psm1", ".bat", ".cmd",
-    ".gradle", ".proto", ".graphql", ".gql", ".tf", ".hcl",
-}
-_FILES_TEXT_NAMES = {
-    "dockerfile", "makefile", "rakefile", "gemfile", "procfile", "justfile",
-    "go.mod", "go.work", "cargo.lock",
-}
-_FILES_LOW_SIGNAL_NAMES = {
-    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum", "cargo.lock",
-}
-_FILES_SKIP_DIRS = {
-    ".git", ".hg", ".svn", "venv", ".venv", "env", "node_modules", "__pycache__",
-    ".idea", ".vscode", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next",
-    ".cache", "dist", "build", "target", "vendor", "coverage", "htmlcov",
-    # История чатов и бэкапы забивают случайную выборку устаревшими снимками. Если они нужны
-    # как сырьё, их можно указать отдельным корнем: _files_walk не отбрасывает сам root.
-    "handoffs", "backups",
-}
-# Эти скрытые папки — не личный мусор, а часть архитектуры/деплоя проекта.
-_FILES_KEEP_HIDDEN_DIRS = {".github", ".openai"}
-_FILES_SECRET_EXT = {".env", ".session", ".key", ".pem", ".pfx", ".p12", ".crt",
-                     ".cer", ".keystore", ".jks", ".ppk"}
-_FILES_SECRET_HINTS = ("secret", "password", "credential", "token", "apikey",
-                       "api_key", "id_rsa", ".htpasswd")
+_FILES_TEXT_EXT = config.COLLECT_SOURCE_TEXT_EXT
+_FILES_TEXT_NAMES = config.COLLECT_SOURCE_TEXT_NAMES
+_FILES_LOW_SIGNAL_NAMES = config.COLLECT_SOURCE_LOW_SIGNAL_NAMES
+_FILES_SKIP_DIRS = config.COLLECT_SOURCE_SKIP_DIRS
+_FILES_KEEP_HIDDEN_DIRS = config.COLLECT_SOURCE_KEEP_HIDDEN_DIRS
+_FILES_SECRET_EXT = config.COLLECT_SOURCE_SECRET_EXT
+_FILES_SECRET_HINTS = config.COLLECT_SOURCE_SECRET_HINTS
 _FILES_MAX_BYTES = config.FILES_MAX_BYTES  # до 1 МиБ: большой исходник читаем, но выдаём только умную выжимку
 _FILES_HEAD_BYTES = config.FILES_HEAD_BYTES  # headline переживает длинную лицензионную/генерированную шапку
 _FILES_CONTEXT_BYTES = config.FILES_MAX_BYTES  # ищем TODO/символы/ошибки по всему допустимому файлу
@@ -618,19 +594,9 @@ def _files_item_id(path, base, headline, context=""):
     return "f2:" + hashlib.sha1(identity.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[: config.COLLECT_SOURCE_HASH_LEN]
 
 
-_FILES_OVERVIEW_NAMES = {
-    "readme.md", "readme.txt", "agents.md", "contributing.md", "architecture.md",
-    "design.md", "decisions.md", "roadmap.md", "runbook.md",
-}
-_FILES_MANIFEST_NAMES = {
-    "pyproject.toml", "package.json", "cargo.toml", "go.mod", "go.work",
-    "requirements.txt", "dockerfile", "compose.yaml", "compose.yml",
-    "docker-compose.yaml", "docker-compose.yml", "makefile",
-}
-_FILES_ENTRY_NAMES = {
-    "main.py", "app.py", "server.py", "cli.py", "index.js", "index.ts",
-    "main.go", "main.rs", "program.cs",
-}
+_FILES_OVERVIEW_NAMES = config.COLLECT_SOURCE_OVERVIEW_NAMES
+_FILES_MANIFEST_NAMES = config.COLLECT_SOURCE_MANIFEST_NAMES
+_FILES_ENTRY_NAMES = config.COLLECT_SOURCE_ENTRY_NAMES
 
 
 def _files_root_label(base):
