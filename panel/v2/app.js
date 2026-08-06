@@ -201,10 +201,47 @@ class Renderer {
     this._doneDetailKey = null;
     this._foldProbe = {};        // путь папки → {exists, files, capped} из /api/folders/probe
     this._probeInFlight = false; // анти-спам: один параллельный запрос probe за раз
+    this._healthSetup = null;    // кеш setup-статуса из /api/health
     // Подписки
     state.subscribe('state', ({ prev, next }) => this._onState(prev, next));
     state.subscribe('run',   ({ prev, next }) => this._onRun(prev, next));
     state.subscribe('error', () => this._onError());
+    state.subscribe('running-toggle', (running) => this._updateEmptyStateText({ ...this.state.data, running }));
+    this._loadHealthSetup();
+    setInterval(() => this._loadHealthSetup(), 60000);
+  }
+
+  async _loadHealthSetup() {
+    try {
+      const r = await fetch('/api/health');
+      const data = await r.json();
+      this._healthSetup = data.setup || { status: 'ok', warnings: [] };
+      this._renderSetupDot();
+    } catch (e) {
+      console.error('[health setup] failed', e);
+    }
+  }
+
+  _updateEmptyStateText(S, hintEl) {
+    const hint = hintEl || Renderer.$('.empty-state-hint');
+    if (!hint) return;
+    const busy = !!S.running;
+    const auto = S.auto || {};
+    const hasSources = (S.sources && S.sources.length > 0) ||
+                       (S.folders && S.folders.current);
+    if (busy) {
+      hint.textContent = '⏳ Киборг работает — скоро появятся идеи';
+      hint.style.color = 'var(--text-tertiary)';
+    } else if (!hasSources) {
+      hint.textContent = '⚠️ Нет включённых источников — откройте настройки';
+      hint.style.color = '#d97706';
+    } else if (auto.on) {
+      hint.textContent = `Сам сходит за новыми каждые ~${auto.interval_min} мин`;
+      hint.style.color = 'var(--text-tertiary)';
+    } else {
+      hint.textContent = 'Авто выкл — можно нажать кнопку.';
+      hint.style.color = 'var(--text-tertiary)';
+    }
   }
 
   // ── helpers ──
@@ -354,6 +391,34 @@ class Renderer {
       at.classList.toggle('on', !!auto.on);
       al.textContent = auto.on ? 'авто ' + auto.interval_min + 'м' : 'авто выкл';
     }
+
+    // индикатор настройки
+    if (this.renderer) this.renderer._renderSetupDot();
+  }
+
+  _renderSetupDot() {
+    if (!this._healthSetup) return;
+    const header = Renderer.$('#header');
+    if (!header) return;
+    let dot = Renderer.$('#setup-dot');
+    if (!dot) {
+      dot = Renderer.el('span', { attrs: { id: 'setup-dot' } });
+      const brand = Renderer.$('.h-brand');
+      if (brand) brand.appendChild(dot);
+    }
+    const colors = { critical: '#ef4444', warning: '#f59e0b', ok: '#10b981' };
+    const labels = {
+      critical: '⚠ Критические проблемы в настройке',
+      warning: '⚠ Не все источники настроены',
+      ok: '✓ Настройка завершена'
+    };
+    dot.style.cssText = `
+      display:inline-block;width:10px;height:10px;border-radius:50%;
+      background:${colors[this._healthSetup.status]};margin-left:8px;
+      vertical-align:middle;cursor:help;
+    `;
+    dot.title = labels[this._healthSetup.status] +
+      (this._healthSetup.warnings.length > 0 ? '\n\n' + this._healthSetup.warnings.join('\n') : '');
   }
 
   // ── ИСТОЧНИКИ (чипы в левой панели) ──
@@ -757,11 +822,8 @@ class Renderer {
     } else {
       sub.textContent = 'Сборов ещё не было.';
     }
-    const hint = Renderer.el('div', { cls: 'empty-sub' });
-    hint.textContent = busy ? 'идёт сбор — скоро появятся, можно уйти'
-      : auto.on ? `Сам сходит за новыми каждые ~${auto.interval_min} мин`
-      : 'Авто выкл — можно нажать кнопку.';
-    hint.style.color = 'var(--text-tertiary)';
+    const hint = Renderer.el('div', { cls: 'empty-sub empty-state-hint' });
+    this._updateEmptyStateText(S, hint);
     es.appendChild(sub);
     es.appendChild(hint);
 
@@ -1063,11 +1125,12 @@ class Toasts {
       пользователя, дёргает API, обновляет State (или сразу Toasts).
    ──────────────────────────────────────────────────────────────────────── */
 class UIController {
-  constructor(state, api, knight, toasts) {
+  constructor(state, api, knight, toasts, renderer) {
     this.state = state;
     this.api = api;
     this.knight = knight;
     this.toasts = toasts;
+    this.renderer = renderer;
     UIController.instance = this;
 
     // Состояние UI
@@ -2134,7 +2197,7 @@ function __initKiborgPanel() {
     applyTheme(localStorage.getItem('kiborg-theme') || 'risograph');
 
     const renderer = new Renderer(state, knight);
-    const ui = new UIController(state, api, knight, toasts);
+    const ui = new UIController(state, api, knight, toasts, renderer);
     const poller = new PollingManager(state, api);
     // ArrangeManager — режим расстановки блоков настроек мышкой (кнопка «✋ Разместить»).
     // Вне режима блоки стоят по умолчанию; сохранённый порядок восстанавливается в openSettings.

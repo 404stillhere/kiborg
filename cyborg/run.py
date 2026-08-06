@@ -17,6 +17,8 @@ except Exception:
 
 import ask_llm  # noqa: E402
 import config  # noqa: E402
+import feeds  # noqa: E402
+import folders  # noqa: E402
 import harvest  # noqa: E402  (_source_env + wire_council: единый источник и впайка совета — как у автосбора)
 import keychain  # noqa: E402  (runtime-предупреждение о секретном файле не в .gitignore)
 from orchestrator import Cyborg  # noqa: E402
@@ -69,6 +71,20 @@ def main(argv):
 
         return oracle_mode.main(argv[2:])
     goal = argv[0] if argv else "приноси свежие идеи"
+
+    # --- Ранняя проверка конфигурации (council 2026-08-06) ---
+    smoke_errors = []
+    if not keychain.available():
+        smoke_errors.append("нет настроенных LLM-ключей — см. cyborg/llm_keys.env")
+    if not list(feeds.enabled()) and not folders.current():
+        smoke_errors.append("нет включённых источников — откройте настройки пульта")
+    if smoke_errors:
+        print("⚠ Не запущено:", flush=True)
+        for err in smoke_errors:
+            print(f"   • {err}", flush=True)
+        print("\nПодробности: см. USAGE.md или запустите python panel/serve.py", flush=True)
+        return 1
+
     try:
         cat_n = len(load_catalog())
     except Exception as e:

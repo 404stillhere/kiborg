@@ -106,6 +106,28 @@ export KIBORG_ALERT_CHAT_ID="987654321"
 
 Без этих переменных алерты печатаются в stdout с префиксом `[ALERT]`.
 
+## Быстрый старт
+
+Подробно — в [`USAGE.md`](USAGE.md).
+
+```bash
+# 1. Ключи
+cp deployment/llm_keys.env.example cyborg/llm_keys.env
+# отредактировать: вставить CLOSEROUTER_API_KEY и/или GEMINI_API_KEY
+
+# 2. Запустить пульт
+python panel/serve.py
+
+# 3. Открыть http://127.0.0.1:8737, включить источники, нажать «Принеси идеи»
+```
+
+## Документация
+
+| Файл | Для кого |
+|---|---|
+| [USAGE.md](USAGE.md) | Пользователь: как начать, как пользоваться, типичные ошибки |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Разработчик: тесты, структура, как добавить орган |
+
 ## Где что искать
 
 - Детали пакетов — их `README.md` (`cyborg/`, `idea_engine/`).

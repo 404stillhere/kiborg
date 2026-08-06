@@ -36,23 +36,36 @@ _SPEC = [
 
 
 def _read_env_file(fp):
-    """KEY=value -> dict. Пустые значения и комментарии игнорируются. Кавычки снимаются."""
+    """KEY=value -> dict. Пустые значения и комментарии игнорируются. Кавычки снимаются.
+    Предупреждает о типичных ошибках формата (пробелы вокруг =, кавычки, BOM)."""
     out = {}
+    warnings = []
     try:
-        with open(fp, encoding=config.HTTP_CHARSET_UTF8) as f:
+        with open(fp, encoding=config.HTTP_CHARSET_UTF8_SIG) as f:
             raw = f.read()
     except Exception:
         return out
-    for line in raw.splitlines():
+    for lineno, line in enumerate(raw.splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, _, v = line.partition("=")
         k, v = k.strip(), v.strip()
+        if " " in k or "\t" in k:
+            warnings.append(f"строка {lineno}: ключ содержит пробелы — '{k}'")
         if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+            warnings.append(f"строка {lineno}: убраны кавычки у {k}")
             v = v[1:-1]
+        if line.partition("=")[0].endswith(" ") or line.partition("=")[2].startswith(" "):
+            warnings.append(f"строка {lineno}: пробелы вокруг = — работает, но лучше убрать")
         if k and v:  # пустое значение = ключ не задан, пропускаем
             out[k] = v
+    if warnings:
+        print(f"⚠️ {fp}: предупреждения о формате:")
+        for w in warnings[:3]:
+            print(f"   {w}")
+        if len(warnings) > 3:
+            print(f"   ... и ещё {len(warnings) - 3}")
     return out
 
 

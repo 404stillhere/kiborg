@@ -13,6 +13,7 @@
 import os
 import re
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -45,7 +46,17 @@ def run(inputs, env):
     readme_summary = _read_readme(root, errors)
     inbox_state = _read_inbox_state(root, errors)
 
+    start_time = time.time()
+    timeout_warned = False
+
     for dirpath, dirnames, filenames in _walk(root):
+        elapsed = time.time() - start_time
+        if elapsed > config.ORACLE_SCAN_WALL_TIMEOUT_SECONDS and not timeout_warned:
+            errors.append(
+                f"сканирование длится >{config.ORACLE_SCAN_WALL_TIMEOUT_SECONDS} сек — "
+                "возможно, путь слишком большой"
+            )
+            timeout_warned = True
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
         for name in sorted(filenames):
             rel = _rel(Path(dirpath) / name, root)
@@ -57,6 +68,8 @@ def run(inputs, env):
             count = _count_markers(Path(dirpath) / name, errors)
             if count:
                 markers[rel] = count
+        if len(files) > 0 and len(files) % 500 == 0:
+            print(f"⏳ сканирование... {elapsed:.0f} сек, найдено {len(files)} файлов")
 
     tree = _build_tree(root.name, files, depth=MAX_TREE_DEPTH)
     extensions = _ext_histogram(files)

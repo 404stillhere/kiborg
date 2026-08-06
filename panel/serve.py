@@ -22,6 +22,7 @@ import mimetypes
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -438,6 +439,15 @@ def _health():
     # Таймауты state_lock за последний час (после stale-lock-cleanup это РЕДКОСТЬ —
     # значит живой конкурент реально держал лок >130с). Счётчик per-process in-memory.
     recent = lock_monitor.recent_timeouts(config.PANEL_HEALTH_LOCK_WINDOW_MINUTES)
+    # --- setup status (usability) ---
+    keys_configured = keychain.available()
+    active = list(_active_source_names())
+    setup_warnings = []
+    if not keys_configured:
+        setup_warnings.append("API-ключи не настроены — впишите в cyborg/llm_keys.env")
+    if not active:
+        setup_warnings.append("Нет включённых источников — откройте настройки пульта")
+    setup_status = "critical" if not keys_configured else ("warning" if not active else "ok")
     return {
         "ok": ok,
         "llm": {"available": llm_ok},
@@ -445,6 +455,12 @@ def _health():
         "sources": {"down": src_down, "status": sources},
         "last_run": {"rc": RUN.get("rc"), "running": RUN.get("running")},
         "locks": {"recent_timeouts": recent, "window_minutes": config.PANEL_HEALTH_LOCK_WINDOW_MINUTES},
+        "setup": {
+            "status": setup_status,
+            "keys_configured": keys_configured,
+            "active_sources": active,
+            "warnings": setup_warnings,
+        },
     }
 
 
@@ -876,7 +892,28 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "нет такого пути"}, 404)
 
 
+def _check_port_available(host: str, port: int) -> bool:
+    """Проверяет, свободен ли порт."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    try:
+        sock.bind((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
 def main():
+    if not _check_port_available(config.PANEL_HOST, PORT):
+        print(
+            f"⚠ Порт {PORT} уже занят — возможно, пульт уже запущен.\n"
+            f"   Закройте другой экземпляр или измените порт в config.py.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     srv = ThreadingHTTPServer((config.PANEL_HOST, PORT), Handler)
     threading.Thread(target=_auto_loop, daemon=True).start()  # фон-рубильник (по умолчанию выключен)
     print(f"Пульт киборга: http://{config.PANEL_HOST}:{PORT}  (Ctrl+C — стоп)")

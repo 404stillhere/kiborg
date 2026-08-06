@@ -281,6 +281,7 @@ HTTP_HEADER_ANTHROPIC_VERSION = "anthropic-version"
 HTTP_ANTHROPIC_VERSION_DATE = "2023-06-01"
 HTTP_MEDIA_TYPE_JSON = "application/json"
 HTTP_CHARSET_UTF8 = "utf-8"
+HTTP_CHARSET_UTF8_SIG = "utf-8-sig"  # с автоматическим отрезанием BOM
 HTTP_DECODE_ERRORS_REPLACE = "replace"
 HTTP_DECODE_ERRORS_SURROGATEESCAPE = "surrogateescape"
 # Fallback-кодировки для декодирования чужих файлов (collect_source._files_decode).
@@ -815,6 +816,9 @@ ORACLE_SCAN_README_LINES = 15
 ORACLE_SCAN_README_FEATURES_BUF = 5
 # Максимальная длина итогового summary README (символов).
 ORACLE_SCAN_README_SUMMARY_MAX_CHARS = 1200
+# Wall-clock таймаут сканирования проекта в Oracle-режиме (секунды).
+# Не прерывает сканирование, но добавляет warning в project_map.
+ORACLE_SCAN_WALL_TIMEOUT_SECONDS = 120
 
 # === ORACLE-PLAN (idea_engine/organs/oracle_plan.py) ===
 # Максимальное число файлов, передаваемых в промпт планировщика.
