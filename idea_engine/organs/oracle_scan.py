@@ -19,83 +19,14 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cyborg"))
 import config  # noqa: E402
 
-SKIP_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".idea",
-    ".vscode",
-    ".tox",
-    ".nox",
-    ".mypy_cache",
-    ".pytest_cache",
-    "__pycache__",
-    "node_modules",
-    ".venv",
-    "venv",
-    "dist",
-    "build",
-    "target",
-    "out",
-    ".next",
-    ".nuxt",
-    ".svelte-kit",
-    "coverage",
-}
-
-# Генерированные/вспомогательные артефакты, которые не должны попадать в карту проекта.
-# Исключаем: бэкапы, логи, данные (inbox, oracles, backups), handoffs, audit.
-SKIP_PATH_PATTERNS = {
-    re.compile(r"\.bak(?:-|$)"),
-    re.compile(r"\.log$"),
-    re.compile(r"/data/"),
-    re.compile(r"^data/"),
-    re.compile(r"^handoffs/"),
-    re.compile(r"^audit/"),
-    re.compile(r"^\.brain/"),
-    re.compile(r"^\.feature-lab/"),
-}
-
-# Расширения файлов, которые несут полезную информацию для планировщика.
-# Всё остальное (бинарные, временные) игнорируется.
-KEEP_EXTENSIONS = {
-    ".py",
-    ".js",
-    ".ts",
-    ".html",
-    ".css",
-    ".md",
-    ".toml",
-    ".txt",
-    ".json",
-    ".yml",
-    ".yaml",
-    ".sh",
-    ".env",
-    ".example",
-}
-
+SKIP_DIRS = config.ORACLE_SCAN_SKIP_DIRS
+SKIP_PATH_PATTERNS = {re.compile(p) for p in config.ORACLE_SCAN_SKIP_PATH_PATTERNS}
+KEEP_EXTENSIONS = config.ORACLE_SCAN_KEEP_EXTENSIONS
 MAX_FILES = config.ORACLE_SCAN_MAX_FILES
 MAX_TREE_DEPTH = config.ORACLE_SCAN_MAX_TREE_DEPTH
 CONTENT_MAX_BYTES = config.ORACLE_SCAN_CONTENT_MAX_BYTES
-ENTRYPOINTS = {
-    "README.md",
-    "readme.md",
-    "pyproject.toml",
-    "setup.py",
-    "requirements.txt",
-    "package.json",
-    "Cargo.toml",
-    "go.mod",
-    "Makefile",
-    "main.py",
-    "app.py",
-    "manage.py",
-    "index.js",
-    "index.ts",
-    "docker-compose.yml",
-}
-MARKER_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
+ENTRYPOINTS = config.ORACLE_SCAN_ENTRYPOINTS
+MARKER_RE = config.ORACLE_SCAN_MARKER_RE
 
 
 def run(inputs, env):

@@ -23,6 +23,7 @@ level (`STATE_FILE = config.HARVEST_STATE_FILE`). Это нужно, потом�
 """
 
 import os
+import re
 
 # === КОРНЕВЫЕ ПУТИ ПРОЕКТА (от __file__ = cyborg/config.py — относительно, любая ОС) ===
 # Раньше были захардкожены абсолютными Windows-путями (M:/projects/kiborg/...) — ломали CI
@@ -721,6 +722,79 @@ FILES_SECRET_PROBE_HALF_WINDOW = 2500
 FILES_SECRET_PROBE_FULL_WINDOW = 5000
 
 # === ORACLE-SCAN (idea_engine/organs/oracle_scan.py) ===
+# Папки, которые oracle_scan не заходит (мусор / generated / артефакты сборки).
+ORACLE_SCAN_SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".idea",
+    ".vscode",
+    ".tox",
+    ".nox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    "target",
+    "out",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    "coverage",
+}
+# Генерированные/вспомогательные артефакты, которые не должны попадать в карту проекта.
+# Исключаем: бэкапы, логи, данные (inbox, oracles, backups), handoffs, audit.
+ORACLE_SCAN_SKIP_PATH_PATTERNS = {
+    r"\.bak(?:-|$)",
+    r"\.log$",
+    r"/data/",
+    r"^data/",
+    r"^handoffs/",
+    r"^audit/",
+    r"^\.brain/",
+    r"^\.feature-lab/",
+}
+# Расширения файлов, которые несут полезную информацию для планировщика.
+ORACLE_SCAN_KEEP_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+    ".md",
+    ".toml",
+    ".txt",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".sh",
+    ".env",
+    ".example",
+}
+# Имена файлов, которые oracle_scan считает entrypoints проекта.
+ORACLE_SCAN_ENTRYPOINTS = {
+    "README.md",
+    "readme.md",
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+    "package.json",
+    "Cargo.toml",
+    "go.mod",
+    "Makefile",
+    "main.py",
+    "app.py",
+    "manage.py",
+    "index.js",
+    "index.ts",
+    "docker-compose.yml",
+}
+# Маркеры, которые oracle_scan ищет в файлах.
+ORACLE_SCAN_MARKER_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b", re.IGNORECASE)
 # Максимальное число файлов в карте проекта.
 ORACLE_SCAN_MAX_FILES = 2000
 # Глубина дерева файлов в карте проекта.
