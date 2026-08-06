@@ -90,5 +90,5 @@ def test_noise_files_filtered():
     assert "data/oracles/plan.md" not in files
     assert "serve.log" not in files
     assert "main.py.bak-2026-01-01" not in files
-    # TODO из бэкапа не должен попасть в маркеры
+    # бэкап исключён из project_map, поэтому и его маркеры не должны попасть
     assert "main.py.bak-2026-01-01" not in out["project_map"]["markers"]

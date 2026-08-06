@@ -87,6 +87,7 @@ import triage_store  # noqa: E402  (taken/later — разобранные ид�
 from organs import (  # noqa: E402  (проба папок: probe_paths — путь валиден? сколько файлов?)
     collect_source,
 )
+import restore_backup  # noqa: E402  (кнопка отката state.json к последнему бэкапу — B7)
 
 _ORGANS = build_organs()
 
@@ -280,6 +281,33 @@ def _set_idea(idea_id, status):
     )
     out = (p.stdout or "").strip() + (p.stderr or "").strip()
     return {"ok": p.returncode == 0 and "NOT_FOUND" not in out, "msg": out[: config.PANEL_MSG_MAX_CHARS]}
+
+
+def _rollback_state():
+    """Откат state.json + seen_items.json к последнему бэкапу. Требует остановки прогона.
+
+    Безопасность: перед перезаписью текущих файлов создаётся pre-restore копия
+    (как в restore_backup.restore), поэтому даже «не тот» бэкап можно отменить вручную.
+    Не запускается во время running-прогона — иначе гонка за state.json.
+    """
+    with _LOCK:
+        if RUN["running"]:
+            return {"ok": False, "busy": True, "msg": "идёт прогон — откат отложен до остановки"}
+
+    backups = restore_backup._list_backups()
+    if not backups:
+        return {"ok": False, "msg": f"нет бэкапов в {config.BACKUPS_DIR}"}
+
+    latest = backups[0]
+    ok = restore_backup.restore(latest)
+    if not ok:
+        return {"ok": False, "msg": f"не удалось восстановить из бэкапа {latest}"}
+
+    return {
+        "ok": True,
+        "backup": latest,
+        "msg": f"state откачен к бэкапу {latest}",
+    }
 
 
 def _purge_low_score(max_score):
@@ -875,6 +903,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
             self._json(res)
+        elif self.path == "/api/state/rollback":
+            # откат state.json + seen_items.json к последнему бэкапу (B7)
+            try:
+                res = _rollback_state()
+            except Exception as e:
+                res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
+            self._json(res)
         elif self.path == "/api/ideas/purge":
             # массовый триаж: все открытые идеи с score < threshold → мусор.
             # threshold по умолчанию 8.0 (зелёный круг = хорошая идея, ниже = на разбор).
@@ -885,6 +920,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 res = _purge_low_score(threshold)
+            except Exception as e:
+                res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
+            self._json(res)
+        elif self.path == "/api/state/rollback":
+            # откат state.json + seen_items.json к последнему бэкапу (B7).
+            try:
+                res = _rollback_state()
             except Exception as e:
                 res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
             self._json(res)

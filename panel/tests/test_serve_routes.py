@@ -54,6 +54,9 @@ class TestServeRoutes(unittest.TestCase):
             "feeds": serve.feeds.PATH,
             "cc": serve.council_config.PATH,
             "gp": serve.genparams.PATH,
+            "bd": serve.config.BACKUPS_DIR,
+            "sj": serve.config.IE_STATE_JSON,
+            "si": serve.restore_backup.seen_items.PATH,
         }
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
@@ -61,6 +64,10 @@ class TestServeRoutes(unittest.TestCase):
         serve.feeds.PATH = os.path.join(self.tmp, "feeds.json")
         serve.council_config.PATH = os.path.join(self.tmp, "council.json")
         serve.genparams.PATH = os.path.join(self.tmp, "genparams.json")
+        self._backup_dir = os.path.join(self.tmp, "backups")
+        serve.config.BACKUPS_DIR = self._backup_dir
+        serve.config.IE_STATE_JSON = os.path.join(self.tmp, "state.json")
+        serve.restore_backup.seen_items.PATH = os.path.join(self.tmp, "seen_items.json")
 
     def tearDown(self):
         serve.folders.PATH = self._saved["fp"]
@@ -69,6 +76,9 @@ class TestServeRoutes(unittest.TestCase):
         serve.feeds.PATH = self._saved["feeds"]
         serve.council_config.PATH = self._saved["cc"]
         serve.genparams.PATH = self._saved["gp"]
+        serve.config.BACKUPS_DIR = self._saved["bd"]
+        serve.config.IE_STATE_JSON = self._saved["sj"]
+        serve.restore_backup.seen_items.PATH = self._saved["si"]
 
     def _post(self, path, body=None, ctype=config.HTTP_MEDIA_TYPE_JSON, raw=None):
         data = raw if raw is not None else json.dumps(body).encode(config.HTTP_CHARSET_UTF8)
@@ -340,6 +350,47 @@ class TestServeRoutes(unittest.TestCase):
         self.assertIn("running", body)
         self.assertIn("goal", body)
         self.assertIn("rc", body)
+
+    def _write_json(self, path, obj):
+        with open(path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            json.dump(obj, f, ensure_ascii=False)
+
+    def test_state_rollback_restores_latest_backup(self):
+        # создаём бэкап и текущий state; откат должен вернуть бэкап
+        backup_ts = "2026-08-06_120000"
+        backup_dir = os.path.join(self._backup_dir, backup_ts)
+        os.makedirs(backup_dir, exist_ok=True)
+        self._write_json(os.path.join(backup_dir, "state.json"), {"tick": 7, "ideas": []})
+        self._write_json(os.path.join(backup_dir, "seen_items.json"), {"items": ["a"]})
+        self._write_json(serve.config.IE_STATE_JSON, {"tick": 99, "ideas": []})
+        self._write_json(serve.restore_backup.seen_items.PATH, {"items": ["z"]})
+
+        code, body = self._post("/api/state/rollback", {})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["backup"], backup_ts)
+
+        with open(serve.config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
+            self.assertEqual(json.load(f)["tick"], 7)
+        with open(serve.restore_backup.seen_items.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
+            self.assertEqual(json.load(f)["items"], ["a"])
+
+    def test_state_rollback_no_backups_fails_gracefully(self):
+        code, body = self._post("/api/state/rollback", {})
+        self.assertEqual(code, 200)
+        self.assertFalse(body["ok"])
+        self.assertIn("бэкапов", body["msg"].lower())
+
+    def test_state_rollback_blocked_while_running(self):
+        orig = serve.RUN["running"]
+        serve.RUN["running"] = True
+        try:
+            code, body = self._post("/api/state/rollback", {})
+            self.assertEqual(code, 200)
+            self.assertFalse(body["ok"])
+            self.assertTrue(body.get("busy"))
+        finally:
+            serve.RUN["running"] = orig
 
     def test_run_get_error_returns_500_json(self):
         # error_gap (закрыт): при падении чтения RUN — 500 с JSON-телом, как у соседних GET-роутов

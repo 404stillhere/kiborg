@@ -89,6 +89,7 @@ class API {
   static setGenparams(p)      { return API._request('POST', '/api/genparams', p); }
   static probeFolders()       { return API._request('GET',  '/api/folders/probe'); }
   static startOracle(goal, project) { return API._request('POST', '/api/oracle', { goal, project }); }
+  static rollbackState() { return API._request('POST', '/api/state/rollback', {}); }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1278,6 +1279,24 @@ class UIController {
     };
     const cancel = Renderer.$('.settings-footer .btn-mini');
     if (cancel) cancel.onclick = () => this.closeSettings();
+    // кнопка отката state.json к последнему бэкапу (B7)
+    const rollback = Renderer.$('#btn-rollback');
+    if (rollback) rollback.onclick = () => this._onRollbackState();
+  }
+
+  _onRollbackState() {
+    if (!confirm('Откатить state.json и seen_items.json к последнему бэкапу?\n\nТекущие файлы сохранятся в .pre-restore- рядом.')) return;
+    const btn = Renderer.$('#btn-rollback');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    this.api.rollbackState().then(r => {
+      if (btn) { btn.disabled = false; btn.textContent = '↩ Откат'; }
+      if (r && r.ok) {
+        this.toasts.show('Откат выполнен: ' + (r.msg || r.backup), 'success');
+        this._refreshSoon();
+      } else {
+        this.toasts.show('Откат: ' + ((r && r.msg) || 'не вышло'), 'error');
+      }
+    });
   }
 
   _onSettingsToggle(tgl) {
