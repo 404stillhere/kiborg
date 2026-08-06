@@ -2,9 +2,9 @@
 
 Раньше покрыты были только ХЕЛПЕРЫ (_read_runs/...), а сами POST-роуты и их
 валидация — нет. Тут проверяем POST /api/folders, /api/direction (current+presets), /api/feeds,
-/api/council (рубильники совета) — под фичи направление/папки/тумблеры-лент/совет + общие гейты
-do_POST: Content-Type (415), битый JSON (400), тип тела (400). folders/direction/feeds/council
-пишут в temp (реальные data/*.json не трогаем)."""
+/api/council (рубильники совета), /api/wizard — под фичи направление/папки/тумблеры-лент/совет +
+first-run wizard + общие гейты do_POST: Content-Type (415), битый JSON (400), тип тела (400).
+folders/direction/feeds/council пишут в temp (реальные data/*.json не трогаем)."""
 
 import json
 import os
@@ -409,6 +409,17 @@ class TestServeRoutes(unittest.TestCase):
             serve.RUN = orig_run
         self.assertEqual(code, 500)
         self.assertIn("error", body)
+
+    def test_wizard_returns_setup_state(self):
+        # first-run wizard endpoint: должен вернуть ключи, источники, ленты, папки
+        code, body = self._get("/api/wizard")
+        self.assertEqual(code, 200)
+        self.assertIn("ok", body)
+        self.assertIn("keys_configured", body)
+        self.assertIn("active_sources", body)
+        self.assertIn("all_feeds", body)
+        self.assertIn("feeds", body)
+        self.assertIn("folders", body)
 
 
 if __name__ == "__main__":

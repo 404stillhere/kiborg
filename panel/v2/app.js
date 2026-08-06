@@ -90,6 +90,7 @@ class API {
   static probeFolders()       { return API._request('GET',  '/api/folders/probe'); }
   static startOracle(goal, project) { return API._request('POST', '/api/oracle', { goal, project }); }
   static rollbackState() { return API._request('POST', '/api/state/rollback', {}); }
+  static wizard() { return API._request('GET', '/api/wizard'); }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -399,6 +400,10 @@ class Renderer {
 
   _renderSetupDot() {
     if (!this._healthSetup) return;
+    // обновить setup в state.data, чтобы wizard мог открыться по первому ответу /api/health
+    if (this.state && this.state.data) {
+      this.state.data.setup = this._healthSetup;
+    }
     const header = Renderer.$('#header');
     if (!header) return;
     let dot = Renderer.$('#setup-dot');
@@ -1149,6 +1154,8 @@ class UIController {
     this._bindDock();
     this._bindIdeasPanelActions();
     this._bindLeftActions();
+    this._bindWizard();
+    this._wizard = new FirstRunWizard(this.api, this.toasts, this);
   }
 
   // ── HEADER ──
@@ -1592,6 +1599,20 @@ class UIController {
     Renderer.$('#settings-drawer').classList.remove('open');
   }
 
+  _bindWizard() {
+    const overlay = Renderer.$('#wizard-overlay');
+    const modal = Renderer.$('#wizard-modal');
+    const close = Renderer.$('#wizard-close');
+    const next = Renderer.$('#wizard-next');
+    if (close) close.onclick = () => this._wizard && this._wizard.skip();
+    if (next) next.onclick = () => this._wizard && this._wizard.next();
+    if (overlay) overlay.onclick = () => this._wizard && this._wizard.skip();
+  }
+
+  openWizard() {
+    this._wizard.open();
+  }
+
   _renderSettingsLists() {
     const body = Renderer.$('#settings-body');
     if (!body) return;
@@ -1844,6 +1865,23 @@ class UIController {
     }, 200);
   }
 
+  async addFolderFromWizard(path) {
+    if (!path) return { ok: false, msg: 'пустой путь' };
+    const folders = ((this.state.data && this.state.data.folders && this.state.data.folders.folders) || [])
+      .map(f => ({ path: f.path, on: f.on }));
+    if (folders.some(f => f.path === path)) return { ok: true, already: true };
+    folders.push({ path, on: true });
+    const r = await this.api.setFolders(folders);
+    if (r && r.ok) this._refreshSoon();
+    return r || { ok: false, msg: 'сеть' };
+  }
+
+  async setFeedsFromWizard(enabled) {
+    const r = await this.api.setFeeds(enabled);
+    if (r && r.ok) this._refreshSoon();
+    return r || { ok: false, msg: 'сеть' };
+  }
+
   openOracle() {
     const project = prompt('Путь к проекту:', 'M:/projects/');
     if (!project) return;
@@ -1866,6 +1904,184 @@ class UIController {
       const area = Renderer.$('#console-area');
       if (area) { area.classList.remove('collapsed'); area.classList.add('expanded'); }
     });
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   6a. FirstRunWizard — визард первой настройки. Показывается если setup.status
+       != 'ok': шаги «ключи», «источники», «запуск». Можно пропустить.
+   ──────────────────────────────────────────────────────────────────────── */
+class FirstRunWizard {
+  constructor(api, toasts, ui) {
+    this.api = api;
+    this.toasts = toasts;
+    this.ui = ui;
+    this.opened = false;
+    this.step = 0;
+    this.data = null;
+    this._skipped = localStorage.getItem('kiborg-wizard-skipped') === '1';
+  }
+
+  async maybeOpen() {
+    if (this._skipped || this.opened) return;
+    // Открываем только если setup не ok (нет ключей или нет источников)
+    const S = this.ui.state.data;
+    const setup = (S && S.setup) || { status: 'ok' };
+    if (setup.status === 'ok') return;
+    await this._load();
+    this.open();
+  }
+
+  async _load() {
+    this.data = await this.api.wizard();
+  }
+
+  open() {
+    this.opened = true;
+    this.step = 0;
+    const overlay = Renderer.$('#wizard-overlay');
+    const modal = Renderer.$('#wizard-modal');
+    if (overlay) overlay.classList.add('open');
+    if (modal) modal.classList.add('open');
+    this._render();
+  }
+
+  skip() {
+    this._skipped = true;
+    localStorage.setItem('kiborg-wizard-skipped', '1');
+    this.close();
+  }
+
+  close() {
+    this.opened = false;
+    const overlay = Renderer.$('#wizard-overlay');
+    const modal = Renderer.$('#wizard-modal');
+    if (overlay) overlay.classList.remove('open');
+    if (modal) modal.classList.remove('open');
+  }
+
+  next() {
+    if (this.step === 0) { this.step = 1; this._render(); return; }
+    if (this.step === 1) { this.step = 2; this._render(); return; }
+    if (this.step === 2) {
+      this.ui.runGoal('приноси свежие идеи');
+      this.close();
+      return;
+    }
+  }
+
+  _render() {
+    const body = Renderer.$('#wizard-body');
+    const next = Renderer.$('#wizard-next');
+    const sub = Renderer.$('#wizard-sub');
+    if (!body || !next || !sub) return;
+    body.textContent = '';
+    const titles = ['Ключи LLM', 'Источники', 'Первый сбор'];
+    sub.textContent = `Шаг ${this.step + 1} из ${titles.length}: ${titles[this.step]}`;
+    if (this.step === 0) body.appendChild(this._keysStep());
+    else if (this.step === 1) body.appendChild(this._sourcesStep());
+    else body.appendChild(this._launchStep());
+    this._updateNextButton();
+  }
+
+  _keysStep() {
+    const root = Renderer.el('div', { cls: 'wizard-step active' });
+    root.appendChild(Renderer.el('h3', { text: 'Добавьте ключи' }));
+    root.appendChild(Renderer.el('p', { text: 'Киборг ходит за идеями через LLM-цепочку. Создайте файл llm_keys.env в корне проекта и вставьте хотя бы CLOSEROUTER_API_KEY.' }));
+    const ok = !!(this.data && this.data.keys_configured);
+    root.appendChild(this._checkRow(ok, ok ? 'Ключи найдены' : 'Ключи ещё не найдены — проверьте файл'));
+    if (!ok) {
+      const path = Renderer.el('div', { cls: 'wizard-status', text: 'Пример пути: M:/projects/kiborg/llm_keys.env' });
+      root.appendChild(path);
+      const refresh = Renderer.el('button', { cls: 'btn-mini', text: '↻ Проверить ещё раз' });
+      refresh.onclick = async () => { await this._load(); this._render(); };
+      root.appendChild(refresh);
+    }
+    return root;
+  }
+
+  _sourcesStep() {
+    const root = Renderer.el('div', { cls: 'wizard-step active' });
+    root.appendChild(Renderer.el('h3', { text: 'Выберите источники' }));
+    root.appendChild(Renderer.el('p', { text: 'Можно включить публичные ленты и/или указать папку с вашими заметками/проектами.' }));
+
+    const feedsWrap = Renderer.el('div', { cls: 'wizard-feeds' });
+    const all = (this.data && this.data.all_feeds) || [];
+    const enabled = new Set((this.data && this.data.feeds && this.data.feeds.enabled) || []);
+    const NM = { hn: 'Hacker News', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub Trending', telegram: 'Telegram', self: 'Сам Киборг' };
+    if (!all.length) {
+      feedsWrap.appendChild(Renderer.el('div', { cls: 'wizard-status', text: 'Ленты недоступны' }));
+    }
+    all.forEach(name => {
+      const row = Renderer.el('div', { cls: 'wizard-feed-row' });
+      row.appendChild(Renderer.el('span', { cls: 'wizard-feed-name', text: NM[name] || name }));
+      const tgl = Renderer.el('div', { cls: ['toggle', enabled.has(name) ? 'on' : ''] });
+      tgl.onclick = () => {
+        tgl.classList.toggle('on');
+        if (enabled.has(name)) enabled.delete(name); else enabled.add(name);
+        this.ui.setFeedsFromWizard(Array.from(enabled));
+      };
+      row.appendChild(tgl);
+      feedsWrap.appendChild(row);
+    });
+    root.appendChild(feedsWrap);
+
+    root.appendChild(Renderer.el('p', { text: 'Или добавьте папку:' }));
+    const folderRow = Renderer.el('div', { cls: 'wizard-folder-row' });
+    const input = Renderer.el('input', { attrs: { type: 'text', placeholder: 'M:/projects/myproject' } });
+    const add = Renderer.el('button', { cls: 'btn-mini', text: '+ Добавить' });
+    add.onclick = async () => {
+      const r = await this.ui.addFolderFromWizard(input.value.trim());
+      if (r && r.ok) { input.value = ''; this.toasts.show('Папка добавлена', 'success'); await this._load(); this._render(); }
+      else { this.toasts.show((r && r.msg) || 'не вышло', 'error'); }
+    };
+    folderRow.appendChild(input);
+    folderRow.appendChild(add);
+    root.appendChild(folderRow);
+
+    const active = this._wizardActiveSources();
+    root.appendChild(this._checkRow(active.length > 0, active.length > 0 ? `Источников: ${active.length}` : 'Нет включённых источников'));
+    return root;
+  }
+
+  _launchStep() {
+    const root = Renderer.el('div', { cls: 'wizard-step active' });
+    root.appendChild(Renderer.el('h3', { text: 'Готово к запуску' }));
+    root.appendChild(Renderer.el('p', { text: 'Киборг может сходить за первой партией идей прямо сейчас. Это займёт 1–3 минуты.' }));
+    const ready = !!(this.data && this.data.keys_configured) && this._wizardActiveSources().length > 0;
+    root.appendChild(this._checkRow(ready, ready ? 'Всё настроено' : 'Проверьте ключи и источники'));
+    return root;
+  }
+
+  _checkRow(ok, text) {
+    const row = Renderer.el('div', { cls: ['wizard-check', ok ? 'ok' : ''] });
+    row.appendChild(Renderer.el('div', { cls: ['check', ok ? 'on' : ''] }));
+    row.appendChild(Renderer.el('span', { cls: 'wizard-check-label', text: text }));
+    return row;
+  }
+
+  _wizardActiveSources() {
+    if (!this.data) return [];
+    const fromFeeds = (this.data.feeds && this.data.feeds.enabled) || [];
+    const fromFolders = ((this.data.folders && this.data.folders.folders) || [])
+      .filter(f => f.on).map(f => 'files:' + f.path);
+    return [...fromFeeds, ...fromFolders];
+  }
+
+  _updateNextButton() {
+    const next = Renderer.$('#wizard-next');
+    if (!next) return;
+    if (this.step === 0) {
+      next.textContent = 'Есть ключи →';
+      next.disabled = false;
+    } else if (this.step === 1) {
+      next.textContent = 'Далее →';
+      next.disabled = false;
+    } else {
+      const ready = !!(this.data && this.data.keys_configured) && this._wizardActiveSources().length > 0;
+      next.textContent = '⚡ Запустить первый сбор';
+      next.disabled = !ready;
+    }
   }
 }
 
@@ -2223,6 +2439,8 @@ function __initKiborgPanel() {
     new ArrangeManager(toasts);
 
     poller.start();
+    // Первый запуск: wizard откроется после первого /api/health если setup не ok.
+    setTimeout(() => ui._wizard && ui._wizard.maybeOpen(), 800);
     console.log('[kiborg] пульт v2 запущен, поллинг /api/state каждые 5 сек');
   } catch (e) {
     __showFatalError('__initKiborgPanel', e);

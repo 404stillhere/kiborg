@@ -630,6 +630,25 @@
 </aside>
 
 
+<!-- ═══════════ FIRST-RUN WIZARD ═══════════ -->
+<div id="wizard-overlay"></div>
+<div id="wizard-modal">
+  <div class="wizard-card">
+    <div class="wizard-header">
+      <h2>🚀 Первая настройка</h2>
+      <p id="wizard-sub">До запуска киборга нужно две вещи: ключи и источники.</p>
+    </div>
+    <div class="wizard-body" id="wizard-body">
+      <!-- шаги вставляются из app.js -->
+    </div>
+    <div class="wizard-footer" id="wizard-footer">
+      <button class="btn-mini" id="wizard-close">Пропустить</button>
+      <button class="btn-primary" id="wizard-next" disabled>Продолжить</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ═══════════ TOASTS ═══════════ -->
 <!-- Контейнер; app.js добавляет/убирает отдельные .toast -->
 <div id="toasts"></div>

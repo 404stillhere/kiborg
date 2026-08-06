@@ -91,6 +91,20 @@ import restore_backup  # noqa: E402  (кнопка отката state.json к п
 
 _ORGANS = build_organs()
 
+
+def _wizard_state():
+    """Состояние first-run wizard: какие шаги пройдены, что осталось."""
+    keys_configured = keychain.available()
+    active = list(_active_source_names())
+    return {
+        "ok": bool(keys_configured and active),
+        "keys_configured": keys_configured,
+        "active_sources": active,
+        "all_feeds": feeds.ALL_FEEDS,
+        "folders": folders.load(),
+        "feeds": feeds.load(),
+    }
+
 # --- текущий прогон (один за раз) ---
 RUN = {"running": False, "goal": None, "lines": [], "rc": None, "started": 0.0}
 _LOCK = threading.Lock()
@@ -768,6 +782,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(genparams.meta())
             except Exception as e:
                 self._json({"error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
+        elif self.path == "/api/wizard":
+            try:
+                self._json(_wizard_state())
+            except Exception as e:
+                self._json({"ok": False, "error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         elif self.path == "/api/health":
             # healthcheck: статус ключевых компонентов для мониторинга/алертинга.
             # ok=True когда LLM-цепочка жива, state.json парсится, и НИ ОДИН источник не упал
