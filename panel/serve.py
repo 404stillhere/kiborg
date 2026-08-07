@@ -89,6 +89,12 @@ from organs import (  # noqa: E402  (проба папок: probe_paths — пу
 )
 import restore_backup  # noqa: E402  (кнопка отката state.json к последнему бэкапу — B7)
 
+# mc-bot control client (Phase 4 — управление майнер-ботом из пульта киборга).
+# Без MCBOT_CONTROL_TOKEN в env клиент disabled и endpoints возвращают 503.
+import mcbot_client  # noqa: E402  (тонкая обёртка над urllib, без сторонних зависимостей)
+
+_MCBOT = mcbot_client.default_client()
+
 _ORGANS = build_organs()
 
 
@@ -645,6 +651,25 @@ def _read_oracles():
     return out[: config.PANEL_ORACLE_LIST_MAX_ITEMS]
 
 
+def _mcbot_status():
+    """Состояние mc-bot: heartbeat из лога + статус клиента."""
+    if not _MCBOT.enabled:
+        return {"ok": True, "enabled": False, "msg": "MCBOT_CONTROL_TOKEN не настроен"}
+    st = _MCBOT.read_status()
+    return {
+        "ok": st.get("ok", False),
+        "enabled": True,
+        "connected": st.get("connected", False),
+        "pos": st.get("pos"),
+        "dimension": st.get("dimension"),
+        "health": st.get("health"),
+        "food": st.get("food"),
+        "state": st.get("state"),
+        "timestamp": st.get("timestamp"),
+        "error": st.get("error"),
+    }
+
+
 def _api_state():
     wired = [
         {
@@ -685,6 +710,7 @@ def _api_state():
         "rejected": rejected.count(),  # сколько идей отклонено «мусором» (учат генератор/судью)
         "oracles": _read_oracles(),
         "last_provider": _last_provider(),
+        "mcbot": _mcbot_status(),
     }
 
 
@@ -793,6 +819,12 @@ class Handler(BaseHTTPRequestHandler):
             # (источник с error в source_status.json = явный сбой сети/кред — виден в /health).
             try:
                 self._json(_health())
+            except Exception as e:
+                self._json({"ok": False, "error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
+        elif self.path == "/api/mcbot/status":
+            # Состояние mc-bot (heartbeat из его лога). Только чтение.
+            try:
+                self._json(_mcbot_status())
             except Exception as e:
                 self._json({"ok": False, "error": str(e)[: config.PANEL_ERROR_MAX_CHARS]}, 500)
         else:
@@ -949,6 +981,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 res = {"ok": False, "msg": ("не вышло: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}
             self._json(res)
+        elif self.path == "/api/mcbot/cmd":
+            # Phase 4: управление mc-bot из пульта киборга.
+            # Тело: {"command": "копай"|"стоп"|"статус"|...}. Проксируем в mc-bot control API.
+            if not _MCBOT.enabled:
+                self._json({"ok": False, "msg": "MCBOT_CONTROL_TOKEN не настроен"}, 503)
+                return
+            command = str(body.get("command") or "").strip()
+            if not command:
+                self._json({"ok": False, "msg": "пустая команда"}, 400)
+                return
+            try:
+                res = _MCBOT.send_command(command)
+                self._json({"ok": res.get("ok", False), "mc": res})
+            except Exception as e:
+                self._json({"ok": False, "msg": ("mc-bot: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}, 500)
         else:
             self._json({"error": "нет такого пути"}, 404)
 

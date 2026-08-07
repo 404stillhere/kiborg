@@ -1536,6 +1536,61 @@ input[type="number"]:focus,
 }
 .run-status-pill.ok   { background: var(--ok);     color: var(--ink); }
 .run-status-pill.fail { background: var(--magenta); color: var(--white); }
+.status-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 2px solid var(--ink);
+}
+.status-pill.on   { background: var(--ok);     color: var(--ink); }
+.status-pill.off  { background: var(--paper-3); color: var(--ink-2); }
+.status-pill.warn { background: var(--yellow); color: var(--ink); }
+
+/* ── mc-bot panel ── */
+.mcbot-card {
+  border: var(--border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 560px;
+}
+.mcbot-status {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.mcbot-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 16px;
+}
+.mcbot-metric {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  gap: 8px;
+}
+.mcbot-metric-key { color: var(--text-tertiary); }
+.mcbot-metric-val { font-family: var(--font-mono); color: var(--text-primary); }
+.mcbot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mcbot-actions .btn-action {
+  min-width: 84px;
+}
+.mcbot-log {
+  border-top: var(--border);
+  padding-top: 10px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.mcbot-log-line { margin-bottom: 3px; }
 
 /* ── Dock журнала ── */
 #journal-dock {

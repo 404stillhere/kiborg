@@ -195,6 +195,7 @@
           <button class="seg-btn" data-tab="organs">Органы</button>
           <button class="seg-btn" data-tab="journal">Журнал</button>
           <button class="seg-btn" data-tab="oracles">Oracle</button>
+          <button class="seg-btn" data-tab="mcbot">mc-bot</button>
         </div>
 
         <div class="tabs-actions">
@@ -436,6 +437,26 @@
             <!-- app.js._renderOracles заполняет -->
           </div>
         </div><!-- /tab-oracles -->
+
+        <!-- ═══ Вкладка MC-BOT ═══ -->
+        <div class="tab-panel" id="tab-mcbot">
+          <div class="panel-title">
+            <h2>mc-bot</h2>
+            <span class="status-pill" id="mcbot-pill">—</span>
+          </div>
+          <div class="mcbot-card" id="mcbot-card">
+            <div class="mcbot-status" id="mcbot-status">Загрузка...</div>
+            <div class="mcbot-metrics" id="mcbot-metrics"></div>
+            <div class="mcbot-actions">
+              <button class="btn-action" data-mcbot-cmd="статус">🔄 Обновить</button>
+              <button class="btn-action" data-mcbot-cmd="копай">⛏ Копай</button>
+              <button class="btn-action" data-mcbot-cmd="стоп">🛑 Стоп</button>
+              <button class="btn-action" data-mcbot-cmd="домой">🏠 Домой</button>
+              <button class="btn-action" data-mcbot-cmd="отдыхай">☕ Отдыхай</button>
+            </div>
+            <div class="mcbot-log" id="mcbot-log"></div>
+          </div>
+        </div><!-- /tab-mcbot -->
 
       </div><!-- /tab-content -->
 

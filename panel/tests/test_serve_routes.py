@@ -421,6 +421,67 @@ class TestServeRoutes(unittest.TestCase):
         self.assertIn("feeds", body)
         self.assertIn("folders", body)
 
+    def test_mcbot_status_disabled_without_token(self):
+        # без MCBOT_CONTROL_TOKEN клиент disabled — /api/mcbot/status возвращает enabled=False
+        # но ok=True (это штатное состояние, не ошибка пульта)
+        code, body = self._get("/api/mcbot/status")
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertFalse(body["enabled"])
+
+    def test_mcbot_status_in_state(self):
+        # /api/state теперь несёт mcbot-состояние (Phase 4)
+        code, body = self._get("/api/state")
+        self.assertEqual(code, 200)
+        self.assertIn("mcbot", body)
+        self.assertFalse(body["mcbot"]["enabled"])
+
+    def test_mcbot_cmd_disabled_without_token(self):
+        # без MCBOT_CONTROL_TOKEN команда возвращает 503
+        code, body = self._post("/api/mcbot/cmd", {"command": "стоп"})
+        self.assertEqual(code, 503)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_cmd_empty_rejected(self):
+        # пустая команда → 400. Мокаем enabled=True чтобы гейт пустой команды отработал раньше disabled.
+        orig = serve._MCBOT
+
+        class _Fake:
+            enabled = True
+
+            def send_command(self, command):
+                return {"ok": True}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/cmd", {"command": "   "})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_cmd_mocks_send_command(self):
+        # мокаем клиент: команда уходит, ответ проксируется
+        orig = serve._MCBOT
+        calls = []
+
+        class _Fake:
+            enabled = True
+
+            def send_command(self, command):
+                calls.append(command)
+                return {"ok": True, "echo": command}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/cmd", {"command": "копай"})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(calls, ["копай"])
+        self.assertEqual(body["mc"]["echo"], "копай")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

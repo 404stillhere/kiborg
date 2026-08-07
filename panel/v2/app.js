@@ -91,6 +91,8 @@ class API {
   static startOracle(goal, project) { return API._request('POST', '/api/oracle', { goal, project }); }
   static rollbackState() { return API._request('POST', '/api/state/rollback', {}); }
   static wizard() { return API._request('GET', '/api/wizard'); }
+  static mcbotStatus() { return API._request('GET', '/api/mcbot/status'); }
+  static mcbotCmd(command) { return API._request('POST', '/api/mcbot/cmd', { command }); }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -310,6 +312,7 @@ class Renderer {
     this._renderOrgans(next);
     this._renderJournal(next);
     this._renderOracles(next);
+    this._renderMcBot(next);
     this._renderRegistryStrip(next);  // сводка тела/реестра в табах
     this._renderDock(next);
     this._renderEmptyState(next);
@@ -1001,6 +1004,102 @@ class Renderer {
       row.appendChild(link);
       list.appendChild(row);
     });
+  }
+
+  // ── MC-BOT (управление майнер-ботом) ──
+  _renderMcBot(S) {
+    const panel = Renderer.$('#tab-mcbot');
+    if (!panel) return;
+    const mcbot = S.mcbot || {};
+    const pill = Renderer.$('#mcbot-pill');
+    const statusEl = Renderer.$('#mcbot-status');
+    const metricsEl = Renderer.$('#mcbot-metrics');
+    const logEl = Renderer.$('#mcbot-log');
+
+    // пилюля состояния
+    if (pill) {
+      if (!mcbot.enabled) { pill.textContent = 'off'; pill.className = 'status-pill off'; }
+      else if (!mcbot.connected) { pill.textContent = 'нет связи'; pill.className = 'status-pill warn'; }
+      else { pill.textContent = 'онлайн'; pill.className = 'status-pill on'; }
+    }
+
+    // строка статуса
+    if (statusEl) {
+      if (!mcbot.enabled) statusEl.textContent = 'Управление mc-bot выключено: нет MCBOT_CONTROL_TOKEN.';
+      else if (mcbot.error) statusEl.textContent = 'Ошибка: ' + mcbot.error;
+      else if (!mcbot.connected) statusEl.textContent = 'Бот не в игре (heartbeat не найден в логе).';
+      else if (mcbot.state) statusEl.textContent = 'Состояние: ' + mcbot.state;
+      else statusEl.textContent = 'Бот в игре.';
+    }
+
+    // метрики
+    if (metricsEl) {
+      const sig = JSON.stringify({
+        pos: mcbot.pos, health: mcbot.health, food: mcbot.food,
+        dimension: mcbot.dimension, state: mcbot.state, ts: mcbot.timestamp
+      });
+      if (sig !== this._lastMcBotMetricsSig) {
+        this._lastMcBotMetricsSig = sig;
+        metricsEl.textContent = '';
+        const items = [];
+        if (mcbot.pos && Array.isArray(mcbot.pos)) {
+          items.push(['Позиция', `X ${Math.round(mcbot.pos[0])} · Y ${Math.round(mcbot.pos[1])} · Z ${Math.round(mcbot.pos[2])}`]);
+        }
+        if (typeof mcbot.health === 'number') items.push(['Здоровье', `${mcbot.health.toFixed(1)} / 20`]);
+        if (typeof mcbot.food === 'number') items.push(['Еда', `${mcbot.food.toFixed(1)} / 20`]);
+        if (mcbot.dimension) items.push(['Измерение', String(mcbot.dimension)]);
+        if (mcbot.timestamp) items.push(['Последний пульс', String(mcbot.timestamp).split('.')[0].replace('T', ' ')]);
+        if (!items.length) {
+          metricsEl.textContent = 'Нет данных.';
+        } else {
+          items.forEach(([k, v]) => {
+            const row = Renderer.el('div', { cls: 'mcbot-metric' });
+            row.appendChild(Renderer.el('span', { cls: 'mcbot-metric-key', text: k }));
+            row.appendChild(Renderer.el('span', { cls: 'mcbot-metric-val', text: v }));
+            metricsEl.appendChild(row);
+          });
+        }
+      }
+    }
+
+    // лог операций (одноразовая инициализация + обновление по _mcbotLog)
+    if (logEl && !this._mcbotLogBound) {
+      this._mcbotLogBound = true;
+      logEl.textContent = '';
+      this._mcbotLog('Пульт подключён.');
+    }
+
+    // кнопки — навешиваем один раз
+    if (!this._mcbotButtonsBound) {
+      this._mcbotButtonsBound = true;
+      panel.querySelectorAll('[data-mcbot-cmd]').forEach(btn => {
+        btn.onclick = () => this._mcbotSend(btn.dataset.mcbotCmd);
+      });
+    }
+  }
+
+  async _mcbotSend(command) {
+    const logEl = Renderer.$('#mcbot-log');
+    this._mcbotLog('→ ' + command);
+    const r = await API.mcbotCmd(command);
+    if (logEl) {
+      if (!r.ok) this._mcbotLog('✗ ' + (r.msg || 'ошибка'));
+      else this._mcbotLog('✓ ' + (r.mc && r.mc.msg ? r.mc.msg : 'ok'));
+    }
+    // сразу обновим статус после команды
+    const st = await API.mcbotStatus();
+    const state = (this.state && this.state.data) || {};
+    state.mcbot = st;
+    this._renderMcBot(state);
+  }
+
+  _mcbotLog(line) {
+    const logEl = Renderer.$('#mcbot-log');
+    if (!logEl) return;
+    const now = new Date().toLocaleTimeString('ru-RU', { hour12: false });
+    const div = Renderer.el('div', { cls: 'mcbot-log-line', text: `[${now}] ${line}` });
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
   // ── СВОДКА В ТАБ-БАРЕ ──
