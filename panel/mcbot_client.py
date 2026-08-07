@@ -33,6 +33,9 @@ class McBotClient:
         self.port = int(port or os.environ.get("MCBOT_CONTROL_PORT", "7654"))
         self.token = token or os.environ.get("MCBOT_CONTROL_TOKEN", "")
         self.enabled = bool(self.token)
+        # Windows: системный прокси может перехватывать loopback и давать 502.
+        # В тестах панели используется тот же приём.
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def _url(self, path: str = "/control") -> str:
         return f"http://{self.host}:{self.port}{path}"
@@ -54,7 +57,7 @@ class McBotClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with self._opener.open(req, timeout=timeout) as resp:
                 raw = resp.read().decode("utf-8")
                 return json.loads(raw)
         except urllib.error.HTTPError as e:
