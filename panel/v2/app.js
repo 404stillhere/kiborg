@@ -93,6 +93,7 @@ class API {
   static wizard() { return API._request('GET', '/api/wizard'); }
   static mcbotStatus() { return API._request('GET', '/api/mcbot/status'); }
   static mcbotCmd(command) { return API._request('POST', '/api/mcbot/cmd', { command }); }
+  static mcbotAction(action, params) { return API._request('POST', '/api/mcbot/action', { action, params }); }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1075,7 +1076,108 @@ class Renderer {
       panel.querySelectorAll('[data-mcbot-cmd]').forEach(btn => {
         btn.onclick = () => this._mcbotSend(btn.dataset.mcbotCmd);
       });
+      const sendActionBtn = Renderer.$('#mcbot-action-send');
+      if (sendActionBtn) sendActionBtn.onclick = () => this._mcbotSendAction();
     }
+  }
+
+  _mcbotActionParams(action) {
+    const params = {};
+    const val = (id) => {
+      const el = Renderer.$(id);
+      return el ? el.value.trim() : '';
+    };
+    const num = (id) => {
+      const v = val(id);
+      const n = Number(v);
+      return v !== '' && Number.isFinite(n) ? n : undefined;
+    };
+    const param = val('#mcbot-action-param');
+    const x = num('#mcbot-action-x');
+    const y = num('#mcbot-action-y');
+    const z = num('#mcbot-action-z');
+    const count = num('#mcbot-action-count');
+
+    if (count !== undefined) params.count = count;
+
+    switch (action) {
+      case 'status':
+      case 'inventory':
+      case 'useitem':
+      case 'eat':
+      case 'fish':
+        break;
+      case 'digblock':
+      case 'placeblock':
+      case 'harvest':
+      case 'sleep':
+        if (x !== undefined) params.x = x;
+        if (y !== undefined) params.y = y;
+        if (z !== undefined) params.z = z;
+        if (action === 'placeblock' && param) params.itemName = param;
+        if (action === 'harvest' && param) params.seedItem = param;
+        break;
+      case 'equip':
+      case 'drop':
+      case 'craft':
+      case 'chesttake':
+        if (param) params.itemName = param;
+        if (action === 'chesttake') {
+          if (x !== undefined) params.x = x;
+          if (y !== undefined) params.y = y;
+          if (z !== undefined) params.z = z;
+        }
+        break;
+      case 'attack':
+      case 'interact':
+      case 'ride':
+        if (param) {
+          const n = Number(param);
+          params.entityId = Number.isFinite(n) ? n : param;
+        }
+        break;
+      case 'trade':
+        if (param) {
+          const n = Number(param);
+          params.tradeIndex = Number.isFinite(n) ? n : 0;
+        }
+        if (x !== undefined) params.entityId = x;
+        break;
+      case 'look':
+        if (x !== undefined) params.yaw = x;
+        if (y !== undefined) params.pitch = y;
+        if (z !== undefined) {
+          params.x = x; params.y = y; params.z = z;
+        }
+        break;
+      case 'move':
+        if (param) params.control = param;
+        params.state = true;
+        if (count !== undefined) params.ms = count;
+        break;
+    }
+    return params;
+  }
+
+  async _mcbotSendAction() {
+    const select = Renderer.$('#mcbot-action-select');
+    if (!select) return;
+    const action = select.value;
+    const params = this._mcbotActionParams(action);
+    const logEl = Renderer.$('#mcbot-log');
+    const line = Object.keys(params).length
+      ? `→ action:${action} ${JSON.stringify(params)}`
+      : `→ action:${action}`;
+    this._mcbotLog(line);
+    const r = await API.mcbotAction(action, params);
+    if (logEl) {
+      if (!r.ok) this._mcbotLog('✗ ' + (r.msg || 'ошибка'));
+      else this._mcbotLog('✓ ' + (r.mc && r.mc.msg ? r.mc.msg : JSON.stringify(r.mc).slice(0, 200)));
+    }
+    const st = await API.mcbotStatus();
+    const state = (this.state && this.state.data) || {};
+    state.mcbot = st;
+    this._renderMcBot(state);
   }
 
   async _mcbotSend(command) {

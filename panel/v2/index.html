@@ -454,6 +454,39 @@
               <button class="btn-action" data-mcbot-cmd="домой">🏠 Домой</button>
               <button class="btn-action" data-mcbot-cmd="отдыхай">☕ Отдыхай</button>
             </div>
+            <div class="mcbot-action-form">
+              <div class="mcbot-action-row">
+                <select id="mcbot-action-select" class="mcbot-select">
+                  <option value="status">status</option>
+                  <option value="inventory">inventory</option>
+                  <option value="digblock">digblock</option>
+                  <option value="placeblock">placeblock</option>
+                  <option value="equip">equip</option>
+                  <option value="useitem">useitem</option>
+                  <option value="attack">attack</option>
+                  <option value="interact">interact</option>
+                  <option value="look">look</option>
+                  <option value="move">move</option>
+                  <option value="drop">drop</option>
+                  <option value="craft">craft</option>
+                  <option value="eat">eat</option>
+                  <option value="chesttake">chesttake</option>
+                  <option value="trade">trade</option>
+                  <option value="ride">ride</option>
+                  <option value="sleep">sleep</option>
+                  <option value="fish">fish</option>
+                  <option value="harvest">harvest</option>
+                </select>
+                <button class="btn-action" id="mcbot-action-send">▶ Отправить</button>
+              </div>
+              <div class="mcbot-action-row inputs">
+                <input type="text" id="mcbot-action-param" placeholder="item / entity / control">
+                <input type="number" id="mcbot-action-x" placeholder="x">
+                <input type="number" id="mcbot-action-y" placeholder="y">
+                <input type="number" id="mcbot-action-z" placeholder="z">
+                <input type="number" id="mcbot-action-count" placeholder="count">
+              </div>
+            </div>
             <div class="mcbot-log" id="mcbot-log"></div>
           </div>
         </div><!-- /tab-mcbot -->

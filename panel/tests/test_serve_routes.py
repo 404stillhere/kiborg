@@ -482,6 +482,53 @@ class TestServeRoutes(unittest.TestCase):
         self.assertEqual(calls, ["копай"])
         self.assertEqual(body["mc"]["echo"], "копай")
 
+    def test_mcbot_action_disabled_without_token(self):
+        # без MCBOT_ACTION_TOKEN action endpoint возвращает 503
+        code, body = self._post("/api/mcbot/action", {"action": "status"})
+        self.assertEqual(code, 503)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_action_empty_rejected(self):
+        # пустое действие → 400. Мокаем action_enabled=True чтобы гейт пустого action отработал раньше disabled.
+        orig = serve._MCBOT
+
+        class _Fake:
+            action_enabled = True
+
+            def send_action(self, action, params=None):
+                return {"ok": True}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/action", {"action": "   "})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_action_mocks_send_action(self):
+        # мокаем клиент: action + params уходят, ответ проксируется
+        orig = serve._MCBOT
+        calls = []
+
+        class _Fake:
+            action_enabled = True
+
+            def send_action(self, action, params=None):
+                calls.append((action, params))
+                return {"ok": True, "echo": action, "params": params}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/action", {"action": "equip", "params": {"itemName": "iron_pickaxe"}})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(calls, [("equip", {"itemName": "iron_pickaxe"})])
+        self.assertEqual(body["mc"]["echo"], "equip")
+        self.assertEqual(body["mc"]["params"]["itemName"], "iron_pickaxe")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

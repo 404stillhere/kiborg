@@ -90,7 +90,8 @@ from organs import (  # noqa: E402  (проба папок: probe_paths — пу
 import restore_backup  # noqa: E402  (кнопка отката state.json к последнему бэкапу — B7)
 
 # mc-bot control client (Phase 4 — управление майнер-ботом из пульта киборга).
-# Без MCBOT_CONTROL_TOKEN в env клиент disabled и endpoints возвращают 503.
+# Без MCBOT_CONTROL_TOKEN в env клиент disabled и endpoints /control возвращают 503.
+# Без MCBOT_ACTION_TOKEN клиент disabled для /action.
 import mcbot_client  # noqa: E402  (тонкая обёртка над urllib, без сторонних зависимостей)
 
 _MCBOT = mcbot_client.default_client()
@@ -996,6 +997,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": res.get("ok", False), "mc": res})
             except Exception as e:
                 self._json({"ok": False, "msg": ("mc-bot: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}, 500)
+        elif self.path == "/api/mcbot/action":
+            # Phase 5: generic action API mc-bot.
+            # Тело: {"action": "equip", "params": {"itemName": "iron_pickaxe"}}.
+            if not _MCBOT.action_enabled:
+                self._json({"ok": False, "msg": "MCBOT_ACTION_TOKEN не настроен"}, 503)
+                return
+            action = str(body.get("action") or "").strip().lower()
+            if not action:
+                self._json({"ok": False, "msg": "пустое действие"}, 400)
+                return
+            params = body.get("params")
+            if params is not None and not isinstance(params, dict):
+                self._json({"ok": False, "msg": "params должен быть объектом"}, 400)
+                return
+            try:
+                res = _MCBOT.send_action(action, params)
+                self._json({"ok": res.get("ok", False), "mc": res})
+            except Exception as e:
+                self._json({"ok": False, "msg": ("mc-bot action: " + str(e))[: config.PANEL_MSG_MAX_CHARS]}, 500)
         else:
             self._json({"error": "нет такого пути"}, 404)
 

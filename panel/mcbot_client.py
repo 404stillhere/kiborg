@@ -3,11 +3,15 @@
 Пульт kiborg (panel) использует этот модуль для проксирования команд в mc-bot:
 GET  /api/mcbot/status  → состояние бота (heartbeat из лога)
 POST /api/mcbot/cmd     → отправить команду (стоп, копай, статус, ...)
+POST /api/mcbot/action  → отправить generic action (dig, place, equip, ...)
 
 Конфигурация — через env:
   MCBOT_CONTROL_HOST  (default 127.0.0.1)
   MCBOT_CONTROL_PORT  (default 7654)
-  MCBOT_CONTROL_TOKEN (обязательный, без него клиент disabled)
+  MCBOT_CONTROL_TOKEN (обязательный для /control, без него клиент disabled)
+  MCBOT_ACTION_HOST   (default 127.0.0.1)
+  MCBOT_ACTION_PORT   (default 7655)
+  MCBOT_ACTION_TOKEN  (обязательный для /action, без него клиент disabled)
 
 Безопасность: token не логируется, запросы только на localhost.
 """
@@ -26,13 +30,27 @@ MCBOT_LOG_FILE = os.environ.get("MCBOT_LOG_FILE", "M:/projects/mc-bot/logs/live-
 
 
 class McBotClient:
-    """Узкий клиент: только POST /control."""
+    """Клиент к mc-bot: POST /control и POST /action."""
 
-    def __init__(self, host: Optional[str] = None, port: Optional[int] = None, token: Optional[str] = None):
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        token: Optional[str] = None,
+        action_host: Optional[str] = None,
+        action_port: Optional[int] = None,
+        action_token: Optional[str] = None,
+    ):
         self.host = host or os.environ.get("MCBOT_CONTROL_HOST", "127.0.0.1")
         self.port = int(port or os.environ.get("MCBOT_CONTROL_PORT", "7654"))
         self.token = token or os.environ.get("MCBOT_CONTROL_TOKEN", "")
         self.enabled = bool(self.token)
+
+        self.action_host = action_host or os.environ.get("MCBOT_ACTION_HOST", "127.0.0.1")
+        self.action_port = int(action_port or os.environ.get("MCBOT_ACTION_PORT", "7655"))
+        self.action_token = action_token or os.environ.get("MCBOT_ACTION_TOKEN", "")
+        self.action_enabled = bool(self.action_token)
+
         # Windows: системный прокси может перехватывать loopback и давать 502.
         # В тестах панели используется тот же приём.
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -40,19 +58,17 @@ class McBotClient:
     def _url(self, path: str = "/control") -> str:
         return f"http://{self.host}:{self.port}{path}"
 
-    def send_command(self, command: str, timeout: float = 5.0) -> Dict[str, Any]:
-        """Отправить команду в mc-bot. Возвращает {"ok": bool, ...}."""
-        if not self.enabled:
-            return {"ok": False, "error": "MCBOT_CONTROL_TOKEN not configured"}
-        if not command or not isinstance(command, str):
-            return {"ok": False, "error": "empty command"}
-        payload = json.dumps({"token": self.token, "command": command.strip()}).encode("utf-8")
+    def _action_url(self, path: str = "/action") -> str:
+        return f"http://{self.action_host}:{self.action_port}{path}"
+
+    def _post_json(self, url: str, payload: Dict[str, Any], timeout: float = 5.0) -> Dict[str, Any]:
+        data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
-            self._url("/control"),
-            data=payload,
+            url,
+            data=data,
             headers={
                 "Content-Type": "application/json",
-                "Content-Length": str(len(payload)),
+                "Content-Length": str(len(data)),
             },
             method="POST",
         )
@@ -69,6 +85,25 @@ class McBotClient:
             return {"ok": False, "error": f"bad json: {e}"}
         except Exception as e:  # noqa: BLE001 — защита от неожиданного
             return {"ok": False, "error": f"unexpected: {e}"}
+
+    def send_command(self, command: str, timeout: float = 5.0) -> Dict[str, Any]:
+        """Отправить команду в mc-bot через /control. Возвращает {"ok": bool, ...}."""
+        if not self.enabled:
+            return {"ok": False, "error": "MCBOT_CONTROL_TOKEN not configured"}
+        if not command or not isinstance(command, str):
+            return {"ok": False, "error": "empty command"}
+        return self._post_json(self._url("/control"), {"token": self.token, "command": command.strip()}, timeout)
+
+    def send_action(self, action: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+        """Отправить generic action в mc-bot через /action. Возвращает {"ok": bool, ...}."""
+        if not self.action_enabled:
+            return {"ok": False, "error": "MCBOT_ACTION_TOKEN not configured"}
+        if not action or not isinstance(action, str):
+            return {"ok": False, "error": "empty action"}
+        payload = {"token": self.action_token, "action": action.strip().lower()}
+        if params:
+            payload["params"] = params
+        return self._post_json(self._action_url("/action"), payload, timeout)
 
     def read_status(self, log_path: Optional[str] = None) -> Dict[str, Any]:
         """Прочитать последнее состояние из лога mc-bot.

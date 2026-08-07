@@ -1581,6 +1581,37 @@ input[type="number"]:focus,
 .mcbot-actions .btn-action {
   min-width: 84px;
 }
+.mcbot-action-form {
+  border-top: var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mcbot-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.mcbot-action-row.inputs input {
+  width: 70px;
+  padding: 4px 6px;
+  border: var(--border);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.mcbot-action-row.inputs input[type="text"] {
+  width: 120px;
+}
+.mcbot-select {
+  padding: 4px 8px;
+  border: var(--border);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
 .mcbot-log {
   border-top: var(--border);
   padding-top: 10px;
