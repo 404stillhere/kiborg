@@ -647,6 +647,9 @@ HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json"
 HN_SHOW_URL = "https://hacker-news.firebaseio.com/v0/showstories.json"
 HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item/{}.json"
 REDDIT_TOP_URL = "https://www.reddit.com/r/SideProject/top.json?t=day&limit={}"
+REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token"  # app-only OAuth (публичный .json даёт 403 Blocked)
+REDDIT_OAUTH_TOP_URL = "https://oauth.reddit.com/r/SideProject/top?t=day&limit={}"
+REDDIT_RSS_TOP_URL = "https://www.reddit.com/r/SideProject/top/.rss?t=day"  # Atom-fallback: .rss анти-бот reddit пропускает
 LOBSTERS_HOT_URL = "https://lobste.rs/hottest.json"
 GH_TRENDING_URL = "https://github.com/trending"
 GH_REPO_API_URL = "https://api.github.com/repos/{owner}/{repo}"

@@ -84,6 +84,50 @@ class TestHarvestGate(unittest.TestCase):
         finally:
             harvest.feeds.enabled, harvest.folders.current = orig_feeds, orig_folders
 
+    def test_source_env_carries_reddit_oauth_creds_when_feed_on(self):
+        # reddit OAuth: креды из llm_keys.env подкладываются в env при включённой ленте —
+        # публичный .json reddit блокирует анти-ботом (403), официальный путь это oauth-токен
+        orig_load, orig_feeds = harvest._load_kiborg_reddit_creds, harvest.feeds.enabled
+        harvest._load_kiborg_reddit_creds = lambda: ("cid1", "sec1")
+        harvest.feeds.enabled = lambda: ["reddit"]
+        try:
+            env = harvest._source_env()
+            self.assertEqual(env.get("reddit_client_id"), "cid1")
+            self.assertEqual(env.get("reddit_client_secret"), "sec1")
+        finally:
+            harvest._load_kiborg_reddit_creds, harvest.feeds.enabled = orig_load, orig_feeds
+
+    def test_source_env_no_reddit_creds_keys_when_creds_absent(self):
+        # кредов нет (не заведены/файл пуст) -> ключей в env НЕТ: _reddit уходит на публичный
+        # URL и честно деградирует, как раньше — OAuth опционален, не ломает существующее
+        orig_load, orig_feeds = harvest._load_kiborg_reddit_creds, harvest.feeds.enabled
+        harvest._load_kiborg_reddit_creds = lambda: (None, None)
+        harvest.feeds.enabled = lambda: ["reddit"]
+        try:
+            env = harvest._source_env()
+            self.assertNotIn("reddit_client_id", env)
+            self.assertNotIn("reddit_client_secret", env)
+        finally:
+            harvest._load_kiborg_reddit_creds, harvest.feeds.enabled = orig_load, orig_feeds
+
+    def test_load_kiborg_reddit_creds_reads_llm_keys_env(self):
+        # загрузчик читает llm_keys.env (путь можно перекрыть KIBORG_LLM_KEYS, как keychain)
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False, encoding="utf-8") as f:
+            f.write("# comment\nREDDIT_CLIENT_ID=abc123\nREDDIT_CLIENT_SECRET=\"dee pf\"\nOTHER=1\n")
+            path = f.name
+        old = os.environ.get(config.LLM_KEYS_ENV)
+        os.environ[config.LLM_KEYS_ENV] = path
+        try:
+            self.assertEqual(harvest._load_kiborg_reddit_creds(), ("abc123", "dee pf"))
+        finally:
+            if old is None:
+                del os.environ[config.LLM_KEYS_ENV]
+            else:
+                os.environ[config.LLM_KEYS_ENV] = old
+            os.remove(path)
+
     def test_source_env_carries_files_paths_when_folders_set(self):
         # заданы папки -> источник-файлы получает их через env ОБЕИХ кнопок (_source_env),
         # и 'files' попадает в список активных источников

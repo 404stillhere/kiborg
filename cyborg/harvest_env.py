@@ -46,6 +46,27 @@ def _load_darbot_tg_creds():
     return vals.get("TG_API_ID"), vals.get("TG_API_HASH")
 
 
+def _load_kiborg_reddit_creds():
+    """Читает REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET из llm_keys.env (read-only; файл в
+    .gitignore, пишет его только юзер). App-only OAuth reddit: публичный .json блокируется
+    анти-ботом (403 Blocked). Путь перекрывается KIBORG_LLM_KEYS — как в keychain, но без
+    кэша при импорте (читаем на каждом вызове — тестируемо и подхватывает правку без
+    перезапуска). Нет файла/ключей -> (None, None), _reddit уходит на публичный URL и
+    мягко деградирует, как раньше."""
+    path = os.environ.get(config.LLM_KEYS_ENV, config.DEFAULT_LLM_KEYS_FILE)
+    if not path or not os.path.exists(path):
+        return None, None
+    vals = {}
+    with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            vals[k.strip()] = v.strip().strip('"').strip("'")
+    return vals.get("REDDIT_CLIENT_ID"), vals.get("REDDIT_CLIENT_SECRET")
+
+
 def _source_env():
     """Единый ИСТОЧНИК идей для ОБЕИХ кнопок: ручной «Принеси идеи» (cyborg/run.py) и
     автосбор (main тут). Широкий слой (n=SOURCE_N) + телеграм-каналы + живой мозг. БЕЗ
@@ -95,6 +116,14 @@ def _source_env():
             env["telegram_api_hash"] = api_hash
             env["telegram_session"] = harvest._KIBORG_TG_SESSION
             env["telegram_timeout"] = config.TELEGRAM_FETCH_TIMEOUT  # 21 канал × 5 постов — глубже фетч, шире таймаут
+    # Reddit OAuth-креды — тоже только при включённой ленте (как telegram): пустой env не
+    # должен тащить лишнее в прогоны без reddit. Нет кредов -> ключей нет -> _reddit ходит
+    # публичным путём (который сейчас 403) и честно деградирует в per-source error.
+    if "reddit" in active:
+        cid, sec = harvest._load_kiborg_reddit_creds()
+        if cid and sec:
+            env["reddit_client_id"] = cid
+            env["reddit_client_secret"] = sec
     if harvest.ask_llm.available():
         env["content_llm"] = harvest.ask_llm.ask
     d = harvest.direction.current()

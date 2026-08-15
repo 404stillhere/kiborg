@@ -19,6 +19,7 @@ env["source"] — один источник, env["sources"] — список (т
 degraded=True. Один источник упал, но другие дали сырьё -> НЕ degraded (сырьё есть),
 но ошибка видна в partial_errors — для диагностики, без блокировки органа.
 """
+import base64
 import hashlib
 import json
 import os
@@ -26,7 +27,10 @@ import random
 import re
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cyborg"))
 import config  # noqa: E402
@@ -35,6 +39,9 @@ HN_TOP = config.HN_TOP_URL
 HN_SHOW = config.HN_SHOW_URL
 HN_ITEM = config.HN_ITEM_URL
 REDDIT_TOP = config.REDDIT_TOP_URL
+REDDIT_TOKEN_URL = config.REDDIT_TOKEN_URL
+REDDIT_OAUTH_TOP = config.REDDIT_OAUTH_TOP_URL
+REDDIT_RSS_TOP = config.REDDIT_RSS_TOP_URL
 LOBSTERS_HOT = config.LOBSTERS_HOT_URL
 GH_TRENDING = config.GH_TRENDING_URL
 _UA = config.HTTP_USER_AGENT
@@ -43,6 +50,68 @@ _GH_ENRICH_DEFAULT_LIMIT = config.GH_TRENDING_ENRICH_LIMIT  # GitHub без то
 def _get(url_or_req, timeout):
     with urllib.request.urlopen(url_or_req, timeout=timeout) as r:
         return json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
+
+
+def _get_raw(url_or_req, timeout):
+    """HTTP GET сырыми байтами (Atom-RSS не парсится json.loads). Мокается в тестах как _get."""
+    with urllib.request.urlopen(url_or_req, timeout=timeout) as r:
+        return r.read()
+
+
+def _post_form(url, data, headers, timeout):
+    """POST с form-данными (для reddit-токена). Мокается в тестах по аналогии с _get."""
+    req = urllib.request.Request(url, data=data, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
+
+
+_REDDIT_TOKEN = {"value": None, "exp": 0.0}  # кэш app-only токена: гейт-фетч и прогон живут в одном процессе
+
+
+def _reddit_oauth_token(env, timeout):
+    """App-only токен reddit (grant_type=client_credentials) или None без кредов.
+    Публичный .json reddit блокирует анти-ботом (403 Blocked) — OAuth-токен официальный путь.
+    Сбой запроса токена = исключение наверх -> per-source error -> честная деградация."""
+    cid = env.get("reddit_client_id")
+    sec = env.get("reddit_client_secret")
+    if not (cid and sec):
+        return None
+    if _REDDIT_TOKEN["value"] and time.time() < _REDDIT_TOKEN["exp"]:
+        return _REDDIT_TOKEN["value"]
+    basic = base64.b64encode(f"{cid}:{sec}".encode(config.HTTP_CHARSET_UTF8)).decode("ascii")
+    tok = _post_form(
+        REDDIT_TOKEN_URL,
+        b"grant_type=client_credentials",
+        {"Authorization": "Basic " + basic, config.HTTP_HEADER_USER_AGENT: _UA},
+        timeout,
+    )
+    access = tok.get("access_token")
+    if access:
+        _REDDIT_TOKEN["value"] = access
+        # запас 60с до expires_in (токены reddit живут ~1ч; процесс тика — минуты)
+        _REDDIT_TOKEN["exp"] = time.time() + min(int(tok.get("expires_in", 3600)), 3600) - 60
+    return access
+
+
+_ATOM_NS = "{http://www.w3.org/2005/Atom}"
+
+
+def _reddit_atom(n, timeout):
+    """Reddit top/day через Atom-RSS — fallback, когда публичный .json даёт 403 Blocked.
+    Контракт тот же, что у .json-пути: items [{title,url,id}]; пусто -> ValueError.
+    Лимита у .rss нет (лента отдаёт всю выдачу top/day) — режем [:n] как и везде."""
+    req = urllib.request.Request(REDDIT_RSS_TOP, headers={config.HTTP_HEADER_USER_AGENT: _UA})
+    root = ET.fromstring(_get_raw(req, timeout))
+    items = []
+    for e in root.findall(_ATOM_NS + "entry")[:n]:
+        title = (e.findtext(_ATOM_NS + "title") or "").strip()
+        link = e.find(_ATOM_NS + "link")
+        url = (link.get("href") or "").strip() if link is not None else ""
+        if title and url:
+            items.append({"title": title, "url": url, "id": (e.findtext(_ATOM_NS + "id") or "").strip()})
+    if not items:
+        raise ValueError("reddit rss returned empty")
+    return items
 
 
 def _hn_fetch_ids(list_url, n, timeout):
@@ -82,9 +151,22 @@ def _hn(n, timeout, env):
 
 
 def _reddit(n, timeout, env):
-    # без User-Agent reddit отвечает 429 — ставим свой (публичный .json-эндпоинт, без ключа)
-    req = urllib.request.Request(REDDIT_TOP.format(n), headers={config.HTTP_HEADER_USER_AGENT: _UA})
-    data = _get(req, timeout)
+    # без User-Agent reddit отвечает 429 — ставим свой. Приоритет путей: есть OAuth-креды ->
+    # oauth.reddit.com с Bearer (официальный); иначе публичный .json; он режется анти-ботом
+    # reddit по IP (403 Blocked) -> fallback на Atom-RSS того же саба (см. _reddit_atom).
+    # Креды (reddit_client_id/secret) кладёт harvest_env из llm_keys.env.
+    token = _reddit_oauth_token(env, timeout)
+    url = (REDDIT_OAUTH_TOP if token else REDDIT_TOP).format(n)
+    headers = {config.HTTP_HEADER_USER_AGENT: _UA}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        data = _get(req, timeout)
+    except urllib.error.HTTPError:
+        if token:
+            raise  # у oauth-хоста свои коды ошибок: честная деградация, без тихого отхода на RSS
+        return _reddit_atom(n, timeout)
     items = []
     for c in (data.get("data", {}).get("children") or [])[:n]:
         d = c.get("data", {})

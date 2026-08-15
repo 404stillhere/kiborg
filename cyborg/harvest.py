@@ -101,6 +101,7 @@ from harvest_env import (  # noqa: E402,F401
     _active_sources,
     _harvest_env,
     _load_darbot_tg_creds,
+    _load_kiborg_reddit_creds,
     _source_env,
     wire_council,
 )
