@@ -82,6 +82,7 @@ class API {
   static setIdea(id, status)  { return API._request('POST', '/api/idea',      { id, status }); }
   static purge(threshold)     { return API._request('POST', '/api/ideas/purge', { threshold }); }
   static setAuto(on, interval){ return API._request('POST', '/api/auto',      { on, interval_min: interval }); }
+  static setMode(mode)        { return API._request('POST', '/api/mode',      { mode }); }
   static setDirection(p)      { return API._request('POST', '/api/direction', p); }
   static setFolders(folders)  { return API._request('POST', '/api/folders',   { folders }); }
   static setFeeds(enabled)    { return API._request('POST', '/api/feeds',     { enabled }); }
@@ -242,7 +243,13 @@ class Renderer {
       hint.textContent = '⚠️ Нет включённых источников — откройте настройки';
       hint.style.color = '#d97706';
     } else if (auto.on) {
-      hint.textContent = `Сам сходит за новыми каждые ~${auto.interval_min} мин`;
+      // подсказка честная про дефолтный режим: что именно авто запускает по тику
+      const phrases = {
+        bring: 'Сам сходит за новыми идеями',
+        finish: 'Сам доделывает проекты',
+        ultra: 'Сам сплавляет ультра-идею'
+      };
+      hint.textContent = `${phrases[S.mode] || phrases.bring} каждые ~${auto.interval_min} мин`;
       hint.style.color = 'var(--text-tertiary)';
     } else {
       hint.textContent = 'Авто выкл — можно нажать кнопку.';
@@ -309,6 +316,7 @@ class Renderer {
     this._renderSources(next);
     this._renderDirection(next);
     this._renderAuto(next);
+    this._renderModeDots(next);
     this._renderGenparams(next);
     this._renderIdeas(next);
     this._renderOrgans(next);
@@ -507,6 +515,33 @@ class Renderer {
     if (tgl) tgl.classList.toggle('on', !!auto.on);
     const iv = Renderer.$('#settings-body input[type="number"]');
     if (iv && document.activeElement !== iv) iv.value = auto.interval_min;
+  }
+
+  // ── КРУЖКИ «ДЕФОЛТ ДЛЯ АВТО» (у кнопок режимов в левой панели) ──
+  // Радио: галочка стоит у ОДНОГО режима — его авто-петля и запускает по расписанию.
+  _renderModeDots(S) {
+    const mode = S.mode || 'bring';
+    Renderer.$$('.mode-dot').forEach(d => {
+      d.classList.toggle('checked', d.dataset.mode === mode);
+    });
+  }
+
+  async setDefaultMode(mode) {
+    if (!mode) return;
+    if (mode === 'oracle') {
+      // Oracle нельзя назначить дефолтом: авто не знает, какой проект анализировать
+      this.toasts.show('Oracle нельзя в авто — ему нужен путь к проекту, укажите его руками', 'warn');
+      return;
+    }
+    const r = await this.api.setMode(mode);
+    if (!r.ok) {
+      this.toasts.show('Дефолт: ' + (r.msg || 'не вышло'), 'error');
+      return;
+    }
+    if (this.state && this.state.data) this.state.data.mode = r.mode;
+    this._renderModeDots(this.state.data || { mode: r.mode });
+    const names = { bring: 'принести идеи', finish: 'доделать проект', ultra: 'ультра-идею' };
+    this.toasts.show('Авто будет запускать: ' + (names[r.mode] || r.mode), 'success');
   }
 
   // ── ПАРАМЕТРЫ ГЕНЕРАЦИИ (drawer «Настройки») ──
@@ -1960,6 +1995,10 @@ class UIController {
     if (fuse) fuse.onclick = () => this.fuse();
     const stop = Renderer.$('#btn-stop-left');
     if (stop) stop.onclick = () => this.stopRun();
+    // кружки «дефолт для авто»: ткнул в кружок у режима — авто-петля будет запускать его
+    Renderer.$$('.mode-dot').forEach(dot => {
+      dot.onclick = () => this.setDefaultMode(dot.dataset.mode);
+    });
     // направление
     const applyBtn = Renderer.$('#left .dir-input-row .btn-mini[title="Применить"]');
     const input = Renderer.$('#left .dir-input-row input');

@@ -363,6 +363,9 @@ PANEL_URL_TEMPLATE = "{scheme}://{host}:{port}"  # базовый URL пульт
 RUN_TIMEOUT_SEC = 1200  # watchdog на один прогон (сек) — снимает зависший subprocess
 # Рубильник авто-режима пульта (JSON с интервалом/last-run). Патчится в тестах: `serve.AUTO_FILE = tmp`.
 AUTO_JSON = os.path.join(PANEL_DIR, "auto.json")
+# Дефолт-режим авто-петли (JSON {"mode": bring|finish|ultra}): какой прогон таймер запускает
+# по тику. Патчится в тестах: `serve.MODE_FILE = tmp`.
+MODE_JSON = os.path.join(PANEL_DIR, "mode.json")
 # Границы интервала авто-сбора (минуты). Пульт обрезает пользовательское значение в этот диапазон.
 AUTO_INTERVAL_MIN_MINUTES = 5
 AUTO_INTERVAL_MAX_MINUTES = 240

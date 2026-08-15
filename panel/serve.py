@@ -67,6 +67,7 @@ LAB_ROUTER = config.LAB_ROUTER_FILE  # feature-lab статус (mutable — п�
 PORT = config.PANEL_PORT  # локальный HTTP на loopback
 RUN_TIMEOUT = config.RUN_TIMEOUT_SEC  # watchdog на прогон (1200с = 20 мин)
 AUTO_FILE = config.AUTO_JSON  # рубильник авто-режима (mutable — патчится в test_serve/test_serve_routes)
+MODE_FILE = config.MODE_JSON  # дефолт-режим авто-петли (mutable — патчится в test_serve/test_serve_routes)
 
 import ask_llm  # noqa: E402  (только available() — ключ не читаем и не показываем)
 import council_config  # noqa: E402  (рубильники совета: rank_ideas, ask_llm, orchestra)
@@ -249,9 +250,45 @@ def _save_auto(on, interval_min):
     return {"on": bool(on), "interval_min": iv}
 
 
+# --- дефолт-режим авто-петли: КАКОЙ прогон таймер запускает по тику ---
+# Кружки-радио у кнопок режимов в пульте: галочка = дефолт = то, что авто нажимает по расписанию.
+# Реестр = (goal для RUN-консоли, argv запуска). Oracle здесь НЕТ и не будет: ему нужен путь к
+# конкретному проекту, который таймер не знает, — Oracle только руками.
+# NB: гейт «есть что нового?» живёт в harvest.py; finish/ultra гоняют полный прогон на каждый тик.
+AUTO_MODES = {
+    "bring": ("автосбор идей (по расписанию)", ["harvest.py", "1"]),
+    "finish": ("автододелка проектов (по расписанию)", ["run.py", "доделать существующие проекты"]),
+    "ultra": ("авто-ультра: сплав идей (по расписанию)", ["fuse_mode.py"]),
+}
+_MODE_DEFAULT = "bring"
+
+
+def _load_mode():
+    try:
+        with open(MODE_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:
+            m = json.load(f).get("mode")
+        if m in AUTO_MODES:
+            return m
+    except Exception:
+        pass
+    return _MODE_DEFAULT  # нет файла/битый/чужой ключ -> прежнее поведение авто (harvest)
+
+
+def _save_mode(mode):
+    """Пишет дефолт-режим атомарно. Чужой ключ не пишется вовсе — возвращает None (роут даст 400)."""
+    if mode not in AUTO_MODES:
+        return None
+    tmp = MODE_FILE + config.ATOMIC_TMP_SUFFIX
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+        json.dump({"mode": mode}, f, ensure_ascii=False)
+    os.replace(tmp, MODE_FILE)
+    return mode
+
+
 def _auto_tick():
     """Один тик авто-петли: автономность вкл + пора по интервалу + прогон не идёт → запустить
-    автосбор. Возвращает True, если запустил (иначе False). Вынесено из _auto_loop ради
+    ДЕФОЛТНЫЙ режим (кружок у кнопки: bring=harvest / finish=run.py / ultra=fuse_mode).
+    Возвращает True, если запустил (иначе False). Вынесено из _auto_loop ради
     тестируемости (петля = sleep + этот вызов под try/except)."""
     st = _load_auto()
     if not st["on"]:
@@ -263,14 +300,16 @@ def _auto_tick():
     if busy:
         return False
     _AUTO["last"] = time.time()
-    _start_proc("автосбор идей (по расписанию)", ["harvest.py", "1"])
+    goal, args = AUTO_MODES[_load_mode()]
+    _start_proc(goal, args)
     return True
 
 
 def _auto_loop():
-    """Фон-рубильник: пока автономность включена, раз в interval_min запускает автосбор
-    (harvest.py БЕЗ --force → гейт «есть что нового?» сам пропускает пустые прогоны). Один
-    прогон за раз — уважает тот же RUN-замок, что и кнопки. Выключен — просто спит.
+    """Фон-рубильник: пока автономность включена, раз в interval_min запускает ДЕФОЛТНЫЙ режим
+    (кружок у кнопки; bring → harvest.py, у него гейт «есть что нового?» пропускает пустые
+    прогоны; finish/ultra гоняют полный прогон). Один прогон за раз — уважает тот же RUN-замок,
+    что и кнопки. Выключен — просто спит.
     Тик под try/except: сбой ОДНОГО тика НЕ должен завершить поток-демон (иначе автономный
     режим МОЛЧА встанет до рестарта пульта) — логируем и продолжаем со следующего тика."""
     _AUTO["last"] = time.time()  # не палить прогон в первую же минуту после старта пульта
@@ -705,6 +744,7 @@ def _api_state():
         "inbox": _read_inbox(),
         "sources": _read_source_status(),
         "auto": _load_auto(),
+        "mode": _load_mode(),  # дефолт авто-петли (кружки у кнопок режимов)
         "runs": _read_runs(),
         "registry": _read_registry(),
         "lab": _read_lab(),
@@ -897,6 +937,14 @@ class Handler(BaseHTTPRequestHandler):
             if res["on"]:
                 _AUTO["last"] = 0.0  # включили — дать сработать на ближайшем тике, не ждать интервал
             self._json({"ok": True, **res})
+        elif self.path == "/api/mode":
+            # дефолт-режим авто-петли (кружок у кнопки): какой прогон таймер запускает по тику.
+            # Oracle мимо: авто не знает путь к проекту — фронт даже не шлёт его сюда.
+            saved = _save_mode(body.get("mode"))
+            if saved is None:
+                self._json({"ok": False, "msg": "mode должен быть одним из: " + ", ".join(AUTO_MODES)}, 400)
+                return
+            self._json({"ok": True, "mode": saved})
         elif self.path == "/api/direction":
             # руль темы: current (str, "" = снять) и/или presets (list). Чистку/потолки делает direction.save.
             cur = body.get("current")

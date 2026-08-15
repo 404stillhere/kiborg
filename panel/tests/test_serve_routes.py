@@ -51,6 +51,7 @@ class TestServeRoutes(unittest.TestCase):
             "fp": serve.folders.PATH,
             "dp": serve.direction.PATH,
             "auto": serve.AUTO_FILE,
+            "mode": serve.MODE_FILE,
             "feeds": serve.feeds.PATH,
             "cc": serve.council_config.PATH,
             "gp": serve.genparams.PATH,
@@ -61,6 +62,7 @@ class TestServeRoutes(unittest.TestCase):
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
         serve.AUTO_FILE = os.path.join(self.tmp, "auto.json")
+        serve.MODE_FILE = os.path.join(self.tmp, "mode.json")
         serve.feeds.PATH = os.path.join(self.tmp, "feeds.json")
         serve.council_config.PATH = os.path.join(self.tmp, "council.json")
         serve.genparams.PATH = os.path.join(self.tmp, "genparams.json")
@@ -73,6 +75,7 @@ class TestServeRoutes(unittest.TestCase):
         serve.folders.PATH = self._saved["fp"]
         serve.direction.PATH = self._saved["dp"]
         serve.AUTO_FILE = self._saved["auto"]
+        serve.MODE_FILE = self._saved["mode"]
         serve.feeds.PATH = self._saved["feeds"]
         serve.council_config.PATH = self._saved["cc"]
         serve.genparams.PATH = self._saved["gp"]
@@ -283,6 +286,25 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/auto", {"on": True, "interval_min": "abc"})
         self.assertEqual(code, 400)
         self.assertFalse(body["ok"])
+
+    def test_mode_saves_and_state_carries_it(self):
+        # кружки «дефолт для авто»: POST /api/mode пишет режим, /api/state несёт его пульту
+        code, body = self._post("/api/mode", {"mode": "ultra"})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["mode"], "ultra")
+        code, state = self._get("/api/state")
+        self.assertEqual(code, 200)
+        self.assertEqual(state["mode"], "ultra")
+        self._post("/api/mode", {"mode": "bring"})  # вернуть дефолт, не влиять на другие тесты
+
+    def test_mode_foreign_rejected(self):
+        # oracle — режим пульта, но НЕ авто-режим (нужен путь к проекту) → 400, файл не пишется
+        code, body = self._post("/api/mode", {"mode": "oracle"})
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+        code, state = self._get("/api/state")
+        self.assertEqual(state["mode"], "bring")
 
     def test_foreign_origin_rejected_csrf(self):
         # анти-CSRF гейт (тест-страж от фабрики б-3 2026-07-15): POST с ЧУЖИМ Origin (другой сайт,

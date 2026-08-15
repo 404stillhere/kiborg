@@ -348,6 +348,93 @@ class TestAutoConfig(unittest.TestCase):
         self.assertTrue(os.path.exists(self.f))
 
 
+class TestDefaultModeConfig(unittest.TestCase):
+    """_load_mode/_save_mode — дефолт-режим авто-петли (кружки у кнопок пульта):
+    чужой ключ/битый файл → bring (прежнее поведение авто), атомарная запись."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_mode_")
+        self.f = os.path.join(self.tmp, "mode.json")
+        self._orig = serve.MODE_FILE
+        serve.MODE_FILE = self.f
+
+    def tearDown(self):
+        serve.MODE_FILE = self._orig
+
+    def test_load_defaults_to_bring_when_no_file(self):
+        self.assertEqual(serve._load_mode(), "bring")  # нет файла -> прежний автосбор
+
+    def test_load_defaults_on_corrupt_json(self):
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
+            fh.write("{битый json")
+        self.assertEqual(serve._load_mode(), "bring")
+
+    def test_load_defaults_on_foreign_mode(self):
+        # oracle — режим пульта, но НЕ авто-режим (нужен путь к проекту) -> игнор
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
+            json.dump({"mode": "oracle"}, fh)
+        self.assertEqual(serve._load_mode(), "bring")
+
+    def test_save_load_roundtrip(self):
+        for m in serve.AUTO_MODES:  # каждый авто-режим сохраняется и читается
+            self.assertEqual(serve._save_mode(m), m)
+            self.assertEqual(serve._load_mode(), m)
+
+    def test_save_rejects_foreign_mode(self):
+        self.assertIsNone(serve._save_mode("oracle"))  # не авто-режим
+        self.assertIsNone(serve._save_mode(""))
+        self.assertIsNone(serve._save_mode(None))
+        self.assertFalse(os.path.exists(self.f))  # ничего не записал
+
+    def test_save_is_atomic_no_tmp_leftover(self):
+        serve._save_mode("ultra")
+        self.assertFalse(os.path.exists(self.f + config.ATOMIC_TMP_SUFFIX))
+        self.assertTrue(os.path.exists(self.f))
+
+
+class TestAutoTickDefaultMode(unittest.TestCase):
+    """_auto_tick запускает СКРИПТ ДЕФОЛТНОГО режима (кружок у кнопки), а не хардкод harvest:
+    ultra -> fuse_mode.py, finish -> run.py с целью «доделать», bring -> harvest.py (как было)."""
+
+    def setUp(self):
+        self._orig = (dict(serve.RUN), dict(serve._AUTO), serve._load_auto, serve._load_mode, serve._start_proc)
+        self.started = []
+        serve._start_proc = lambda *a, **k: (self.started.append(a) or True)
+
+    def tearDown(self):
+        run, auto, load_auto, load_mode, start = self._orig
+        serve.RUN.clear()
+        serve.RUN.update(run)
+        serve._AUTO.clear()
+        serve._AUTO.update(auto)
+        serve._load_auto = load_auto
+        serve._load_mode = load_mode
+        serve._start_proc = start
+
+    def _ready(self, mode):
+        serve._load_auto = lambda: {"on": True, "interval_min": 30}
+        serve._load_mode = lambda: mode
+        serve._AUTO["last"] = 0.0  # давно → пора
+        serve.RUN["running"] = False
+
+    def test_ultra_default_launches_fuse_mode(self):
+        self._ready("ultra")
+        self.assertTrue(serve._auto_tick())
+        self.assertEqual(self.started, [(serve.AUTO_MODES["ultra"][0], ["fuse_mode.py"])])
+
+    def test_finish_default_launches_run_py_with_goal(self):
+        self._ready("finish")
+        self.assertTrue(serve._auto_tick())
+        goal, args = self.started[0]
+        self.assertEqual(args, ["run.py", "доделать существующие проекты"])
+        self.assertIn("додел", goal)
+
+    def test_bring_default_launches_harvest_as_before(self):
+        self._ready("bring")
+        self.assertTrue(serve._auto_tick())
+        self.assertEqual(self.started, [("автосбор идей (по расписанию)", ["harvest.py", "1"])])
+
+
 class TestGenparamsInState(unittest.TestCase):
     """Параметры генерации (gen_k/rank_keep/source_n/пороги) — проброс в _api_state и
     POST/GET /api/genparams. Логика save/reset/clamp покрыта в cyborg/tests/test_genparams.py,

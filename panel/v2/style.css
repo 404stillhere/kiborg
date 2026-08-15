@@ -844,6 +844,41 @@ input[type="number"]:focus,
 }
 .btn-action.ultra:hover { box-shadow: var(--shadow-2); }
 
+/* ── Кружок «дефолт для авто» у каждого режима ──
+   Радио-кружок слева от кнопки: галочка = авто-петля запускает ЭТОТ режим по расписанию.
+   Кнопка режима занимает остаток строки (flex:1), кружок — фиксированный круг по центру. */
+.mode-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mode-row .btn-action { flex: 1; }
+.mode-dot {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: var(--border);
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+.mode-dot::after { content: "✓"; visibility: hidden; }  /* галочка только на .checked */
+.mode-dot.checked { background: var(--ok); }
+.mode-dot.checked::after { visibility: visible; }
+.mode-dot:hover { box-shadow: var(--shadow-2); }
+.mode-dot:active { transform: translate(1px, 1px); box-shadow: none; }
+/* Oracle: кружок есть (рядом с каждым режимом), но дефолтом его назначить нельзя */
+.mode-dot[data-mode="oracle"] { cursor: not-allowed; opacity: 0.5; }
+.mode-dot[data-mode="oracle"]:hover { box-shadow: none; }
+
 /* ── Секция прогона (видна при running) ── */
 #run-section {
   display: none;

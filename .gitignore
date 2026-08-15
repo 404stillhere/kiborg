@@ -12,6 +12,7 @@ cyborg/data/
 idea_engine/data/
 **/finish_cursor.json
 panel/auto.json
+panel/mode.json
 *.log
 
 # бэкапы-снапшоты редактора (панель) — не в git
