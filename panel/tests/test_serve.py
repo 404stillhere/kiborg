@@ -420,7 +420,8 @@ class TestAutoTickDefaultMode(unittest.TestCase):
     def test_ultra_default_launches_fuse_mode(self):
         self._ready("ultra")
         self.assertTrue(serve._auto_tick())
-        self.assertEqual(self.started, [(serve.AUTO_MODES["ultra"][0], ["fuse_mode.py"])])
+        # --auto: авто-ультра идёт через гейт «пул материалов не менялся → пропуск»
+        self.assertEqual(self.started, [(serve.AUTO_MODES["ultra"][0], ["fuse_mode.py", "--auto"])])
 
     def test_finish_default_launches_run_py_with_goal(self):
         self._ready("finish")

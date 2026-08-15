@@ -15,14 +15,21 @@
     (сравниваем формулировки на одном материале, а не на шуме).
   * при score < keep_min_score карточка ВСЁ РАВНО доставляется с weak=True —
     кнопочный режим: тишина хуже слабой идеи; mass-purge <8 её потом достанет.
+  * авто-гейт (--auto, только авто-петля пульта; ручная кнопка всегда гоняет):
+    пул материалов не менялся с прошлой доставки → LLM не зовётся, тихий пропуск.
+    Философия та же, что у harvest-гейта новизны: «нечего сплавлять — не сплавляем».
+  * каждый прогон (успех/провал/гейт-скип) дописывает строку в fusion_runs.jsonl —
+    калибровочная статистика «успех с 1-й попытки ≥60%» копится сама.
 
 Запуск:
     python cyborg/fuse_mode.py                  — ультра-прогон (живой)
+    python cyborg/fuse_mode.py --auto           — прогон от авто-петли (гейт пула)
     python cyborg/fuse_mode.py --dry-run        — показать выборку и промпт, БЕЗ LLM
     python cyborg/fuse_mode.py --seed 42        — воспроизвести конкретную комбинацию
     python cyborg/fuse_mode.py --json           — отчёт одной JSON-строкой (для пульта)
 """
 
+import hashlib
 import json
 import os
 import random
@@ -69,6 +76,36 @@ def _save_state(state):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(state, fh, ensure_ascii=False)
     os.replace(tmp, path)
+
+
+def _pool_signature(items):
+    """Сигнатура пула материалов: sha1 по отсортированным «source:id».
+    Порядок источников не важен — меняется состав пула, а не порядок сбора."""
+    ids = sorted("%s:%s" % (it.get("source"), it.get("id")) for it in items)
+    return hashlib.sha1("\n".join(ids).encode("utf-8")).hexdigest()
+
+
+def _gate_skip(state, pool_sig):
+    """Авто-гейт: True, если пул не менялся с прошлой ДОСТАВЛЕННОЙ ультры.
+    pool_sig пишется в состояние только при успехе — провал прошлой попытки
+    не должен запирать следующую."""
+    return bool(state.get("pool_sig")) and state["pool_sig"] == pool_sig
+
+
+def _metrics_path():
+    return os.path.join(config.CYBORG_DATA_DIR, "fusion_runs.jsonl")
+
+
+def _log_run_metrics(rec):
+    """Одна JSONL-строка на завершённый ультра-прогон (успех/провал/гейт-скип).
+    Калибровка совета (успех с 1-й попытки ≥60%) читается прямо из файла.
+    Сбой записи метрик НИКОГДА не роняет прогон — статистика вторична."""
+    try:
+        os.makedirs(os.path.dirname(_metrics_path()), exist_ok=True)
+        with open(_metrics_path(), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def _score_single(card, env, op=None):
@@ -124,8 +161,37 @@ def _score_single(card, env, op=None):
     return card
 
 
-def run_fusion(seed=None, direction=None, oversample=1, dry_run=False, on_progress=None):
-    """Одноразовый ультра-прогон. Возвращает отчёт-словарь (печать/HTTP — снаружи)."""
+def run_fusion(seed=None, direction=None, oversample=1, dry_run=False, auto=False, on_progress=None):
+    """Одноразовый ультра-прогон + строка калибровочных метрик. Отчёт — наружу."""
+    rep = _run_fusion_impl(
+        seed=seed,
+        direction=direction,
+        oversample=oversample,
+        dry_run=dry_run,
+        auto=auto,
+        on_progress=on_progress,
+    )
+    if not dry_run:  # dry-run — не прогон, в статистику не идёт
+        card = rep.get("card") or {}
+        _log_run_metrics(
+            {
+                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "auto": bool(auto),
+                "ok": bool(rep.get("ok")),
+                "skipped": rep.get("skipped"),
+                "reason": rep.get("reason"),
+                "seed": rep.get("seed"),
+                "combo_hash": rep.get("combo_hash") or card.get("combo_hash"),
+                "attempts": rep.get("attempts"),
+                "score": card.get("score"),
+                "weak": bool(card.get("weak")),
+            }
+        )
+    return rep
+
+
+def _run_fusion_impl(seed=None, direction=None, oversample=1, dry_run=False, auto=False, on_progress=None):
+    """Сам прогон (метрики дописывает обёртка run_fusion)."""
     import seen_items
     import wiring
     from organs import fuse_ideas, pick_cross_sample
@@ -146,6 +212,17 @@ def run_fusion(seed=None, direction=None, oversample=1, dry_run=False, on_progre
     items = out.get("items") or []
     if not items:
         return {"ok": False, "reason": "сырьё пустое (все источники промолчали?)", "seed": seed}
+
+    pool_sig = _pool_signature(items)
+    if auto and _gate_skip(state, pool_sig):
+        # авто-петля: материала нет нового — LLM не зовём (ручная кнопка сюда не попадает)
+        op("пул материалов не менялся с прошлой ультры — авто-пропуск")
+        return {
+            "ok": True,
+            "skipped": "pool_unchanged",
+            "reason": "пул материалов не менялся с прошлой ультры — авто-прогон пропущен",
+            "seed": seed,
+        }
 
     # Рулетка предпочитает НЕразобранное: used_ids — те же «source:id», что seen_items.
     used = set(seen_items.load().keys())
@@ -251,6 +328,7 @@ def run_fusion(seed=None, direction=None, oversample=1, dry_run=False, on_progre
     if added > 0:  # combo_hash сгорает только у ДОСТАВЛЕННОЙ комбинации
         state.setdefault("combos", {})[card["combo_hash"]] = int(time.time())
         state["last_seed"] = used_seed
+        state["pool_sig"] = pool_sig  # авто-гейт меряет от последнего успеха (любого запуска)
         _save_state(state)
 
     return {
@@ -288,6 +366,10 @@ def format_report(rep):
             lines.append("  повторно использованы: %s" % ", ".join(rep["reused_ids"]))
         lines.append("--- промпт слияния ---")
         lines.append(rep.get("prompt") or "")
+        return lines
+    if rep.get("skipped"):
+        lines.append("АВТО-ГАЙТ: прогон пропущен.")
+        lines.append("  Причина: %s" % (rep.get("reason") or rep["skipped"]))
         return lines
     if not rep.get("ok"):
         lines.append("Ультра-идея не удалась.")
@@ -327,6 +409,7 @@ def main(argv=None):
     ap.add_argument("--direction", default=None, help="руль темы (перекрывает сохранённый)")
     ap.add_argument("--oversample", type=int, default=1, help="кандидатов на источник (2 = LLM выбирает из пары)")
     ap.add_argument("--dry-run", action="store_true", help="показать выборку и промпт, БЕЗ LLM и доставки")
+    ap.add_argument("--auto", action="store_true", help="прогон от авто-петли: гейт «пул не менялся → пропуск»")
     ap.add_argument("--json", action="store_true", help="отчёт одной JSON-строкой")
     args = ap.parse_args(argv)
 
@@ -335,6 +418,7 @@ def main(argv=None):
         direction=args.direction,
         oversample=max(1, args.oversample),
         dry_run=args.dry_run,
+        auto=args.auto,
         on_progress=lambda m: print("[fuse] %s" % m),
     )
     if args.json:
