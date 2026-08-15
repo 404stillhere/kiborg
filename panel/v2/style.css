@@ -837,6 +837,12 @@ input[type="number"]:focus,
 .btn-action.danger:hover { box-shadow: 3px 3px 0 var(--gray), 7px 7px 0 var(--fail); }
 .btn-action.oracle   { background: var(--yellow); color: var(--ink); }
 .btn-action.oracle:hover { box-shadow: var(--shadow-2); }
+/* Ультра — сплав двух красок (cyan + magenta): кнопка сама говорит «слияние» */
+.btn-action.ultra {
+  background: linear-gradient(135deg, var(--cyan), var(--magenta));
+  color: var(--white);
+}
+.btn-action.ultra:hover { box-shadow: var(--shadow-2); }
 
 /* ── Секция прогона (видна при running) ── */
 #run-section {
@@ -1172,7 +1178,49 @@ input[type="number"]:focus,
 }
 .idea-tag.src { background: var(--magenta); color: var(--white); }
 .idea-tag.llm { background: var(--cyan); color: var(--ink); }
+.idea-tag.ultra-tag {
+  background: linear-gradient(135deg, var(--cyan), var(--magenta));
+  color: var(--white);
+  border: 2px solid var(--ink);
+}
 .idea-tag:not(.src):not(.llm) { background: var(--paper-3); }
+
+/* Сплав источников (ультра-карточка): кто что внёс в ультра-идею */
+.idea-fusion { padding: 8px 16px; border-bottom: 1px dashed var(--ink); }
+.idea-fusion-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.fusion-rows { display: flex; flex-direction: column; gap: 6px; }
+.fusion-row {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--magenta) 8%, var(--paper));
+  border-left: 3px solid var(--magenta);
+  overflow-wrap: anywhere;
+}
+.fusion-row-head { display: flex; gap: 8px; align-items: baseline; }
+.fusion-role { font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+.fusion-src {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--paper-3);
+  border: 1px solid var(--ink);
+}
+.fusion-took { color: var(--ink-2); margin-top: 2px; }
+.fusion-collapse { color: var(--fail); margin-top: 2px; font-size: 10px; }
+.fusion-missing {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fail);
+  margin-top: 6px;
+}
 
 /* Кнопки действий: Take — голубая, Trash — малиновая */
 .idea-actions {

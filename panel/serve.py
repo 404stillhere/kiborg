@@ -214,6 +214,13 @@ def _start_observe():
     return _start_proc("наблюдаю за источниками", ["observe_sources.py"])
 
 
+def _start_fuse():
+    """Ультра-режим по кнопке: по одной идее из каждого источника → одна ультра-идея
+    (fuse_mode.py: pick_cross_sample → fuse_ideas → совет → инбокс). Тот же RUN-консоль,
+    тот же watchdog/стоп, что и у обычного прогона — никакого отдельного состояния."""
+    return _start_proc("ультра-идея", ["fuse_mode.py"])
+
+
 # --- автономный режим (рубильник): фон гоняет ТОТ ЖЕ сбор по таймеру ---
 # AUTO_FILE объявлен выше в блоке констант (= config.AUTO_JSON).
 _AUTO = {"last": 0.0}
@@ -874,6 +881,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/observe":
             ok = _start_observe()
+            self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
+        elif self.path == "/api/fuse":
+            ok = _start_fuse()
             self._json({"ok": ok, "msg": "" if ok else "прогон уже идёт"})
         elif self.path == "/api/auto":
             try:

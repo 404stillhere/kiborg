@@ -231,6 +231,55 @@ class TestStopRun(unittest.TestCase):
         self.assertFalse(serve._stop_run())
 
 
+class TestStartFuse(unittest.TestCase):
+    """Кнопка «🧬 Ультра-идея»: запускает fuse_mode.py через общий _start_proc.
+
+    Ультра-режим живёт в том же RUN-консоли/watchdog/стопе, что и обычный прогон —
+    отдельного состояния нет, поэтому тестируем только аргументы запуска и busy-гейт.
+    """
+
+    def setUp(self):
+        self._orig_run = dict(serve.RUN)
+        self._orig_proc = dict(serve._PROC)
+
+    def tearDown(self):
+        serve.RUN.clear()
+        serve.RUN.update(self._orig_run)
+        serve._PROC.clear()
+        serve._PROC.update(self._orig_proc)
+
+    def test_fuse_runs_fuse_mode_script(self):
+        # аргументы дошли до _start_proc как есть: python fuse_mode.py (без run.py)
+        seen = {}
+
+        def _fake_start(goal, args):
+            seen["goal"] = goal
+            seen["args"] = args
+            return True
+
+        orig = serve._start_proc
+        serve._start_proc = _fake_start
+        try:
+            self.assertTrue(serve._start_fuse())
+        finally:
+            serve._start_proc = orig
+        self.assertEqual(seen["args"], ["fuse_mode.py"])
+        self.assertIn("ультра", seen["goal"])
+
+    def test_fuse_rejected_while_busy(self):
+        # идёт другой прогон → Popen не зовётся вовсе (гейт в _start_proc до потока)
+        def _boom(*a, **k):
+            raise AssertionError("Popen не должен вызываться при занятом прогоне")
+
+        serve.RUN.update(running=True)
+        orig = serve.subprocess.Popen
+        serve.subprocess.Popen = _boom
+        try:
+            self.assertFalse(serve._start_fuse())
+        finally:
+            serve.subprocess.Popen = orig
+
+
 class TestGracefulShutdown(unittest.TestCase):
     """Graceful shutdown: signal модуль импортирован, _shutdown/_stop_run вызываемы."""
 

@@ -78,6 +78,7 @@ class API {
   static startRun(goal)       { return API._request('POST', '/api/run',       { goal }); }
   static stopRun()            { return API._request('POST', '/api/stop',      {}); }
   static observe()            { return API._request('POST', '/api/observe',   {}); }
+  static fuse()               { return API._request('POST', '/api/fuse',      {}); }
   static setIdea(id, status)  { return API._request('POST', '/api/idea',      { id, status }); }
   static purge(threshold)     { return API._request('POST', '/api/ideas/purge', { threshold }); }
   static setAuto(on, interval){ return API._request('POST', '/api/auto',      { on, interval_min: interval }); }
@@ -649,6 +650,11 @@ class Renderer {
       }
     }
 
+    // сплав источников (ультра-карточка): кто что внёс и что сломается без него
+    if (idea.mode === 'ultra' && Array.isArray(idea.fusion) && idea.fusion.length) {
+      card.appendChild(this._fusionBlock(idea));
+    }
+
     // meta
     const meta = Renderer.el('div', { cls: 'idea-meta' });
     if (idea.source) {
@@ -656,6 +662,15 @@ class Renderer {
     }
     const isLLM = idea.brain === 'llm';
     meta.appendChild(Renderer.el('span', { cls: ['idea-tag', isLLM ? 'llm' : ''], text: isLLM ? 'нейронка' : 'болванка' }));
+    if (idea.mode === 'ultra') {
+      meta.appendChild(Renderer.el('span', { cls: ['idea-tag', 'ultra-tag'], text: '🧬 ультра' }));
+    }
+    if (idea.seed != null) {
+      meta.appendChild(Renderer.el('span', {
+        cls: 'idea-tag', text: 'seed ' + idea.seed,
+        title: 'зерно выборки — прогоны переигрываемы (fuse_mode --seed)'
+      }));
+    }
     if (idea.effort) meta.appendChild(Renderer.el('span', { cls: 'idea-tag', text: 'сложность: ' + idea.effort }));
     meta.appendChild(Renderer.el('span', { cls: 'idea-tag', text: '#' + idea.id }));
     card.appendChild(meta);
@@ -676,6 +691,33 @@ class Renderer {
     }));
     card.appendChild(acts);
     return card;
+  }
+
+  // Блок сплава для ультра-карточки: роль → источник → вклад (took) → крах без него (collapse).
+  // Поля приходят из idea_engine/organs/fuse_ideas.py; sources_missing — кто не дошёл до сплава.
+  _fusionBlock(idea) {
+    const box = Renderer.el('div', { cls: 'idea-fusion' });
+    box.appendChild(Renderer.el('div', { cls: 'idea-fusion-title', text: '🧬 Сплав источников' }));
+    const rows = Renderer.el('div', { cls: 'fusion-rows' });
+    idea.fusion.forEach(f => {
+      if (!f || typeof f !== 'object') return;
+      const row = Renderer.el('div', { cls: 'fusion-row' });
+      const head = Renderer.el('div', { cls: 'fusion-row-head' });
+      if (f.role) head.appendChild(Renderer.el('span', { cls: 'fusion-role', text: f.role }));
+      if (f.source) head.appendChild(Renderer.el('span', { cls: 'fusion-src', text: f.source }));
+      row.appendChild(head);
+      if (f.took) row.appendChild(Renderer.el('div', { cls: 'fusion-took', text: f.took }));
+      if (f.collapse) row.appendChild(Renderer.el('div', { cls: 'fusion-collapse', text: 'Без него: ' + f.collapse }));
+      rows.appendChild(row);
+    });
+    box.appendChild(rows);
+    if (Array.isArray(idea.sources_missing) && idea.sources_missing.length) {
+      box.appendChild(Renderer.el('div', {
+        cls: 'fusion-missing',
+        text: 'Не дошли до сплава: ' + idea.sources_missing.join(', '),
+      }));
+    }
+    return box;
   }
 
   _finishCard(f) {
@@ -1914,6 +1956,8 @@ class UIController {
     if (finish) finish.onclick = () => this.runGoal('доделать существующие проекты');
     const oracle = Renderer.$('#btn-oracle-left');
     if (oracle) oracle.onclick = () => this.openOracle();
+    const fuse = Renderer.$('#btn-fuse-left');
+    if (fuse) fuse.onclick = () => this.fuse();
     const stop = Renderer.$('#btn-stop-left');
     if (stop) stop.onclick = () => this.stopRun();
     // направление
@@ -2013,6 +2057,24 @@ class UIController {
       const area = Renderer.$('#console-area');
       if (area) { area.classList.remove('collapsed'); area.classList.add('expanded'); }
     }
+  }
+
+  async fuse() {
+    // Ультра-режим: по одной идее из каждого источника → одна ультра-идея (fuse_mode.py).
+    // Работает через тот же RUN-консоль/стоп, что и обычный прогон.
+    if (this.state.run && this.state.run.running) {
+      this.toasts.show('Прогон уже идёт', 'warn');
+      return;
+    }
+    const r = await this.api.fuse();
+    if (!r.ok) {
+      this.toasts.show('Ультра: ' + (r.msg || 'не вышло'), 'error');
+      return;
+    }
+    this._runStartTime = Date.now();
+    this.toasts.show('Ультра-режим запущен: сплавляю по идее из каждого источника', 'info');
+    const area = Renderer.$('#console-area');
+    if (area) { area.classList.remove('collapsed'); area.classList.add('expanded'); }
   }
 
   async ideaAct(id, status) {
