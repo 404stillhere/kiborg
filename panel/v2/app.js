@@ -519,29 +519,12 @@ class Renderer {
 
   // ── КРУЖКИ «ДЕФОЛТ ДЛЯ АВТО» (у кнопок режимов в левой панели) ──
   // Радио: галочка стоит у ОДНОГО режима — его авто-петля и запускает по расписанию.
+  // Сам клик-обработчик живёт в UIController.setDefaultMode (у него api/toasts).
   _renderModeDots(S) {
     const mode = S.mode || 'bring';
     Renderer.$$('.mode-dot').forEach(d => {
       d.classList.toggle('checked', d.dataset.mode === mode);
     });
-  }
-
-  async setDefaultMode(mode) {
-    if (!mode) return;
-    if (mode === 'oracle') {
-      // Oracle нельзя назначить дефолтом: авто не знает, какой проект анализировать
-      this.toasts.show('Oracle нельзя в авто — ему нужен путь к проекту, укажите его руками', 'warn');
-      return;
-    }
-    const r = await this.api.setMode(mode);
-    if (!r.ok) {
-      this.toasts.show('Дефолт: ' + (r.msg || 'не вышло'), 'error');
-      return;
-    }
-    if (this.state && this.state.data) this.state.data.mode = r.mode;
-    this._renderModeDots(this.state.data || { mode: r.mode });
-    const names = { bring: 'принести идеи', finish: 'доделать проект', ultra: 'ультра-идею' };
-    this.toasts.show('Авто будет запускать: ' + (names[r.mode] || r.mode), 'success');
   }
 
   // ── ПАРАМЕТРЫ ГЕНЕРАЦИИ (drawer «Настройки») ──
@@ -1984,6 +1967,26 @@ class UIController {
   }
 
   // ── ДЕЙСТВИЯ В ЛЕВОЙ ПАНЕЛИ ──
+  // Кружок «дефолт для авто» у кнопки режима: ткнул → POST /api/mode → галочка переезжает.
+  // Рисует галочки Renderer._renderModeDots (по подписке на state), здесь — только клик.
+  async setDefaultMode(mode) {
+    if (!mode) return;
+    if (mode === 'oracle') {
+      // Oracle нельзя назначить дефолтом: авто не знает, какой проект анализировать
+      this.toasts.show('Oracle нельзя в авто — ему нужен путь к проекту, укажите его руками', 'warn');
+      return;
+    }
+    const r = await this.api.setMode(mode);
+    if (!r.ok) {
+      this.toasts.show('Дефолт: ' + (r.msg || 'не вышло'), 'error');
+      return;
+    }
+    if (this.state && this.state.data) this.state.data.mode = r.mode;  // не ждать 5-сек poll
+    if (this.renderer) this.renderer._renderModeDots(this.state.data || { mode: r.mode });
+    const names = { bring: 'принести идеи', finish: 'доделать проект', ultra: 'ультра-идею' };
+    this.toasts.show('Авто будет запускать: ' + (names[r.mode] || r.mode), 'success');
+  }
+
   _bindLeftActions() {
     const bring = Renderer.$('#btn-bring-left');
     if (bring) bring.onclick = () => this.runGoal('приноси свежие идеи');
