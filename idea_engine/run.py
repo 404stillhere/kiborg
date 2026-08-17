@@ -15,6 +15,7 @@ CLI:
 """
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +33,46 @@ DATA = os.path.join(BASE, "data")
 STATE = config.IE_STATE_JSON
 INBOX = config.INBOX_MD
 NOTIFY = config.IE_NOTIFY_MD
+ORACLE_INDEX = os.path.join(DATA, "oracles", config.ORACLE_INDEX_FILE)
+
+_ORACLE_LINE = re.compile(r"^-\s+\[(.+?)\]\((.+?)\)\s*(?:[—-]\s*(.*))?$")
+_ORACLE_INBOX_MAX = 5  # последние N планов в инбоксе; полный список — в самом oracles/index.md
+
+
+def _oracle_section():
+    """Секция «планы Oracle» для inbox.md — РЕГЕНЕРИРУЕТСЯ из oracles/index.md.
+
+    Раньше deliver_oracle (заморожен) дописывал карточку в конец inbox.md ("a"), а
+    _write_inbox перегенерировал файл целиком ("w") — любой тик/триаж СТИРАЛ
+    Oracle-карточки (council 2026-08-17, #2; подтверждено вживую: планы 15–16.08
+    были в oracles/, в inbox.md — ни одной). Регенерация из индекса возвращает и уже
+    потерянные планы, а inbox остаётся полностью производным видом (мастер — индекс).
+    Дубли ссылок (известная шероховатость индекса) пропускаем; пути в карточках —
+    относительно data/ (инбокс лежит рядом с oracles/)."""
+    if not os.path.isfile(ORACLE_INDEX):
+        return []  # ни одного плана — секции нет, формат инбокса как раньше
+    try:
+        with open(ORACLE_INDEX, encoding="utf-8-sig") as f:
+            raw = f.read().splitlines()
+    except OSError:
+        return []
+    seen, cards = set(), []
+    for ln in raw:
+        m = _ORACLE_LINE.match(ln.strip())
+        if not m:
+            continue
+        title, path, rest = m.group(1).strip(), m.group(2).strip(), (m.group(3) or "").strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        goal = rest.split(" (")[0].strip() or "—"
+        proj = path.split("/")[0] if "/" in path else "?"
+        cards.append([f"- **{title}** — `{goal}`", f"    - проект: `{proj}`", f"    - план: `oracles/{path}`"])
+    if not cards:
+        return []
+    return ["", "## Дорожка C — планы Oracle (по кодовой базе)", ""] + [
+        ln for card in cards[-_ORACLE_INBOX_MAX:] for ln in card
+    ]
 
 CFG = {
     "cap": config.LEGACY_TICK_CAP,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
@@ -114,6 +155,10 @@ def _write_inbox(store):
     else:
         lines.append("_пока пусто_")
     lines.append("")
+    # Дорожка C: Oracle-планы регенерируются из oracles/index.md — deliver_oracle
+    # дописывает карточку в конец, но следующий же тик переписывает файл целиком;
+    # без регенерации планы пропадали из инбокса (см. _oracle_section).
+    lines += _oracle_section()
     os.makedirs(DATA, exist_ok=True)
     with open(INBOX, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("\n".join(lines) + "\n")
@@ -161,17 +206,24 @@ def _cli(argv):
                 # статус в victim — забираем victim с обновлённым статусом, потом удаляем.
                 victim = next((i for i in store.data["ideas"] if i["id"] == idea_id), None)
                 if victim:
-                    if st == config.STORE_STATUS_TRASH:
-                        # мусор = отклонена: СУТЬ (title+why) → rejected.json — учит генератор/судью
-                        # не приносить похожее. Полная идея здесь не нужна (храним суть, не архив).
-                        rejected.add(victim.get("title", ""), victim.get("why", ""))
-                    else:
-                        # взять/позже: ПОЛНАЯ идея (id/title/why/score/born_tick/…) → taken/later,
-                        # с меткой triaged_ts. Без потолка — разобранные идеи не должны теряться.
-                        triage_store.add(
-                            triage_store.TAKEN_PATH if st == config.STORE_STATUS_TAKE else triage_store.LATER_PATH,
-                            victim,
-                        )
+                    try:
+                        if st == config.STORE_STATUS_TRASH:
+                            # мусор = отклонена: СУТЬ (title+why) → rejected.json — учит генератор/судью
+                            # не приносить похожее. Полная идея здесь не нужна (храним суть, не архив).
+                            rejected.add(victim.get("title", ""), victim.get("why", ""))
+                        else:
+                            # взять/позже: ПОЛНАЯ идея (id/title/why/score/born_tick/…) → taken/later,
+                            # с меткой triaged_ts. Без потолка — разобранные идеи не должны теряться.
+                            triage_store.add(
+                                triage_store.TAKEN_PATH if st == config.STORE_STATUS_TAKE else triage_store.LATER_PATH,
+                                victim,
+                            )
+                    except triage_store.CorruptedError as exc:
+                        # Битый файл разобранного (council 2026-08-17 #3): ОТКАЗ до store.save() —
+                        # идея остаётся в инбоксе, битый файл не перезаписан (карантин-копия снята
+                        # внутри). Панель покажет refusal как ошибку действия.
+                        print(f"REFUSED #{idea_id} -> {st}: файл разобранного битый ({exc}) — почини руками, действие отменено")
+                        sys.exit(1)
                     store.data["ideas"] = [i for i in store.data["ideas"] if i["id"] != idea_id]
             store.save()
             _write_inbox(store)

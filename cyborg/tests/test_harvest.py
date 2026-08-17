@@ -532,6 +532,87 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
         self.assertEqual(captured["items_seen_by_generator"], ["совсем-новое"])  # повтор отрезан
         self.assertEqual(self.feedback_calls, 2)  # Cortex запускается перед каждым вызовом harvest
 
+    def test_empty_after_filter_skips_run(self):
+        # council 2026-08-17 #5а: гейт пускает (fresh_n>0), но items_cache уже знает все
+        # items (прошлый тик упал после mark_seen) → filter_fresh вырезает всё → прогон
+        # из пустоты ЗАПРЕЩЁН: cy.run не зовётся, считается пропуском.
+        import harvest_runner
+
+        item = {"title": "уже в кэше", "id": "i1", "source": "hn"}
+        self._ic.mark_seen([item])  # как будто прошлый тик уже отдал генератору
+
+        def boom(goal, env=None):
+            raise AssertionError("прогон из пустоты: cy.run не должен вызываться")
+
+        class FakeCy:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, goal, env=None):
+                return boom(goal, env)
+
+        saved = (harvest._source_signature, harvest._should_run, harvest._save_sig,
+                 harvest._persist_status, harvest._log, harvest._degrade_note,
+                 harvest._harvest_env, harvest.Cyborg, harvest.build_organs)
+        try:
+            harvest._source_signature = lambda: (None, False, 1, None, {"items": [item], "source": "hn"})
+            harvest._should_run = lambda sig, force, fresh_n: True
+            harvest._save_sig = lambda sig: None
+            harvest._persist_status = lambda status: None
+            harvest._log = lambda *a, **k: None
+            harvest._degrade_note = lambda out: ""
+            harvest._harvest_env = lambda: {"filter_seen_items": False}
+            harvest.Cyborg = FakeCy
+            harvest.build_organs = lambda: []
+            harvest_runner.main([])
+        finally:
+            (harvest._source_signature, harvest._should_run, harvest._save_sig,
+             harvest._persist_status, harvest._log, harvest._degrade_note,
+             harvest._harvest_env, harvest.Cyborg, harvest.build_organs) = saved
+
+    def test_failed_run_does_not_burn_material(self):
+        # council 2026-08-17 #5б: cy.run вернул всю партию болванками (added=0,
+        # dropped_stub>0) → mark_seen НЕ зовётся: «сбой LLM не сжигает сырьё». Следующий
+        # тик с тем же материалом всё ещё отдаёт его генератору (не отфильтрован).
+        import harvest_runner
+
+        item = {"title": "материал после сбоя", "id": "i9", "source": "hn"}
+        gen = {"seen": None}
+
+        class FakeCy:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, goal, env=None):
+                pf = (env or {}).get("prefetched_out") or {}
+                gen["seen"] = [i.get("title") for i in pf.get("items", [])]
+                return {"result": 0, "dropped_stub": 2}  # вся партия — болванки
+
+        def fake_signature():
+            return (None, False, 1, None, {"items": [dict(item)], "source": "hn"})
+
+        saved = (harvest._source_signature, harvest._should_run, harvest._save_sig,
+                 harvest._persist_status, harvest._log, harvest._degrade_note,
+                 harvest._harvest_env, harvest.Cyborg, harvest.build_organs)
+        try:
+            harvest._source_signature = fake_signature
+            harvest._should_run = lambda sig, force, fresh_n: True
+            harvest._save_sig = lambda sig: None
+            harvest._persist_status = lambda status: None
+            harvest._log = lambda *a, **k: None
+            harvest._degrade_note = lambda out: ""
+            harvest._harvest_env = lambda: {"filter_seen_items": False}
+            harvest.Cyborg = FakeCy
+            harvest.build_organs = lambda: []
+            harvest_runner.main([])
+            self.assertEqual(gen["seen"], ["материал после сбоя"])  # 1-й тик: генератор видел
+            harvest_runner.main([])
+            self.assertEqual(gen["seen"], ["материал после сбоя"])  # 2-й тик: ВСЁ ЕЩЁ видит — не сгорело
+        finally:
+            (harvest._source_signature, harvest._should_run, harvest._save_sig,
+             harvest._persist_status, harvest._log, harvest._degrade_note,
+             harvest._harvest_env, harvest.Cyborg, harvest.build_organs) = saved
+
     def test_cache_check_never_crashes_harvest(self):
         # items_cache.PATH указывает на недоступное место / битый → harvest НЕ падает
         import harvest_runner

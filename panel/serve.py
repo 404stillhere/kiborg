@@ -1091,6 +1091,24 @@ def _check_port_available(host: str, port: int) -> bool:
         sock.close()
 
 
+def _make_shutdown_handler(srv, stop_run):
+    """SIGTERM/SIGINT-хендлер: остановить прогон и сервер.
+
+    srv.shutdown() ОБЯЗАТЕЛЬНО из отдельного потока: он ждёт выхода serve_forever,
+    а сигнальный хендлер исполняется в ТОМ ЖЕ главном потоке, где serve_forever
+    крутится — прямой вызов = дедлок socketserver (процесс виснет, atexit/_stop_run
+    не выполняются, прогон-субпроцесс остаётся сиротой). Воспроизведено
+    экспериментально (прямой вызов: exit по таймауту; из потока: чистый выход),
+    council 2026-08-17, находка #6."""
+
+    def _shutdown(signum, frame):
+        print(f"[panel] получен signal {signum} — корректная остановка")
+        stop_run()
+        threading.Thread(target=srv.shutdown, name="panel-shutdown", daemon=True).start()
+
+    return _shutdown
+
+
 def main():
     if not _check_port_available(config.PANEL_HOST, PORT):
         print(
@@ -1101,17 +1119,12 @@ def main():
         sys.exit(1)
 
     srv = ThreadingHTTPServer((config.PANEL_HOST, PORT), Handler)
-    threading.Thread(target=_auto_loop, daemon=True).start()  # фон-рубильник (по умолчанию выключен)
+    threading.Thread(target=_auto_loop, daemon=True).start()  # фон-рубльник (по умолчанию выключен)
     print(f"Пульт киборга: http://{config.PANEL_HOST}:{PORT}  (Ctrl+C — стоп)")
 
     # graceful shutdown: по SIGTERM/SIGINT — остановить run-процесс и сервер
-    def _shutdown(signum, frame):
-        print(f"[panel] получен signal {signum} — корректная остановка")
-        _stop_run()
-        srv.shutdown()
-
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _make_shutdown_handler(srv, _stop_run))
+    signal.signal(signal.SIGINT, _make_shutdown_handler(srv, _stop_run))
     atexit.register(_stop_run)  # страховка на случай неожиданного выхода
 
     try:

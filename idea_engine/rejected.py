@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cyborg"))
 
 import config
+from triage_store import CorruptedError, quarantine_corrupted  # noqa: E402  (общий карантин-хелпер)
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 PATH = os.path.join(DATA, config.REJECTED_FILE)
@@ -25,13 +26,22 @@ _CONTEXT_N = config.REJECTED_CONTEXT_N  # сколько подавать ген
 
 
 def _load():
+    """Список отклонённых. Нет файла → [] (норма). Битый → карантин-копия + CorruptedError
+    (add() откажет, история отказов не перезаписывается — council 2026-08-17, #3);
+    utf-8-sig: BOM от блокнота — валидный файл, не авария."""
     try:
-        with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
+        with open(PATH, encoding="utf-8-sig") as f:
             d = json.load(f)
-        r = d.get(config.REJECTED_KEY)
-        return r if isinstance(r, list) else []
-    except Exception:
+    except FileNotFoundError:
         return []
+    except ValueError as exc:
+        quarantine_corrupted(PATH, str(exc)[:120])
+        raise CorruptedError(os.path.basename(PATH)) from None
+    if not isinstance(d, dict):
+        quarantine_corrupted(PATH, "JSON не словарь")
+        raise CorruptedError(os.path.basename(PATH)) from None
+    r = d.get(config.REJECTED_KEY)
+    return r if isinstance(r, list) else []
 
 
 def _save(items):
@@ -53,7 +63,8 @@ def _save(items):
 
 
 def add(title, why=""):
-    """Записать отклонённую идею. Дедуп по заголовку (регистронезависимо) — не копим повторы."""
+    """Записать отклонённую идею. Дедуп по заголовку (регистронезависимо) — не копим повторы.
+    Битый файл → CorruptedError: триаж-мусор отменяется, история отказов не стирается."""
     title = (title or "").strip()
     if not title:
         return
@@ -72,18 +83,33 @@ def add(title, why=""):
 
 
 def recent(n=_CONTEXT_N):
-    """Последние N заголовков отклонённых — для env['rejected'] (контекст генератору/судье)."""
-    return [it.get("title", "") for it in _load()[-n:] if it.get("title")]
+    """Последние N заголовков отклонённых — для env['rejected'] (контекст генератору/судье).
+    Битый файл → пусто: генератор без «не повторяй»-контекста, но прогон не роняем."""
+
+    def _safe_load():
+        try:
+            return _load()
+        except CorruptedError:
+            return []
+
+    return [it.get("title", "") for it in _safe_load()[-n:] if it.get("title")]
 
 
 def count():
-    """Сколько идей отклонено (для пульта)."""
-    return len(_load())
+    """Сколько идей отклонено (для пульта; битый → 0, показ не роняем)."""
+    try:
+        return len(_load())
+    except CorruptedError:
+        return 0
 
 
 def load():
-    """Полный список для пульта, если понадобится показать."""
-    return {config.REJECTED_KEY: _load()}
+    """Полный список для пульта, если понадобится показать (битый → пустой каркас)."""
+    try:
+        items = _load()
+    except CorruptedError:
+        items = []
+    return {config.REJECTED_KEY: items}
 
 
 if __name__ == "__main__":

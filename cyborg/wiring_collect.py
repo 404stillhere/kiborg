@@ -74,6 +74,37 @@ def _collect_locked(inputs, env):
     return wiring.collect_source.run(inputs, env)
 
 
+def _scrub_and_cross_dedup(out):
+    """Общий шаг обработки ЛЮБОГО выхлопа сбора: scrub секретов + кросс-дедуп.
+
+    Раньше работал только на пути собственного фетча: ранний return из
+    prefetched_out (выхлоп гейта, автономный harvest-путь) обходил обе защиты —
+    секрет из файла-источника уходил в промпт на ГЛАВНОМ пути, а чистился только
+    на ручном (council 2026-08-17, находка #4). Идемпотентен: чистое не трогает.
+    """
+    import wiring
+
+    if isinstance(out, dict) and isinstance(out.get("items"), list):
+        # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести
+        # секрет в ЗАГОЛОВКЕ ИЛИ КОНТЕКСТЕ (собственный фильтр _files неполон — пропускал
+        # напр. AQ.-ключ из gitignored gemini.md). Оба поля уходят в ПРОМПТ генератора →
+        # к LLM-провайдеру. scrub downstream (перед deliver) ПОЗДНО — промпт уже ушёл.
+        # Чистим ОБА поля до генерации: scrub_secrets ловит форматы, что _FILES_SECRET_LINE
+        # пропустил.
+        for it in out["items"]:
+            if isinstance(it, dict):
+                for field in ("title", "context"):
+                    if isinstance(it.get(field), str):
+                        it[field] = wiring.scrub_secrets.scrub_text(it[field])
+        # КРОСС-ДЕДУП (2026-07-23): один пост может прийти с HN (item id) и Lobsters
+        # (short_id) — в seen_items это два разных ключа, оба проходят → LLM тратится на
+        # две похожие идеи. Уберём дубли ВНУТРИ прогона по нормализованному заголовку
+        # (первое вхождение выигрывает), до ideate. Чистая функция (нет персиста),
+        # строгая (точное совпадение, не Jaccard).
+        out["items"] = wiring.seen_items.cross_dedup(out["items"])
+    return out
+
+
 def _run_collect(inputs, env):
     # ВАЖНО: раньше env игнорировался (жёстко n=8/source=hn) — расширение харвеста
     # (SOURCE_N) реально не долетало до сборщика в живом прогоне, только до gate-проверки
@@ -82,11 +113,12 @@ def _run_collect(inputs, env):
 
     env = env if isinstance(env, dict) else {}
     # переиспользуем фетч гейта, если он уже сходил в источник ЭТИМ тиком (harvest кладёт
-    # prefetched_out) — не тянем телегу второй раз за тик (~90с/лишний pyrogram-логин). Нет /
-    # невалидно (force / сбой гейта / ручной прогон run.py) → фетчим сами, как раньше.
+    # prefetched_out) — не тянем телегу второй раз за тик (~90с/лишний pyrogram-логин).
+    # ФЕТЧ пропускаем, но ОБРАБОТКУ — нет: scrub секретов и кросс-дедуп обязаны работать
+    # и на автономном пути (раньше ранний return обходил их — council 2026-08-17, #4).
     pf = env.get("prefetched_out")
     if isinstance(pf, dict) and pf.get("items") is not None:
-        return pf
+        return _scrub_and_cross_dedup(pf)
     e = {"n": env.get("n", config.COLLECT_DEFAULT_N), "source": env.get("source", config.COLLECT_DEFAULT_SOURCE)}
     if env.get("sources") is not None:
         e["sources"] = env["sources"]  # пробрасываем И пустой список: пусто = «нет источников»,
@@ -120,20 +152,4 @@ def _run_collect(inputs, env):
     # что уже обдумывали, — работа Мозга (см. _run_ideate): фильтр переехал туда 2026-07-13,
     # чтобы метафора не врала (смотреть ≠ помнить).
     out = _collect_locked(inputs, e)  # под замком tg-сессии, если телеграм в игре
-    # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести секрет в
-    # ЗАГОЛОВКЕ ИЛИ КОНТЕКСТЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ
-    # из gitignored gemini.md). Оба поля уходят в ПРОМПТ генератора → к LLM-провайдеру.
-    # scrub downstream (перед deliver) ПОЗДНО — промпт уже ушёл. Чистим ОБА поля здесь,
-    # до генерации: scrub_secrets ловит форматы, что _FILES_SECRET_LINE пропустил.
-    if isinstance(out, dict) and isinstance(out.get("items"), list):
-        for it in out["items"]:
-            if isinstance(it, dict):
-                for field in ("title", "context"):
-                    if isinstance(it.get(field), str):
-                        it[field] = wiring.scrub_secrets.scrub_text(it[field])
-        # КРОСС-ДЕДУП (2026-07-23): один пост может прийти с HN (item id) и Lobsters (short_id)
-        # — в seen_items это два разных ключа, оба проходят → LLM тратится на две похожие идеи.
-        # Уберём дубли ВНУТРИ прогона по нормализованному заголовку (первое вхождение выигрывает),
-        # до ideate. Чистая функция (нет персиста), строгая (точное совпадение, не Jaccard).
-        out["items"] = wiring.seen_items.cross_dedup(out["items"])
-    return out
+    return _scrub_and_cross_dedup(out)

@@ -82,15 +82,26 @@ def main(argv):
             # gate_out=None → _run_collect фетчит сам, как раньше (фолбэк цел)
             # A6 CACHE_CHECK: отрезаем заголовки, которые уже отдавали генератору в последних 3 прогонах
             # (TTL 30 мин). Только автосбор — ручной run.py не ставит prefetched_out через этот путь
-            # (решение юзера: жмёшь кнопку → хочешь идей сейчас, даже если посты мелькали). mark_seen
-            # звём тут же: items УЖЕ свежие (прошли фильтр) → уйдут в генерацию → метим как виденные.
+            # (решение юзера: жмёшь кнопку → хочешь идей сейчас, даже если посты мелькали).
+            fresh_items = None
             if isinstance(gate_out, dict):
                 try:
                     import items_cache
 
                     fresh_items = items_cache.filter_fresh(gate_out.get("items") or [])
+                    # GUARD «прогон из пустоты» (council 2026-08-17, #5а): гейт пускает по
+                    # свежести ГЕЙТА (fresh_n), но items_cache мог уже метить эти же items —
+                    # прошлый тик упал ПОСЛЕ mark_seen. filter_fresh вырезает всё → без
+                    # guard ideate получил бы пустой промпт («идеи из пустоты») и ложный
+                    # CRITICAL «мозг недоступен». Пусто = нечего генерировать — пропуск.
+                    if not fresh_items:
+                        skipped += 1
+                        print(
+                            f"прогон {i + 1}/{n}: cache_check вырезал всё (прошлый тик упал после mark_seen?)"
+                            " — пропуск (без вызова LLM)"
+                        )
+                        continue
                     gate_out = {**gate_out, "items": fresh_items}
-                    items_cache.mark_seen(fresh_items)
                 except Exception:
                     pass  # cache_check НИКОГДА не роняет автосбор — тише едешь, хоть и с дублями
             run_env = {**env, "prefetched_out": gate_out} if isinstance(gate_out, dict) else env
@@ -99,6 +110,18 @@ def main(argv):
             added = r if isinstance(r, int) else 0
             total += added
             total_dropped += int(out.get("dropped_stub") or 0)  # болванки, отсеянные доставкой за тик
+            # mark_seen ПОСЛЕ прогона (council 2026-08-17, #5б): «сбой LLM не сжигает сырьё» —
+            # тот же принцип, что seen_items (метит после успешной генерации; докстринг
+            # items_cache обещает именно это). Не метим, если прогон явно неудачный: вся
+            # партия вышла болванками (added=0 при dropped_stub>0) — следующий тик честно
+            # попробует те же материалы ещё раз.
+            if fresh_items and not (added == 0 and int(out.get("dropped_stub") or 0) > 0):
+                try:
+                    import items_cache
+
+                    items_cache.mark_seen(fresh_items)
+                except Exception:
+                    pass
             if sig is not None:
                 harvest._save_sig(sig)  # запоминаем ленту только после реального прогона
             harvest._log(goal, out)

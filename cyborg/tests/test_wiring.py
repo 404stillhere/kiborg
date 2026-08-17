@@ -236,6 +236,26 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         out = wiring._run_collect({}, {"prefetched_out": pf})
         self.assertIs(out, pf)  # тот же выхлоп гейта, без нового фетча
 
+    def test_prefetched_out_is_also_scrubbed(self):
+        # council 2026-08-17 #4: ранний return из prefetched_out обходил scrub — секрет
+        # чистился только на ручном пути, а автономный (ГЛАВНЫЙ, harvest) шёл сырьём
+        # в промпт. Фетч переиспользуем, ОБРАБОТКУ — нет.
+        secret = "AQ." + "FAKEfake1234567890abcdefgh"
+
+        wiring.collect_source.run = lambda i, e: (_ for _ in ()).throw(
+            AssertionError("фетча быть не должно")
+        )
+        pf = {
+            "items": [
+                {"title": "гейт принёс секрет " + secret, "context": "ok", "source": "files"},
+                {"title": "чистый заголовок", "context": "тоже ок", "source": "files"},
+            ],
+            "degraded": False,
+        }
+        out = wiring._run_collect({}, {"prefetched_out": pf})
+        self.assertNotIn(secret, out["items"][0]["title"])  # секрет НЕ утёк в промпт
+        self.assertEqual(out["items"][1]["title"], "чистый заголовок")  # чистое не тронуто
+
     def test_no_prefetch_fetches_normally(self):
         captured = {}
 

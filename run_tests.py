@@ -47,12 +47,30 @@ def run_package(pkg):
     tests_dir = os.path.join(BASE, pkg, "tests")
     if not os.path.isdir(tests_dir):
         return {"pkg": pkg, "passed": 0, "failed": 0, "errors": 0, "skipped": True}
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", tests_dir, "-q"],
-        capture_output=True,
-        text=True,
-        cwd=BASE,
-    )
+    try:
+        # Таймаут (council 2026-08-17): зависший тест раньше вешал весь прогон навсегда;
+        # теперь пакет убивается по потолку и репортится как ошибка с хвостом вывода.
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", tests_dir, "-q"],
+            capture_output=True,
+            text=True,
+            cwd=BASE,
+            timeout=config.TEST_RUNNER_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        def _s(x):
+            return x.decode("utf-8", "replace") if isinstance(x, bytes) else (x or "")
+
+        tail = "\n".join((_s(exc.stdout) + _s(exc.stderr)).strip().splitlines()[-config.TEST_RUNNER_TAIL_LINES:])
+        return {
+            "pkg": pkg,
+            "passed": 0,
+            "failed": 0,
+            "errors": 1,
+            "skipped": False,
+            "rc": "timeout",
+            "tail": f"ТАЙМАУТ {config.TEST_RUNNER_TIMEOUT_SEC}с — пакет убит (зависший тест?)\n{tail}",
+        }
     out = proc.stdout + proc.stderr
     res = {
         "pkg": pkg,

@@ -9,8 +9,10 @@
 
 import json
 import os
+import signal
 import sys
 import tempfile
+import threading
 import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # panel/
@@ -281,29 +283,61 @@ class TestStartFuse(unittest.TestCase):
 
 
 class TestGracefulShutdown(unittest.TestCase):
-    """Graceful shutdown: signal модуль импортирован, _shutdown/_stop_run вызываемы."""
+    """Graceful shutdown: сигналы зарегистрированы, srv.shutdown вызывается ИЗ ОТДЕЛЬНОГО
+    ПОТОКА (прямой вызов из сигнального хендлера главного потока = дедлок socketserver,
+    council 2026-08-17 #6). Поведенческий тест — вместо старой проверки слов в исходнике."""
 
     def test_signal_module_imported(self):
         """signal модуль импортирован (зависимость для SIGTERM/SIGINT)."""
         import signal  # noqa: F401
 
-        # Если этот тест упал — signal не доступен (неприменимо для stdlib, но проверка что импорт есть)
         self.assertTrue(hasattr(signal, "SIGTERM"))
         self.assertTrue(hasattr(signal, "SIGINT"))
 
-    def test_shutdown_function_exists(self):
-        """В serve.py есть _shutdown функция (устанавливается как handler в main)."""
-        # Не можем запустить main() в тесте (HTTP сервер блокирует), но проверяем что функция существует
-        # и она вызывает _stop_run (что проверено в TestStopRun)
+    def test_main_registers_signal_handlers(self):
         import inspect
 
-        # Проверяем что main существует и содержит signal.signal вызовы
         self.assertTrue(callable(serve.main))
         source = inspect.getsource(serve.main)
         self.assertIn("signal.signal", source)
-        self.assertIn("SIGTERM", source)
-        self.assertIn("SIGINT", source)
-        self.assertIn("srv.shutdown", source)
+        self.assertIn("_make_shutdown_handler", source)
+
+    def test_shutdown_calls_srv_shutdown_from_another_thread(self):
+        # ЯДРО регрессии: хендлер НЕ должен звать srv.shutdown() синхронно — иначе
+        # зависает намертво (serve_forever ждёт хендлер, хендлер ждёт serve_forever).
+        called = threading.Event()
+        seen = {}
+
+        class FakeSrv:
+            def shutdown(self):
+                seen["thread"] = threading.current_thread().name
+                called.set()
+
+        stopped = []
+        handler = serve._make_shutdown_handler(FakeSrv(), lambda: stopped.append(True))
+        handler(signal.SIGINT, None)  # синхронный вызов, как его вызвал бы ОС-сигнал
+        self.assertTrue(called.wait(timeout=5), "srv.shutdown не вызвался (поток не стартовал?)")
+        self.assertEqual(stopped, [True])  # прогон остановлен ДО shutdown
+        self.assertNotEqual(seen["thread"], threading.current_thread().name)  # из ДРУГОГО потока
+
+    def test_shutdown_returns_fast_even_if_server_hangs(self):
+        # поведенческая суть дедлока: хендлер обязан ВЕРНУТЬСЯ быстро, даже если
+        # shutdown блокируется (реальный serve_forever не может завершиться, пока
+        # хендлер сидит в его же стеке). Прямой вызов тут завис бы навсегда.
+        import time
+
+        called = threading.Event()
+
+        class HangingSrv:
+            def shutdown(self):
+                called.set()
+                time.sleep(30)  # "serve_forever не может выйти" — блокируется надолго
+
+        handler = serve._make_shutdown_handler(HangingSrv(), lambda: None)
+        t0 = time.monotonic()
+        handler(signal.SIGTERM, None)
+        self.assertLess(time.monotonic() - t0, 5)  # хендлер не ждал зависающий shutdown
+        self.assertTrue(called.wait(timeout=5))
 
 
 class TestAutoConfig(unittest.TestCase):
