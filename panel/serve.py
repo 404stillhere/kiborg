@@ -34,12 +34,12 @@ try:  # консоль Windows бывает cp1251
 except Exception:
     pass
 
-# HERE — каталог panel/ (для статических index.html/bodies.js). Локальная ответственность
+# HERE — каталог panel/ (для bodies.js — SVG-тела рыцаря, их подключает v2).
 # serve.py, не переносится в config (там нет panel-специфики вне PANEL_DIR).
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Панель v2 (новый дизайн): /, /index.html, /style.css, /app.js отдаются из panel/v2/.
-# Старый index.html и bodies.js продолжают отдаваться из panel/ — не ломаем v1.
+# Старая v1-страница index.html удалена (мёртвый код); bodies.js остаётся — нужен v2.
 STATIC_DIR = os.path.join(HERE, "v2")
 
 # path-bootstrap: единый с wiring/harvest механизм. serve.py лежит в panel/, а не в cyborg/,
@@ -330,6 +330,9 @@ def _set_idea(idea_id, status):
     # в store.py, осталась перезапись). Пульт знает про свой прогон по RUN["running"] — на нём и
     # сериализуем (закрывает частый случай пульт-триаж || пульт-прогон; внешний CLI-harvest — вне
     # видимости пульта, для него нужен OS-замок в idea_engine, см. loose-ends).
+    # _LOCK держим ВЕСЬ subprocess (не только busy-проверку): иначе в окне между проверкой
+    # и CLI мог стартовать прогон/второй триаж (ревью: гонка триажа). ThreadingHTTPServer —
+    # конкурентные хендлеры подождут ~1с в своих потоках, дедлоков нет (subprocess не берёт _LOCK).
     with _LOCK:
         if RUN["running"]:
             return {
@@ -337,15 +340,15 @@ def _set_idea(idea_id, status):
                 "busy": True,
                 "msg": "идёт прогон — разбор отложен на секунду, повтори когда закончится",
             }
-    env = dict(os.environ, PYTHONIOENCODING=config.PYTHONIOENCODING_UTF8)
-    p = subprocess.run(
-        [sys.executable, "run.py", "status", str(int(idea_id)), status],
-        cwd=IDEA,
-        capture_output=True,
-        encoding=config.HTTP_CHARSET_UTF8,
-        errors=config.HTTP_DECODE_ERRORS_REPLACE,
-        env=env,
-    )
+        env = dict(os.environ, PYTHONIOENCODING=config.PYTHONIOENCODING_UTF8)
+        p = subprocess.run(
+            [sys.executable, "run.py", "status", str(int(idea_id)), status],
+            cwd=IDEA,
+            capture_output=True,
+            encoding=config.HTTP_CHARSET_UTF8,
+            errors=config.HTTP_DECODE_ERRORS_REPLACE,
+            env=env,
+        )
     out = (p.stdout or "").strip() + (p.stderr or "").strip()
     return {"ok": p.returncode == 0 and "NOT_FOUND" not in out, "msg": out[: config.PANEL_MSG_MAX_CHARS]}
 
@@ -812,22 +815,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         # ── Статика v2 (новый пульт): /, /index.html, /style.css, /app.js ──
-        # Старая отдача index.html из HERE перекрыта этим блоком (v2 — приоритет),
-        # но старый код ниже оставлен — не ломаем v1, просто он теперь недостижим
-        # для '/' и '/index.html'. bodies.js отдаётся как и раньше из HERE.
+        # Старая v1-страница panel/index.html удалена (1776 строк мёртвого кода:
+        # роуты / и /index.html отдают v2, страница была недостижима с переходом
+        # STATIC_DIR=v2). bodies.js оставлен — v2 подключает его для рыцаря.
         if self.path in config.PANEL_V2_STATIC_ROUTES:
             fname = config.PANEL_V2_INDEX_FILE if self.path in ("/", "/index.html") else self.path.lstrip("/")
             self.serve_static(fname)
             return
-        if self.path in ("/", "/index.html"):
+        if self.path == "/bodies.js":
             try:
-                with open(os.path.join(HERE, config.PANEL_V1_INDEX_FILE), encoding=config.HTTP_CHARSET_UTF8) as f:
-                    self._send(200, f.read(), config.HTTP_MEDIA_TYPE_TEXT_HTML_UTF8)
-            except Exception as e:
-                self._send(500, f"index.html не читается: {e}", config.HTTP_MEDIA_TYPE_TEXT_PLAIN_UTF8)
-        elif self.path == "/bodies.js":
-            try:
-                with open(os.path.join(HERE, config.PANEL_V1_BODIES_FILE), encoding=config.HTTP_CHARSET_UTF8) as f:
+                with open(os.path.join(HERE, config.PANEL_BODIES_FILE), encoding=config.HTTP_CHARSET_UTF8) as f:
                     self._send(200, f.read(), config.HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8)
             except Exception as e:
                 self._send(500, f"// bodies.js: {e}", config.HTTP_MEDIA_TYPE_TEXT_JAVASCRIPT_UTF8)

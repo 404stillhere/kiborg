@@ -293,6 +293,12 @@ class Renderer {
     return Math.floor(s / 86400) + ' дн назад';
   }
 
+  static ageMinutes(ts) {
+    if (!ts) return null;
+    const d = new Date(String(ts).replace(' ', 'T'));
+    return isNaN(+d) ? null : (Date.now() - d.getTime()) / 60000;
+  }
+
   static plural(n, one, few, many) {
     const m10 = n % 10, m100 = n % 100;
     if (m10 === 1 && m100 !== 11) return one;
@@ -363,13 +369,27 @@ class Renderer {
     Renderer.$('#m-inbox').textContent = open;
     Renderer.$('#m-memory').textContent = seen;
 
-    // свежесть — последний прогон
+    // свежесть — последний прогон; но при включённом авто главное не последняя доставка
+    // (она ЗАКОННО старая, когда нового нет — по ней краснеть нельзя, ложная тревога),
+    // а жив ли сам фон: checked_at пишется КАЖДЫЙ тик автоцикла, даже пустой. Протух =
+    // цикл встал → красный «фон молчит» (детектор перенесён из v1, семантика та же).
     const fresh = Renderer.$('#m-fresh');
     fresh.classList.remove('text-bad');
-    const runs = S.runs || [];
-    const last = runs.length ? runs[runs.length - 1] : null;
-    fresh.textContent = last ? Renderer.agoText(last.ts) : '—';
-    fresh.title = last ? 'последний: ' + last.ts : 'прогонов не было';
+    const chkTs = S.sources && S.sources.checked_at;
+    const chkAge = (S.auto && S.auto.on) ? Renderer.ageMinutes(chkTs) : null;
+    const staleMin = Math.max(((S.auto && S.auto.interval_min) || 30) * 3, 12);  // 3 пропущенных цикла = встал
+    if (chkAge !== null && chkAge > staleMin) {
+      const ago = Renderer.agoText(chkTs) || 'давно';
+      fresh.textContent = '⚠ фон молчит: ' + ago;
+      fresh.classList.add('text-bad');
+      fresh.title = 'автоцикл должен проверять источники каждые ~' + ((S.auto && S.auto.interval_min) || 30)
+        + ' мин, но последняя проверка — ' + ago + '. Похоже, встал — перезапусти пульт.';
+    } else {
+      const runs = S.runs || [];
+      const last = runs.length ? runs[runs.length - 1] : null;
+      fresh.textContent = last ? Renderer.agoText(last.ts) : '—';
+      fresh.title = last ? 'последний: ' + last.ts : 'прогонов не было';
+    }
 
     // ключи
     const keyEl = Renderer.$('#m-keys');
@@ -963,6 +983,10 @@ class Renderer {
     const panel = Renderer.$('#tab-organs');
     if (!panel) return;
     const organs = S.organs || [];
+    // счётчик в заголовке вкладки — из данных (раньше в HTML стояло статичное «6 впаяно»,
+    // которое никогда не обновлялось и врёт при другом составе реестра)
+    const cnt = Renderer.$('#tab-organs .panel-title .count');
+    if (cnt) cnt.textContent = organs.length + ' впаяно';
     let list = Renderer.$('#organs-list');
     if (!list) {
       // Первая отрисовка — вычистим статичные примеры и создадим контейнер
@@ -1005,6 +1029,9 @@ class Renderer {
     const panel = Renderer.$('#tab-journal');
     if (!panel) return;
     const runs = S.runs || [];
+    // счётчик в заголовке вкладки — реальное число прогонов (раньше в HTML висело статичное «87»)
+    const cnt = Renderer.$('#tab-journal .panel-title .count');
+    if (cnt) cnt.textContent = String(runs.length);
     let tbody = Renderer.$('#tab-journal tbody');
     if (!tbody) return;  // таблица в каркасе уже есть с примерами — чистим при первой реальной отрисовке
     const sig = runs.map(r => r.ts + ':' + r.value).join('|');

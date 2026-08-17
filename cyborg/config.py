@@ -925,9 +925,8 @@ SHADOW_METRICS_FILE = "shadow_metrics.jsonl"
 ORACLE_PLAN_EXT = ".md"
 # Имя индексного файла Oracle (внутри ORACLES_DIR).
 ORACLE_INDEX_FILE = "index.md"
-# Имена статики панели v1 (старый пульт, оставлен для обратной совместимости).
-PANEL_V1_INDEX_FILE = "index.html"
-PANEL_V1_BODIES_FILE = "bodies.js"
+# bodies.js — SVG-тела рыцаря; v1-страница удалена, файл остался: его подключает v2.
+PANEL_BODIES_FILE = "bodies.js"
 # Роуты статики панели v2 (новый пульт).
 PANEL_V2_STATIC_ROUTES = ("/", "/index.html", "/style.css", "/app.js")
 PANEL_V2_INDEX_FILE = "index.html"

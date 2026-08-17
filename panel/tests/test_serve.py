@@ -13,6 +13,7 @@ import signal
 import sys
 import tempfile
 import threading
+import types
 import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # panel/
@@ -183,6 +184,33 @@ class TestSetIdeaGate(unittest.TestCase):
         finally:
             serve.subprocess.run = orig_sub
             serve.RUN["running"] = orig_running
+
+    def test_triage_holds_lock_through_subprocess(self):
+        # Гонка из ревью: busy-проверка брала _LOCK и отпускала ДО subprocess —
+        # в этом окне мог стартовать прогон (или второй триаж) и параллельно
+        # мутировать state.json. Фикс: _LOCK держится весь subprocess — сервер
+        # потоковый, конкурентные хендлеры просто подождут ~1с.
+        orig_sub = serve.subprocess.run
+        seen = {}
+
+        def _fake_sub(*a, **k):
+            # acquire(False) == True значит «лок был свободен» — окно гонки открыто.
+            free = serve._LOCK.acquire(blocking=False)
+            if free:
+                serve._LOCK.release()
+            seen["lock_free_during_subprocess"] = free
+            return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+        serve.subprocess.run = _fake_sub
+        try:
+            r = serve._set_idea(1, "trash")
+            self.assertTrue(r["ok"])
+            self.assertFalse(
+                seen.get("lock_free_during_subprocess"),
+                "subprocess триажа работал с отпущенным _LOCK — окно гонки открыто",
+            )
+        finally:
+            serve.subprocess.run = orig_sub
 
 
 class TestStopRun(unittest.TestCase):
