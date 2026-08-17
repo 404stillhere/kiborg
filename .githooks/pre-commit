@@ -1,0 +1,13 @@
+#!/bin/sh
+# Приватные папки (см. .gitignore): handoffs/, audit/ — не должны попадать в коммит.
+# .gitignore не защищает от явного `git add -f` и от файлов, уже попавших в индекс
+# (инцидент 2026-08-17: 19 файлов уехали в публичный origin/master до добавления правил).
+# Активация: git config core.hooksPath .githooks
+blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(handoffs/|audit/)' || true)
+if [ -n "$blocked" ]; then
+  echo "ОТКАЗ: приватные файлы в коммите (handoffs/, audit/ — см. .gitignore):" >&2
+  echo "$blocked" >&2
+  echo "Если файл уже в индексе: git rm --cached <файл> и повтори коммит." >&2
+  exit 1
+fi
+exit 0
