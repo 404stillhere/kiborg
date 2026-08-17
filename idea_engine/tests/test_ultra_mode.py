@@ -176,6 +176,34 @@ class TestFuseIdeas(unittest.TestCase):
         out = self._run(FakeLLM(json.dumps(card), json.dumps(card)))
         self.assertEqual(out["ideas"], [])
 
+    # Вратарь «+» (council 2026-08-17): голый '+' в маркерах резал плюс-токены языков —
+    # «Отладчик C++…» умирал молча и смещал выборку ультра-прогонов. Токены гасятся
+    # до проверки маркеров; склейка «слово+слово» остаётся коллажем.
+    def test_cpp_title_not_rejected(self):
+        card = good_card()
+        card["title"] = "Отладчик C++ прямо в редакторе"
+        out = self._run(FakeLLM(json.dumps(card)))
+        self.assertEqual(len(out["ideas"]), 1)
+
+    def test_gpp_title_not_rejected(self):
+        card = good_card()
+        card["title"] = "g++ обёртка для сборки мелких проектов"
+        out = self._run(FakeLLM(json.dumps(card)))
+        self.assertEqual(len(out["ideas"]), 1)
+
+    def test_notepadpp_title_not_rejected(self):
+        card = good_card()
+        card["title"] = "Тема для Notepad++ в стиле ретро-терминала"
+        out = self._run(FakeLLM(json.dumps(card)))
+        self.assertEqual(len(out["ideas"]), 1)
+
+    def test_word_glue_title_rejected(self):
+        card = good_card()
+        card["title"] = "Notion+Obsidian синхронизатор заметок"
+        out = self._run(FakeLLM(json.dumps(card), json.dumps(card)))
+        self.assertEqual(out["ideas"], [])
+        self.assertTrue(any("склейк" in x for x in out["violations"]))
+
     def test_label_contribution_rejected(self):
         card = good_card()
         card["fusion"][0]["took"] = "VPN"  # ярлык, не механизм

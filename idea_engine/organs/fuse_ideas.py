@@ -39,7 +39,6 @@ ROLES = ("кто_и_работа", "механизм", "поверхность",
 
 _COLLAGE_MARKERS = (
     " + ",
-    "+",
     " и ещё ",
     " а также ",
     " плюс ",
@@ -48,6 +47,12 @@ _COLLAGE_MARKERS = (
     "all-in-one",
     "всё в одном",
 )
+
+# Голый '+' в маркерах резал плюс-токены языков — «Отладчик C++», «g++», «Notepad++»
+# вратарь браковал молча, смещая выборку ультра-прогонов (council 2026-08-17).
+# Токены гасим ДО проверки маркеров; склейку «слово+слово» ловим отдельно.
+_PLUS_TOKEN_RE = re.compile(r"(?<![a-z0-9])(?:c\+\+|g\+\+|notepad\+\+|\+\+)(?![a-z0-9])", re.I)
+_WORD_GLUE_RE = re.compile(r"\w\+\w")
 
 _PAIRS_HINT = (
     "\nВНИМАНИЕ: материалов БОЛЬШЕ, чем источников — с каждого источника дана ПАРА "
@@ -215,11 +220,13 @@ def _validate(card, picked, select_from_pairs=False):
             v.append("нет collapse для %s (что сломается без него)" % f.get("source"))
 
     title = str(card.get("title") or "")
-    low = title.lower()
+    low = _PLUS_TOKEN_RE.sub(" ", title.lower())
     for m in _COLLAGE_MARKERS:
         if m in low:
             v.append("в заголовке маркер коллажа %r" % m.strip())
             break
+    if _WORD_GLUE_RE.search(low):
+        v.append("заголовок — склейка слово+слово")
     if low.count(",") >= 2:
         v.append("заголовок — перечисление")
 
