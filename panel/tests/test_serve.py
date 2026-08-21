@@ -124,12 +124,16 @@ class TestReadInbox(unittest.TestCase):
         os.makedirs(self.data)
         self._saved = {
             "idea": serve.IDEA,
+            "state": serve.config.IE_STATE_JSON,
             "taken": serve.triage_store.TAKEN_PATH,
             "later": serve.triage_store.LATER_PATH,
             "rejected_path": serve.rejected.PATH,
             "rejected_data": serve.rejected.DATA,
         }
         serve.IDEA = self.tmp
+        # state.json читается по config.IE_STATE_JSON (НЕ по IDEA): без подмены тест
+        # молча читал БОЕВОЙ state на машине разработчика и падал на CI, где его нет
+        serve.config.IE_STATE_JSON = os.path.join(self.data, "state.json")
         serve.triage_store.TAKEN_PATH = os.path.join(self.data, "taken.json")
         serve.triage_store.LATER_PATH = os.path.join(self.data, "later.json")
         serve.rejected.DATA = self.data
@@ -137,6 +141,7 @@ class TestReadInbox(unittest.TestCase):
 
     def tearDown(self):
         serve.IDEA = self._saved["idea"]
+        serve.config.IE_STATE_JSON = self._saved["state"]
         serve.triage_store.TAKEN_PATH = self._saved["taken"]
         serve.triage_store.LATER_PATH = self._saved["later"]
         serve.rejected.PATH = self._saved["rejected_path"]
