@@ -74,6 +74,7 @@ def _oracle_section():
         ln for card in cards[-_ORACLE_INBOX_MAX:] for ln in card
     ]
 
+
 CFG = {
     "cap": config.LEGACY_TICK_CAP,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
     "n": config.LEGACY_TICK_SOURCE_N,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
@@ -222,7 +223,9 @@ def _cli(argv):
                         # Битый файл разобранного (council 2026-08-17 #3): ОТКАЗ до store.save() —
                         # идея остаётся в инбоксе, битый файл не перезаписан (карантин-копия снята
                         # внутри). Панель покажет refusal как ошибку действия.
-                        print(f"REFUSED #{idea_id} -> {st}: файл разобранного битый ({exc}) — почини руками, действие отменено")
+                        print(
+                            f"REFUSED #{idea_id} -> {st}: файл разобранного битый ({exc}) — почини руками, действие отменено"
+                        )
                         sys.exit(1)
                     store.data["ideas"] = [i for i in store.data["ideas"] if i["id"] != idea_id]
             store.save()

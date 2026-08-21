@@ -36,7 +36,7 @@ DEFAULT_AUX = ("self",)
 
 def _item_key(item):
     """«source:id» — формат seen_items. Без id ключа нет (None): такое сырьё
-   Seen-механика не различает — в отборе оно просто всегда «свежее»."""
+    Seen-механика не различает — в отборе оно просто всегда «свежее»."""
     iid = item.get("id")
     if iid in (None, ""):
         return None
@@ -77,8 +77,7 @@ def run(inputs, env=None):
             "sources_available": available,
             "sources_missing": missing,
             "reused_ids": [],
-            "skip": "нужно >=%d источников с материалом (есть: %s)"
-            % (min_sources, ", ".join(core) or "нет"),
+            "skip": "нужно >=%d источников с материалом (есть: %s)" % (min_sources, ", ".join(core) or "нет"),
         }
 
     rng = random.Random(seed)

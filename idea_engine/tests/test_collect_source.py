@@ -362,9 +362,13 @@ class TestRedditOAuth(unittest.TestCase):
             seen.append(url)
             self.assertIn("oauth.reddit.com", url)  # данные — через oauth-хост, не публичный .json
             self.assertEqual(url_or_req.headers.get("Authorization"), "Bearer tok123")
-            return {"data": {"children": [
-                {"data": {"title": "OAuth idea", "url": "https://r/1", "id": "x1"}},
-            ]}}
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "OAuth idea", "url": "https://r/1", "id": "x1"}},
+                    ]
+                }
+            }
 
         collect_source._post_form = fake_post
         collect_source._get = fake_get
@@ -381,9 +385,13 @@ class TestRedditOAuth(unittest.TestCase):
             url = url_or_req.full_url if hasattr(url_or_req, "full_url") else url_or_req
             self.assertIn("www.reddit.com", url)  # прежний публичный путь
             self.assertNotIn("Authorization", url_or_req.headers)
-            return {"data": {"children": [
-                {"data": {"title": "pub", "url": "u", "id": "i"}},
-            ]}}
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "pub", "url": "u", "id": "i"}},
+                    ]
+                }
+            }
 
         collect_source._post_form = no_post
         collect_source._get = fake_get
@@ -399,9 +407,13 @@ class TestRedditOAuth(unittest.TestCase):
             return {"access_token": "tok123", "expires_in": 3600}
 
         def fake_get(url_or_req, timeout):
-            return {"data": {"children": [
-                {"data": {"title": "t", "url": "u", "id": "i"}},
-            ]}}
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "t", "url": "u", "id": "i"}},
+                    ]
+                }
+            }
 
         collect_source._post_form = fake_post
         collect_source._get = fake_get
@@ -441,8 +453,7 @@ class TestRedditRssFallback(unittest.TestCase):
         collect_source._REDDIT_TOKEN.update({"value": None, "exp": 0.0})
 
     def _blocked_json(self, url_or_req, timeout):
-        raise collect_source.urllib.error.HTTPError(
-            url_or_req.full_url, 403, "Blocked", hdrs=None, fp=None)
+        raise collect_source.urllib.error.HTTPError(url_or_req.full_url, 403, "Blocked", hdrs=None, fp=None)
 
     def test_public_403_falls_back_to_rss(self):
         raw_urls = []
@@ -455,12 +466,15 @@ class TestRedditRssFallback(unittest.TestCase):
         collect_source._get_raw = fake_raw
         out = collect_source.run({}, {"n": 5, "source": "reddit"})
         self.assertFalse(out["degraded"])
-        self.assertEqual(out["items"][0], {
-            "title": "Idea one",
-            "url": "https://www.reddit.com/r/SideProject/comments/abc1/one/",
-            "id": "t3_abc1",
-            "source": "reddit",  # run() тегирует каждый item его источником
-        })
+        self.assertEqual(
+            out["items"][0],
+            {
+                "title": "Idea one",
+                "url": "https://www.reddit.com/r/SideProject/comments/abc1/one/",
+                "id": "t3_abc1",
+                "source": "reddit",  # run() тегирует каждый item его источником
+            },
+        )
         self.assertEqual(len(out["items"]), 2)
         self.assertIn(".rss", raw_urls[0])  # RSS-эндпоинт, а не повторная попытка .json
 
@@ -469,9 +483,13 @@ class TestRedditRssFallback(unittest.TestCase):
             raise AssertionError("RSS не должен зваться, когда публичный .json жив")
 
         def fake_get(url_or_req, timeout):
-            return {"data": {"children": [
-                {"data": {"title": "pub", "url": "https://x", "id": "i"}},
-            ]}}
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "pub", "url": "https://x", "id": "i"}},
+                    ]
+                }
+            }
 
         collect_source._get = fake_get
         collect_source._get_raw = no_raw
@@ -483,7 +501,8 @@ class TestRedditRssFallback(unittest.TestCase):
         atom3 = self.ATOM.replace("</feed>", "") + (
             "<entry><title>Idea three</title>"
             '<link href="https://www.reddit.com/r/SideProject/comments/abc3/three/"/>'
-            "<id>t3_abc3</id></entry></feed>")
+            "<id>t3_abc3</id></entry></feed>"
+        )
 
         def fake_raw(url_or_req, timeout):
             return atom3.encode(config.HTTP_CHARSET_UTF8)

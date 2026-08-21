@@ -64,7 +64,9 @@ class TestOracleSection(unittest.TestCase):
     def test_lost_plans_come_back(self):
         # суть бага #2: карточка Оракула, дописанная в конец inbox.md, стирается тиком;
         # регенерация из индекса ВОЗВРАЩАЕТ план в инбокс без участия органа
-        self._write_index("- [План из прошлого](proj/2026-08-15_10-00-00.md) — цель плана (2 шагов, 2026-08-15 10:00)\n")
+        self._write_index(
+            "- [План из прошлого](proj/2026-08-15_10-00-00.md) — цель плана (2 шагов, 2026-08-15 10:00)\n"
+        )
         with open(ie_run.INBOX, "w", encoding="utf-8") as f:
             f.write("# Инбокс идей киборга\n...старое тело без планов...\n")
         ie_run._write_inbox(_FakeStore())

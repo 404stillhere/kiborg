@@ -242,9 +242,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         # в промпт. Фетч переиспользуем, ОБРАБОТКУ — нет.
         secret = "AQ." + "FAKEfake1234567890abcdefgh"
 
-        wiring.collect_source.run = lambda i, e: (_ for _ in ()).throw(
-            AssertionError("фетча быть не должно")
-        )
+        wiring.collect_source.run = lambda i, e: (_ for _ in ()).throw(AssertionError("фетча быть не должно"))
         pf = {
             "items": [
                 {"title": "гейт принёс секрет " + secret, "context": "ok", "source": "files"},

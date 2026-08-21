@@ -113,6 +113,7 @@ def _wizard_state():
         "feeds": feeds.load(),
     }
 
+
 # --- текущий прогон (один за раз) ---
 RUN = {"running": False, "goal": None, "lines": [], "rc": None, "started": 0.0}
 _LOCK = threading.Lock()

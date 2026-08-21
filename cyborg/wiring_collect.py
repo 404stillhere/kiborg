@@ -109,7 +109,6 @@ def _run_collect(inputs, env):
     # ВАЖНО: раньше env игнорировался (жёстко n=8/source=hn) — расширение харвеста
     # (SOURCE_N) реально не долетало до сборщика в живом прогоне, только до gate-проверки
     # в _source_signature (та звала collect_source напрямую). Теперь настройки прокидываются.
-    import wiring
 
     env = env if isinstance(env, dict) else {}
     # переиспользуем фетч гейта, если он уже сходил в источник ЭТИМ тиком (harvest кладёт

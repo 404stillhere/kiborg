@@ -163,7 +163,12 @@ class TestFormatReport(unittest.TestCase):
         self.assertIn("ПРОМПТ", text)
 
     def test_gate_skip_reports_quietly(self):
-        rep = {"ok": True, "skipped": "pool_unchanged", "reason": "пул материалов не менялся с прошлой ультры", "seed": 9}
+        rep = {
+            "ok": True,
+            "skipped": "pool_unchanged",
+            "reason": "пул материалов не менялся с прошлой ультры",
+            "seed": 9,
+        }
         text = "\n".join(fuse_mode.format_report(rep))
         self.assertIn("АВТО-ГАЙТ", text)
         self.assertIn("пул материалов не менялся", text)

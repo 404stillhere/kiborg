@@ -192,12 +192,11 @@ def run_fusion(seed=None, direction=None, oversample=1, dry_run=False, auto=Fals
 
 def _run_fusion_impl(seed=None, direction=None, oversample=1, dry_run=False, auto=False, on_progress=None):
     """Сам прогон (метрики дописывает обёртка run_fusion)."""
+    import harvest_env
     import seen_items
     import wiring
     from organs import fuse_ideas, pick_cross_sample
     from wiring_runtime import _content_llm
-
-    import harvest_env
 
     op = on_progress if callable(on_progress) else (lambda _msg: None)
     env = harvest_env._harvest_env()  # тот же источник/совет, что у обеих кнопок
@@ -391,8 +390,7 @@ def format_report(rep):
     lines.append("  Оценка совета: %s%s" % (card.get("score"), " (weak)" if card.get("weak") else ""))
     for f in card.get("fusion") or []:
         lines.append(
-            "  [%s/%s] взяли: %s — без него: %s"
-            % (f.get("source"), f.get("role"), f.get("took"), f.get("collapse"))
+            "  [%s/%s] взяли: %s — без него: %s" % (f.get("source"), f.get("role"), f.get("took"), f.get("collapse"))
         )
     if rep.get("sources_missing"):
         lines.append("  Красные источники: %s" % ", ".join(rep["sources_missing"]))

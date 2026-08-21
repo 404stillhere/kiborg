@@ -238,7 +238,9 @@ class TestFuseIdeas(unittest.TestCase):
         self.assertEqual(len(out["ideas"]), 1)
 
     def test_trailing_comma_json_parsed(self):
-        raw = json.dumps(good_card()).replace('"verification": "спросить 5 человек"', '"verification": "спросить 5 человек",')
+        raw = json.dumps(good_card()).replace(
+            '"verification": "спросить 5 человек"', '"verification": "спросить 5 человек",'
+        )
         out = self._run(FakeLLM(raw, raw))
         self.assertEqual(len(out["ideas"]), 1)  # висячая запятая чинится, не роняя слияние
 
@@ -311,17 +313,13 @@ class TestFusePairsMode(unittest.TestCase):
 
     def test_prompt_hints_pair_selection(self):
         llm = FakeLLM(json.dumps(good_card(("reddit", "hn"))))
-        fuse_ideas.run(
-            {"picked": self.picked, "seed": 1, "select_from_pairs": True}, {"llm": llm}
-        )
+        fuse_ideas.run({"picked": self.picked, "seed": 1, "select_from_pairs": True}, {"llm": llm})
         self.assertIn("ПАРА", llm.prompts[0])
 
     def test_pairs_mode_relaxes_full_id_coverage(self):
         # карточка цитирует только ПОЧЕРКНУТЫХ (по одному из пары) — это валидно в режиме пар
         llm = FakeLLM(json.dumps(good_card(("reddit", "hn"))))
-        out = fuse_ideas.run(
-            {"picked": self.picked, "seed": 1, "select_from_pairs": True}, {"llm": llm}
-        )
+        out = fuse_ideas.run({"picked": self.picked, "seed": 1, "select_from_pairs": True}, {"llm": llm})
         self.assertEqual(len(out["ideas"]), 1)
 
     def test_without_pairs_flag_full_coverage_required(self):

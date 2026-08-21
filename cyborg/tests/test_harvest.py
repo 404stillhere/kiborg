@@ -115,7 +115,7 @@ class TestHarvestGate(unittest.TestCase):
         import tempfile
 
         with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False, encoding="utf-8") as f:
-            f.write("# comment\nREDDIT_CLIENT_ID=abc123\nREDDIT_CLIENT_SECRET=\"dee pf\"\nOTHER=1\n")
+            f.write('# comment\nREDDIT_CLIENT_ID=abc123\nREDDIT_CLIENT_SECRET="dee pf"\nOTHER=1\n')
             path = f.name
         old = os.environ.get(config.LLM_KEYS_ENV)
         os.environ[config.LLM_KEYS_ENV] = path
@@ -551,9 +551,17 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
             def run(self, goal, env=None):
                 return boom(goal, env)
 
-        saved = (harvest._source_signature, harvest._should_run, harvest._save_sig,
-                 harvest._persist_status, harvest._log, harvest._degrade_note,
-                 harvest._harvest_env, harvest.Cyborg, harvest.build_organs)
+        saved = (
+            harvest._source_signature,
+            harvest._should_run,
+            harvest._save_sig,
+            harvest._persist_status,
+            harvest._log,
+            harvest._degrade_note,
+            harvest._harvest_env,
+            harvest.Cyborg,
+            harvest.build_organs,
+        )
         try:
             harvest._source_signature = lambda: (None, False, 1, None, {"items": [item], "source": "hn"})
             harvest._should_run = lambda sig, force, fresh_n: True
@@ -566,9 +574,17 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
             harvest.build_organs = lambda: []
             harvest_runner.main([])
         finally:
-            (harvest._source_signature, harvest._should_run, harvest._save_sig,
-             harvest._persist_status, harvest._log, harvest._degrade_note,
-             harvest._harvest_env, harvest.Cyborg, harvest.build_organs) = saved
+            (
+                harvest._source_signature,
+                harvest._should_run,
+                harvest._save_sig,
+                harvest._persist_status,
+                harvest._log,
+                harvest._degrade_note,
+                harvest._harvest_env,
+                harvest.Cyborg,
+                harvest.build_organs,
+            ) = saved
 
     def test_failed_run_does_not_burn_material(self):
         # council 2026-08-17 #5б: cy.run вернул всю партию болванками (added=0,
@@ -591,9 +607,17 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
         def fake_signature():
             return (None, False, 1, None, {"items": [dict(item)], "source": "hn"})
 
-        saved = (harvest._source_signature, harvest._should_run, harvest._save_sig,
-                 harvest._persist_status, harvest._log, harvest._degrade_note,
-                 harvest._harvest_env, harvest.Cyborg, harvest.build_organs)
+        saved = (
+            harvest._source_signature,
+            harvest._should_run,
+            harvest._save_sig,
+            harvest._persist_status,
+            harvest._log,
+            harvest._degrade_note,
+            harvest._harvest_env,
+            harvest.Cyborg,
+            harvest.build_organs,
+        )
         try:
             harvest._source_signature = fake_signature
             harvest._should_run = lambda sig, force, fresh_n: True
@@ -609,9 +633,17 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
             harvest_runner.main([])
             self.assertEqual(gen["seen"], ["материал после сбоя"])  # 2-й тик: ВСЁ ЕЩЁ видит — не сгорело
         finally:
-            (harvest._source_signature, harvest._should_run, harvest._save_sig,
-             harvest._persist_status, harvest._log, harvest._degrade_note,
-             harvest._harvest_env, harvest.Cyborg, harvest.build_organs) = saved
+            (
+                harvest._source_signature,
+                harvest._should_run,
+                harvest._save_sig,
+                harvest._persist_status,
+                harvest._log,
+                harvest._degrade_note,
+                harvest._harvest_env,
+                harvest.Cyborg,
+                harvest.build_organs,
+            ) = saved
 
     def test_cache_check_never_crashes_harvest(self):
         # items_cache.PATH указывает на недоступное место / битый → harvest НЕ падает

@@ -21,7 +21,6 @@ import os
 import re
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Метаданные — сюда control API mc-bot пишет heartbeat и события.
@@ -94,7 +93,9 @@ class McBotClient:
             return {"ok": False, "error": "empty command"}
         return self._post_json(self._url("/control"), {"token": self.token, "command": command.strip()}, timeout)
 
-    def send_action(self, action: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Dict[str, Any]:
+    def send_action(
+        self, action: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0
+    ) -> Dict[str, Any]:
         """Отправить generic action в mc-bot через /action. Возвращает {"ok": bool, ...}."""
         if not self.action_enabled:
             return {"ok": False, "error": "MCBOT_ACTION_TOKEN not configured"}

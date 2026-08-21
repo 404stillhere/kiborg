@@ -19,7 +19,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 sys.path.insert(0, os.path.join(os.path.dirname(BASE), "idea_engine"))
 
-from wiring import build_organs, build_oracle_organs  # noqa: E402
+from wiring import build_oracle_organs, build_organs  # noqa: E402
 
 IDEA_PATH = ["collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets", "deliver"]
 ORACLE_PATH = ["oracle_scan", "oracle_plan", "deliver_oracle"]

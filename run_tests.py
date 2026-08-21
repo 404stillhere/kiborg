@@ -58,10 +58,11 @@ def run_package(pkg):
             timeout=config.TEST_RUNNER_TIMEOUT_SEC,
         )
     except subprocess.TimeoutExpired as exc:
+
         def _s(x):
             return x.decode("utf-8", "replace") if isinstance(x, bytes) else (x or "")
 
-        tail = "\n".join((_s(exc.stdout) + _s(exc.stderr)).strip().splitlines()[-config.TEST_RUNNER_TAIL_LINES:])
+        tail = "\n".join((_s(exc.stdout) + _s(exc.stderr)).strip().splitlines()[-config.TEST_RUNNER_TAIL_LINES :])
         return {
             "pkg": pkg,
             "passed": 0,
