@@ -9,6 +9,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import rejected  # noqa: E402
 import run  # noqa: E402
 import triage_store  # noqa: E402
@@ -22,7 +23,7 @@ def _idea(title="x"):
 class TestStore(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmp, "state.json")
+        self.path = os.path.join(self.tmp, config.IE_STATE_FILE)
 
     def test_cap_enforced(self):
         s = Store(self.path, cap=3)
@@ -102,29 +103,29 @@ class TestStore(unittest.TestCase):
         s = Store(self.path, cap=0)
         s.add_idea(_idea("идея одна"))
         s.save()
-        with open(self.path, encoding="utf-8") as f:
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # читается как валидный JSON
-        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(config.ATOMIC_TMP_SUFFIX)], [])
 
     def test_save_atomic_keeps_original_on_failure(self):
         # обрыв сериализации НЕ усекает существующий state.json + чистит огрызок
         s = Store(self.path, cap=0)
         s.add_idea(_idea("валидная идея"))
         s.save()
-        with open(self.path, encoding="utf-8") as f:  # with — не течёт хэндл (ResourceWarning)
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:  # with — не течёт хэндл (ResourceWarning)
             before = f.read()
         s.data["bad"] = {1, 2, 3}  # set не сериализуется json.dump -> TypeError
         with self.assertRaises(TypeError):
             s.save()
-        with open(self.path, encoding="utf-8") as f:
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             after = f.read()
         self.assertEqual(before, after)  # оригинал цел, не усечён
-        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(".tmp")], [])
+        self.assertEqual([f for f in os.listdir(self.tmp) if f.endswith(config.ATOMIC_TMP_SUFFIX)], [])
 
     def test_state_lock_acquires_and_releases(self):
         from store import state_lock
 
-        lp = self.path + ".lock"
+        lp = self.path + config.TG_LOCK_SUFFIX
         with state_lock(self.path, timeout=1.0) as held:
             self.assertTrue(held)  # взяли эксклюзивно
             self.assertTrue(os.path.exists(lp))  # lockfile существует, пока держим
@@ -135,7 +136,7 @@ class TestStore(unittest.TestCase):
 
         from store import state_lock
 
-        lp = self.path + ".lock"
+        lp = self.path + config.TG_LOCK_SUFFIX
         open(lp, "w").close()  # «другой процесс» держит лок
         t0 = _t.time()
         with state_lock(self.path, timeout=0.2, poll=0.05) as held:
@@ -151,7 +152,7 @@ class TestStore(unittest.TestCase):
             self.assertTrue(first)
             with state_lock(self.path, timeout=0.15, poll=0.05) as second:
                 self.assertFalse(second)  # второй не взял, пока первый держит
-        self.assertFalse(os.path.exists(self.path + ".lock"))  # первый вышел -> снято
+        self.assertFalse(os.path.exists(self.path + config.TG_LOCK_SUFFIX))  # первый вышел -> снято
 
 
 class TestTickModes(unittest.TestCase):
@@ -160,9 +161,9 @@ class TestTickModes(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         run.DATA = self.tmp
-        run.STATE = os.path.join(self.tmp, "state.json")
-        run.INBOX = os.path.join(self.tmp, "inbox.md")
-        run.NOTIFY = os.path.join(self.tmp, "notify.md")
+        run.STATE = os.path.join(self.tmp, config.IE_STATE_FILE)
+        run.INBOX = os.path.join(self.tmp, config.INBOX_MD_FILE)
+        run.NOTIFY = os.path.join(self.tmp, config.IE_NOTIFY_MD_FILE)
         # подменяем органы: без сети и без recon
         self._orig_collect = run.collect_source.run
         self._orig_ideate = run.ideate.run
@@ -206,7 +207,7 @@ class TestDedup(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.path = os.path.join(self.tmp, "state.json")
+        self.path = os.path.join(self.tmp, config.IE_STATE_FILE)
 
     def test_duplicate_not_readded(self):
         s = Store(self.path, cap=3)
@@ -302,7 +303,7 @@ class TestDedup(unittest.TestCase):
                 }
             ],
         }
-        with open(self.path, "w", encoding="utf-8") as f:
+        with open(self.path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(legacy, f, ensure_ascii=False)
         s = Store(self.path, cap=3)  # без поля seen
         self.assertFalse(s.add_idea(_idea("старая идея")))  # засеяно из legacy -> не повторяем
@@ -314,6 +315,8 @@ class TestRunTriageMoves(unittest.TestCase):
     trash→rejected.json. Идея вырезается из ideas[] совсем (не tombstone со статусом)."""
 
     def setUp(self):
+        import triage_events
+
         self.tmp = tempfile.mkdtemp(prefix="runtriage_")
         self._saved = (
             run.STATE,
@@ -323,19 +326,23 @@ class TestRunTriageMoves(unittest.TestCase):
             triage_store.TAKEN_PATH,
             triage_store.LATER_PATH,
             triage_store.DATA,
+            triage_events.PATH,
         )
-        run.STATE = os.path.join(self.tmp, "state.json")
-        run.INBOX = os.path.join(self.tmp, "inbox.md")
+        run.STATE = os.path.join(self.tmp, config.IE_STATE_FILE)
+        run.INBOX = os.path.join(self.tmp, config.INBOX_MD_FILE)
         rejected.DATA = self.tmp
         rejected.PATH = os.path.join(self.tmp, "rejected.json")
         triage_store.DATA = self.tmp
         triage_store.TAKEN_PATH = os.path.join(self.tmp, "taken.json")
         triage_store.LATER_PATH = os.path.join(self.tmp, "later.json")
+        triage_events.PATH = os.path.join(self.tmp, "triage_events.jsonl")
         s = Store(run.STATE, cap=0)
         s.add_idea(_idea("Плохая идея"))  # id=1
         s.save()
 
     def tearDown(self):
+        import triage_events
+
         (
             run.STATE,
             run.INBOX,
@@ -344,7 +351,15 @@ class TestRunTriageMoves(unittest.TestCase):
             triage_store.TAKEN_PATH,
             triage_store.LATER_PATH,
             triage_store.DATA,
+            triage_events.PATH,
         ) = self._saved
+
+    def test_triage_events_path_is_isolated(self):
+        # Регресс: триаж-тесты раньше писали «Плохая идея» в БОЕВОЙ
+        # idea_engine/data/triage_events.jsonl. Весь класс обязан работать в self.tmp.
+        import triage_events
+
+        self.assertEqual(os.path.dirname(os.path.abspath(triage_events.PATH)), os.path.abspath(self.tmp))
 
     def test_trash_removes_from_ideas_and_records(self):
         run._cli(["status", "1", "trash"])
@@ -401,6 +416,125 @@ class TestRunTriageMoves(unittest.TestCase):
         self.assertEqual(len(events), 2)
         self.assertEqual(events[1]["action"], "trash")
         self.assertEqual(events[1]["title"], "Вторая идея")
+
+    def test_triage_event_carries_breakdown_votes(self):
+        # Фаза 2 Feedback Cortex: если у идеи было breakdown_votes (Фаза 1 ставит в _rank_by_council),
+        # событие в triage_events.jsonl несёт их — чтобы feedback_cortex наказывал/поощрял
+        # КОНКРЕТНОГО советника, а не «всех сразу» по judged. Обратно совместимо: идея без
+        # breakdown_votes → событие без этого поля (или null), старые тесты/данные не ломаются.
+        import triage_events
+
+        triage_events.PATH = os.path.join(self.tmp, "triage_events.jsonl")
+        # идея с breakdown_votes (как поставит _rank_by_council Фазы 1)
+        idea_with_votes = {
+            **_idea("Идея с голосами"),
+            "breakdown_votes": {
+                "rank_ideas": {"score": 0.9},
+                "ask_llm": {"score": 0.2},
+                "orchestra": {"score": 0.85},
+            },
+            "score": 8.5,
+            "judged": "council",
+        }
+        s = Store(run.STATE, cap=0)
+        s.add_idea(idea_with_votes)  # id=2 (id=1 уже в state.json из setUp)
+        s.save()
+        run._cli(["status", "2", "trash"])
+        events = triage_events.load()
+        self.assertEqual(len(events), 1)
+        ev = events[0]
+        self.assertEqual(ev["action"], "trash")
+        self.assertEqual(ev["idea_id"], 2)
+        # breakdown_votes доехал в событие
+        self.assertIn("breakdown_votes", ev)
+        votes = ev["breakdown_votes"]
+        self.assertIsInstance(votes, dict)
+        self.assertAlmostEqual(votes["orchestra"]["score"], 0.85)
+        self.assertAlmostEqual(votes["rank_ideas"]["score"], 0.9)
+        self.assertAlmostEqual(votes["ask_llm"]["score"], 0.2)
+
+    def test_triage_event_without_breakdown_votes_backward_compat(self):
+        # обратная совместимость: идея БЕЗ breakdown_votes (старые данные/моки) → событие
+        # не падает, поле либо отсутствует, либо null. Старая логика feedback_cortex (по judged) работает.
+        import triage_events
+
+        triage_events.PATH = os.path.join(self.tmp, "triage_events.jsonl")
+        # идея без breakdown_votes (как _idea() из setUp)
+        run._cli(["status", "1", "take"])  # id=1 — «Плохая идея» без breakdown_votes
+        events = triage_events.load()
+        self.assertEqual(len(events), 1)
+        ev = events[0]
+        self.assertEqual(ev["action"], "take")
+        # поле либо отсутствует, либо null — но не падает
+        if "breakdown_votes" in ev:
+            self.assertIsNone(ev["breakdown_votes"])
+
+    def test_feedback_cortex_roundtrip_per_advisor(self):
+        # Сквозной smoke Arenamax:
+        # council breakdown → карточка → Store → status/trash → triage event → вес советника.
+        cyborg_dir = os.path.join(os.path.dirname(BASE), "cyborg")
+        sys.path.insert(0, cyborg_dir)
+        import feedback_cortex
+        import shadow_metrics
+        import triage_events
+        import wiring
+
+        original_deliberate = wiring.mind.deliberate
+        original_shadow_path = shadow_metrics.PATH
+        try:
+            shadow_metrics.PATH = os.path.join(self.tmp, "shadow_metrics.jsonl")
+
+            def fake_deliberate(_question, options, _council, _context):
+                ids = [o["id"] for o in options]
+                return {
+                    "live": ["rank_ideas", "ask_llm", "orchestra"],
+                    "degraded": False,
+                    "scores": {oid: (0.9 if oid == 0 else 0.1) for oid in ids},
+                    "breakdown": [
+                        {
+                            "name": "rank_ideas",
+                            "weight": 0.41,
+                            "scores": {oid: (0.10 if oid == 0 else 0.05) for oid in ids},
+                        },
+                        {
+                            "name": "ask_llm",
+                            "weight": 0.39,
+                            "scores": {oid: (0.50 if oid == 0 else 0.05) for oid in ids},
+                        },
+                        {
+                            "name": "orchestra",
+                            "weight": 0.20,
+                            "scores": {oid: (0.95 if oid == 0 else 0.05) for oid in ids},
+                        },
+                    ],
+                    "why": "test",
+                }
+
+            wiring.mind.deliberate = fake_deliberate
+            ranked = wiring._run_rank(
+                {"ideas": [{"title": x, "why": x} for x in ("A", "B", "C", "D")]},
+                {"llm_chain": [{"id": "test"}], "rank_keep": 1},
+            )
+            winner = ranked["ideas_best"][0]
+            self.assertEqual(winner["title"], "A")
+            self.assertIn("breakdown_votes", winner)
+
+            store = Store(run.STATE, cap=0)
+            store.add_idea(winner)  # id=2: id=1 создан в setUp
+            store.save()
+            run._cli(["status", "2", "trash"])
+            event = triage_events.load()[0]
+            self.assertEqual(event["breakdown_votes"]["orchestra"]["score"], 0.95)
+
+            canon = {"ask_llm": 0.39, "orchestra": 0.20, "rank_ideas": 0.41}
+            adapted = feedback_cortex.adapt_weights([event] * 20, canon)["weights"]
+            self.assertLess(adapted["orchestra"], canon["orchestra"])
+            self.assertGreater(adapted["rank_ideas"], canon["rank_ideas"])
+        finally:
+            wiring.mind.deliberate = original_deliberate
+            shadow_metrics.PATH = original_shadow_path
+            if sys.path[0] == cyborg_dir:
+                sys.path.pop(0)
 
 
 if __name__ == "__main__":

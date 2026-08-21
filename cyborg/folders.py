@@ -1,7 +1,7 @@
 """Папки-источник — какие локальные папки киборг читает как сырьё для идей.
 
 Хранит список папок в data/folders.json, у КАЖДОЙ свой тумблер вкл/выкл:
-    {"folders": [{"path": "M:/projects/kiborg", "on": true},
+    {"folders": [{"path": "<project-root>", "on": true},
                  {"path": "C:/Users/User/notes", "on": false}]}
 
 Включённых папок нет (или список пуст) = источник «files» выключен (киборг берёт идеи только
@@ -15,12 +15,13 @@
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "folders.json")
+PATH = os.path.join(DATA, config.FOLDERS_FILE)
 
-_MAX_PATHS = 40  # папок немного; больше — мусор/раздувание
-_MAX_LEN = 400  # путь бывает длинным, но не полотно
+_MAX_PATHS = config.MAX_FOLDERS
+_MAX_LEN = config.MAX_FOLDER_PATH_LEN
 
 
 def _clean_path(p):

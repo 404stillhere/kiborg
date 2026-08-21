@@ -2,9 +2,9 @@
 
 Раньше покрыты были только ХЕЛПЕРЫ (_read_runs/...), а сами POST-роуты и их
 валидация — нет. Тут проверяем POST /api/folders, /api/direction (current+presets), /api/feeds,
-/api/council (рубильники совета) — под фичи направление/папки/тумблеры-лент/совет + общие гейты
-do_POST: Content-Type (415), битый JSON (400), тип тела (400). folders/direction/feeds/council
-пишут в temp (реальные data/*.json не трогаем)."""
+/api/council (рубильники совета), /api/wizard — под фичи направление/папки/тумблеры-лент/совет +
+first-run wizard + общие гейты do_POST: Content-Type (415), битый JSON (400), тип тела (400).
+folders/direction/feeds/council пишут в temp (реальные data/*.json не трогаем)."""
 
 import json
 import os
@@ -22,12 +22,19 @@ sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
+# Роуты гоняются через локальный сервер. Не наследуем системный proxy Windows: на части
+# машин он пытается проксировать даже loopback и даёт ложный ConnectionReset/502.
+_LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_LOOPBACK = config.PANEL_HOST
+
 
 class TestServeRoutes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # свой сервер на 127.0.0.1:0 (эфемерный порт) — не конфликтует с живым пультом на 8737
-        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
+        # свой сервер на loopback:0 (эфемерный порт) — не конфликтует с живым пультом
+        cls.srv = ThreadingHTTPServer((_LOOPBACK, 0), serve.Handler)
         cls.port = cls.srv.server_address[1]
         cls.t = threading.Thread(target=cls.srv.serve_forever, daemon=True)
         cls.t.start()
@@ -44,39 +51,58 @@ class TestServeRoutes(unittest.TestCase):
             "fp": serve.folders.PATH,
             "dp": serve.direction.PATH,
             "auto": serve.AUTO_FILE,
+            "mode": serve.MODE_FILE,
             "feeds": serve.feeds.PATH,
             "cc": serve.council_config.PATH,
+            "gp": serve.genparams.PATH,
+            "bd": serve.config.BACKUPS_DIR,
+            "sj": serve.config.IE_STATE_JSON,
+            "si": serve.restore_backup.seen_items.PATH,
         }
         serve.folders.PATH = os.path.join(self.tmp, "folders.json")
         serve.direction.PATH = os.path.join(self.tmp, "direction.json")
         serve.AUTO_FILE = os.path.join(self.tmp, "auto.json")
+        serve.MODE_FILE = os.path.join(self.tmp, "mode.json")
         serve.feeds.PATH = os.path.join(self.tmp, "feeds.json")
         serve.council_config.PATH = os.path.join(self.tmp, "council.json")
+        serve.genparams.PATH = os.path.join(self.tmp, "genparams.json")
+        self._backup_dir = os.path.join(self.tmp, "backups")
+        serve.config.BACKUPS_DIR = self._backup_dir
+        serve.config.IE_STATE_JSON = os.path.join(self.tmp, "state.json")
+        serve.restore_backup.seen_items.PATH = os.path.join(self.tmp, "seen_items.json")
 
     def tearDown(self):
         serve.folders.PATH = self._saved["fp"]
         serve.direction.PATH = self._saved["dp"]
         serve.AUTO_FILE = self._saved["auto"]
+        serve.MODE_FILE = self._saved["mode"]
         serve.feeds.PATH = self._saved["feeds"]
         serve.council_config.PATH = self._saved["cc"]
+        serve.genparams.PATH = self._saved["gp"]
+        serve.config.BACKUPS_DIR = self._saved["bd"]
+        serve.config.IE_STATE_JSON = self._saved["sj"]
+        serve.restore_backup.seen_items.PATH = self._saved["si"]
 
-    def _post(self, path, body=None, ctype="application/json", raw=None):
-        data = raw if raw is not None else json.dumps(body).encode("utf-8")
+    def _post(self, path, body=None, ctype=config.HTTP_MEDIA_TYPE_JSON, raw=None):
+        data = raw if raw is not None else json.dumps(body).encode(config.HTTP_CHARSET_UTF8)
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}{path}", data=data, headers={"Content-Type": ctype}, method="POST"
+            f"http://{_LOOPBACK}:{self.port}{path}",
+            data=data,
+            headers={config.HTTP_HEADER_CONTENT_TYPE: ctype},
+            method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.status, json.loads(r.read().decode("utf-8"))
+            with _LOCAL_OPENER.open(req, timeout=5) as r:
+                return r.status, json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read().decode("utf-8"))
+            return e.code, json.loads(e.read().decode(config.HTTP_CHARSET_UTF8))
 
     def _get(self, path):
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as r:
-                return r.status, json.loads(r.read().decode("utf-8"))
+            with _LOCAL_OPENER.open(f"http://{_LOOPBACK}:{self.port}{path}", timeout=5) as r:
+                return r.status, json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read().decode("utf-8"))
+            return e.code, json.loads(e.read().decode(config.HTTP_CHARSET_UTF8))
 
     def test_folders_valid_saves_and_normalizes(self):
         code, body = self._post("/api/folders", {"paths": ["M:/x", "M:\\x", "C:/y/"]})
@@ -93,7 +119,7 @@ class TestServeRoutes(unittest.TestCase):
         # ответ на сохранение папок несёт пробу: путь валиден? сколько текстовых файлов?
         d = tempfile.mkdtemp(prefix="probe_post_")
         try:
-            with open(os.path.join(d, "a.py"), "w", encoding="utf-8") as f:
+            with open(os.path.join(d, "a.py"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
                 f.write('"""a."""\n')
             code, body = self._post("/api/folders", {"paths": [d]})
             self.assertEqual(code, 200)
@@ -107,7 +133,7 @@ class TestServeRoutes(unittest.TestCase):
     def test_folders_probe_get_reads_current(self):
         d = tempfile.mkdtemp(prefix="probe_get_")
         try:
-            with open(os.path.join(d, "b.md"), "w", encoding="utf-8") as f:
+            with open(os.path.join(d, "b.md"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
                 f.write("# b\n")
             self._post("/api/folders", {"paths": [d]})  # сохранили в temp folders.json
             code, body = self._get("/api/folders/probe")
@@ -225,6 +251,18 @@ class TestServeRoutes(unittest.TestCase):
         code, body = self._post("/api/folders", ctype="text/plain", raw=b"paths=1")
         self.assertEqual(code, 415)
 
+    def test_non_object_json_body_rejected(self):
+        code, body = self._post("/api/genparams", ["не", "объект"])
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_genparams_post_enforces_rank_keep_not_above_gen_k(self):
+        code, body = self._post("/api/genparams", {"gen_k": 2, "rank_keep": 8})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["params"]["gen_k"]["value"], 2)
+        self.assertEqual(body["params"]["rank_keep"]["value"], 2)
+
     def test_unknown_route_404(self):
         code, body = self._post("/api/nope", {})
         self.assertEqual(code, 404)
@@ -249,21 +287,43 @@ class TestServeRoutes(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertFalse(body["ok"])
 
+    def test_mode_saves_and_state_carries_it(self):
+        # кружки «дефолт для авто»: POST /api/mode пишет режим, /api/state несёт его пульту
+        code, body = self._post("/api/mode", {"mode": "ultra"})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["mode"], "ultra")
+        code, state = self._get("/api/state")
+        self.assertEqual(code, 200)
+        self.assertEqual(state["mode"], "ultra")
+        self._post("/api/mode", {"mode": "bring"})  # вернуть дефолт, не влиять на другие тесты
+
+    def test_mode_foreign_rejected(self):
+        # oracle — режим пульта, но НЕ авто-режим (нужен путь к проекту) → 400, файл не пишется
+        code, body = self._post("/api/mode", {"mode": "oracle"})
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+        code, state = self._get("/api/state")
+        self.assertEqual(state["mode"], "bring")
+
     def test_foreign_origin_rejected_csrf(self):
         # анти-CSRF гейт (тест-страж от фабрики б-3 2026-07-15): POST с ЧУЖИМ Origin (другой сайт,
         # открытый в браузере юзера, дёргает наш локальный пульт) → 403. Гейт в do_POST был, но без
         # теста. Свой Origin / его отсутствие (curl/скрипты) проходят — проверено остальными тестами.
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}/api/feeds",
-            data=json.dumps({"enabled": []}).encode("utf-8"),
-            headers={"Content-Type": "application/json", "Origin": "http://evil.example.com"},
-            method="POST",
+            f"http://{_LOOPBACK}:{self.port}/api/feeds",
+            data=json.dumps({"enabled": []}).encode(config.HTTP_CHARSET_UTF8),
+            headers={
+                config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
+                config.HTTP_HEADER_ORIGIN: "http://evil.example.com",
+            },
+            method=config.HTTP_METHOD_POST,
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
-                code, resp = r.status, json.loads(r.read().decode("utf-8"))
+            with _LOCAL_OPENER.open(req, timeout=5) as r:
+                code, resp = r.status, json.loads(r.read().decode(config.HTTP_CHARSET_UTF8))
         except urllib.error.HTTPError as e:
-            code, resp = e.code, json.loads(e.read().decode("utf-8"))
+            code, resp = e.code, json.loads(e.read().decode(config.HTTP_CHARSET_UTF8))
         self.assertEqual(code, 403)
         self.assertFalse(resp["ok"])
 
@@ -313,6 +373,47 @@ class TestServeRoutes(unittest.TestCase):
         self.assertIn("goal", body)
         self.assertIn("rc", body)
 
+    def _write_json(self, path, obj):
+        with open(path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            json.dump(obj, f, ensure_ascii=False)
+
+    def test_state_rollback_restores_latest_backup(self):
+        # создаём бэкап и текущий state; откат должен вернуть бэкап
+        backup_ts = "2026-08-06_120000"
+        backup_dir = os.path.join(self._backup_dir, backup_ts)
+        os.makedirs(backup_dir, exist_ok=True)
+        self._write_json(os.path.join(backup_dir, "state.json"), {"tick": 7, "ideas": []})
+        self._write_json(os.path.join(backup_dir, "seen_items.json"), {"items": ["a"]})
+        self._write_json(serve.config.IE_STATE_JSON, {"tick": 99, "ideas": []})
+        self._write_json(serve.restore_backup.seen_items.PATH, {"items": ["z"]})
+
+        code, body = self._post("/api/state/rollback", {})
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["backup"], backup_ts)
+
+        with open(serve.config.IE_STATE_JSON, encoding=config.HTTP_CHARSET_UTF8) as f:
+            self.assertEqual(json.load(f)["tick"], 7)
+        with open(serve.restore_backup.seen_items.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
+            self.assertEqual(json.load(f)["items"], ["a"])
+
+    def test_state_rollback_no_backups_fails_gracefully(self):
+        code, body = self._post("/api/state/rollback", {})
+        self.assertEqual(code, 200)
+        self.assertFalse(body["ok"])
+        self.assertIn("бэкапов", body["msg"].lower())
+
+    def test_state_rollback_blocked_while_running(self):
+        orig = serve.RUN["running"]
+        serve.RUN["running"] = True
+        try:
+            code, body = self._post("/api/state/rollback", {})
+            self.assertEqual(code, 200)
+            self.assertFalse(body["ok"])
+            self.assertTrue(body.get("busy"))
+        finally:
+            serve.RUN["running"] = orig
+
     def test_run_get_error_returns_500_json(self):
         # error_gap (закрыт): при падении чтения RUN — 500 с JSON-телом, как у соседних GET-роутов
         # /api/state и /api/folders/probe (try/except). Раньше /api/run был единственный GET без
@@ -330,6 +431,125 @@ class TestServeRoutes(unittest.TestCase):
             serve.RUN = orig_run
         self.assertEqual(code, 500)
         self.assertIn("error", body)
+
+    def test_wizard_returns_setup_state(self):
+        # first-run wizard endpoint: должен вернуть ключи, источники, ленты, папки
+        code, body = self._get("/api/wizard")
+        self.assertEqual(code, 200)
+        self.assertIn("ok", body)
+        self.assertIn("keys_configured", body)
+        self.assertIn("active_sources", body)
+        self.assertIn("all_feeds", body)
+        self.assertIn("feeds", body)
+        self.assertIn("folders", body)
+
+    def test_mcbot_status_disabled_without_token(self):
+        # без MCBOT_CONTROL_TOKEN клиент disabled — /api/mcbot/status возвращает enabled=False
+        # но ok=True (это штатное состояние, не ошибка пульта)
+        code, body = self._get("/api/mcbot/status")
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertFalse(body["enabled"])
+
+    def test_mcbot_status_in_state(self):
+        # /api/state теперь несёт mcbot-состояние (Phase 4)
+        code, body = self._get("/api/state")
+        self.assertEqual(code, 200)
+        self.assertIn("mcbot", body)
+        self.assertFalse(body["mcbot"]["enabled"])
+
+    def test_mcbot_cmd_disabled_without_token(self):
+        # без MCBOT_CONTROL_TOKEN команда возвращает 503
+        code, body = self._post("/api/mcbot/cmd", {"command": "стоп"})
+        self.assertEqual(code, 503)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_cmd_empty_rejected(self):
+        # пустая команда → 400. Мокаем enabled=True чтобы гейт пустой команды отработал раньше disabled.
+        orig = serve._MCBOT
+
+        class _Fake:
+            enabled = True
+
+            def send_command(self, command):
+                return {"ok": True}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/cmd", {"command": "   "})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_cmd_mocks_send_command(self):
+        # мокаем клиент: команда уходит, ответ проксируется
+        orig = serve._MCBOT
+        calls = []
+
+        class _Fake:
+            enabled = True
+
+            def send_command(self, command):
+                calls.append(command)
+                return {"ok": True, "echo": command}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/cmd", {"command": "копай"})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(calls, ["копай"])
+        self.assertEqual(body["mc"]["echo"], "копай")
+
+    def test_mcbot_action_disabled_without_token(self):
+        # без MCBOT_ACTION_TOKEN action endpoint возвращает 503
+        code, body = self._post("/api/mcbot/action", {"action": "status"})
+        self.assertEqual(code, 503)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_action_empty_rejected(self):
+        # пустое действие → 400. Мокаем action_enabled=True чтобы гейт пустого action отработал раньше disabled.
+        orig = serve._MCBOT
+
+        class _Fake:
+            action_enabled = True
+
+            def send_action(self, action, params=None):
+                return {"ok": True}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/action", {"action": "   "})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 400)
+        self.assertFalse(body["ok"])
+
+    def test_mcbot_action_mocks_send_action(self):
+        # мокаем клиент: action + params уходят, ответ проксируется
+        orig = serve._MCBOT
+        calls = []
+
+        class _Fake:
+            action_enabled = True
+
+            def send_action(self, action, params=None):
+                calls.append((action, params))
+                return {"ok": True, "echo": action, "params": params}
+
+        serve._MCBOT = _Fake()
+        try:
+            code, body = self._post("/api/mcbot/action", {"action": "equip", "params": {"itemName": "iron_pickaxe"}})
+        finally:
+            serve._MCBOT = orig
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(calls, [("equip", {"itemName": "iron_pickaxe"})])
+        self.assertEqual(body["mc"]["echo"], "equip")
+        self.assertEqual(body["mc"]["params"]["itemName"], "iron_pickaxe")
 
 
 if __name__ == "__main__":

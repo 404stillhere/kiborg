@@ -28,20 +28,18 @@
 решает юзер (гейт), см. .brain/design/mind-council.md.
 """
 
+import config
+
 # Веса важности мнений (задано юзером 2026-07-13, в порядке ask_llm/orchestra/rank_ideas).
 # Сумма = 1.0. Меняются здесь и только здесь — единственный источник истины.
-WEIGHTS = {
-    "ask_llm": 0.39,
-    "orchestra": 0.20,
-    "rank_ideas": 0.41,
-}
+WEIGHTS = dict(config.ADVISOR_WEIGHTS)
 
 # При равном итоговом балле — чей голос перевешивает (по убыванию веса). Затем — порядок
 # вариантов (стабильно, детерминированно: одинаковый вход -> одинаковый выбор).
-_TIE_ORDER = ["rank_ideas", "ask_llm", "orchestra"]
+_TIE_ORDER = list(config.ADVISOR_TIE_ORDER)
 
 
-def opinion(scores, confidence=1.0, rationale="", raw=None, escalate=False):
+def opinion(scores, confidence=1.0, rationale="", raw=None, escalate=False, reason_code=None):
     """Нормализованное МНЕНИЕ советника — единый формат, к которому площадка приводит
     разные выходы (текст ask_llm, вердикты orchestra, ранжирование rank_ideas).
 
@@ -51,6 +49,15 @@ def opinion(scores, confidence=1.0, rationale="", raw=None, escalate=False):
     rationale   — короткое «почему» для журнала/пульта.
     raw         — сырой ответ советника (для аудита, не для логики).
     escalate    — только у ИНТУИЦИИ: True = «я не уверена, позовите совет» (см. think()).
+    reason_code — structured причина abstention (если scores пусто/None). Одно из:
+                  "no_keys" — нет llm_chain/content_llm/orchestra config
+                  "not_applicable" — советник не к месту (rank_ideas для не-идей)
+                  "incomplete" — модель оценила не все запрошенные варианты
+                  "parse_fail" — модель вернула мусор (не распарсили JSON)
+                  "provider_fail" — все провайдеры в цепочке упали (502/timeout)
+                  "disabled" — council_config.is_enabled() == False
+                  "exception" — крах совета (unexpected)
+                  None — нормальное голосование (есть scores).
     """
     clean = {}
     for k, v in (scores or {}).items():
@@ -62,7 +69,7 @@ def opinion(scores, confidence=1.0, rationale="", raw=None, escalate=False):
             continue                    # модель могла вернуть NaN (json.loads allow_nan) — отбрасываем
         clean[k] = 0.0 if f < 0 else 1.0 if f > 1 else f
     return {"scores": clean, "confidence": float(confidence), "rationale": str(rationale),
-            "raw": raw, "escalate": bool(escalate)}
+            "raw": raw, "escalate": bool(escalate), "reason_code": reason_code}
 
 
 def _live_weights(live_names):
@@ -108,17 +115,46 @@ def _norm_options(options):
     return opts, ids
 
 
+_REASON_MESSAGES = {
+    "no_keys": "нет ключей/конфигурации",
+    "not_applicable": "не применимо к типу варианта",
+    "incomplete": "модель оценила не все варианты",
+    "parse_fail": "модель вернула мусор",
+    "provider_fail": "все провайдеры упали",
+    "disabled": "выключен в council_config",
+    "exception": "крах советника",
+    "unknown": "причина не определена",
+}
+
+
 def _ask_advisor(adv, name, question, opts, context):
-    """Опросить одного советника. -> (opinion|None, reason). Чужое имя/падение/воздержание
-    = (None, причина); цикл никогда не роняется исключением советника."""
+    """Опросить одного советника. -> (opinion|None, reason_dict). Чужое имя/падение/воздержание
+    = (None, {reason_code, reason}); цикл никогда не роняется исключением советника.
+
+    Structured reason codes (для debugging + Feedback Cortex):
+      "no_keys"         — нет llm_chain/content_llm/orchestra config (ключей нет)
+      "not_applicable"  — советник не к месту (rank_ideas для не-идей)
+      "incomplete"      — модель оценила не все запрошенные варианты
+      "parse_fail"      — модель вернула мусор (не распарсили JSON)
+      "provider_fail"   — все провайдеры в цепочке упали (502/timeout)
+      "disabled"        — council_config.is_enabled() == False
+      "exception"       — крах совета (unexpected error)
+      "unknown"         — прочие abstention (обратная совместимость)
+
+    Opinion с пустыми scores treated как abstention (совместимость со старыми тестами),
+    но reason_code сохраняется для debugging.
+    """
     if name not in WEIGHTS:                       # советник без веса — не знаем, как учесть голос
-        return None, "no weight in WEIGHTS"
+        return None, {"reason_code": "unknown", "reason": _REASON_MESSAGES["unknown"]}
     try:
         op = adv.opine(question, opts, context or {})
     except Exception as e:                        # советник упал — воздержание, цикл живёт
-        return None, "error: " + str(e)[:120]
+        return None, {"reason_code": "exception", "reason": f"краш: {str(e)[: config.MIND_EXCEPTION_MAX_CHARS]}"}
     if not op or not op.get("scores"):
-        return None, "abstained"
+        # opinion вернул None или пустые scores — abstention, но сохраняем reason_code
+        code = op.get("reason_code") if isinstance(op, dict) and op.get("reason_code") else "unknown"
+        msg = _REASON_MESSAGES.get(code, code)
+        return None, {"reason_code": code, "reason": msg}
     return op, None
 
 
@@ -163,9 +199,9 @@ def think(question, options, council, context=None):
         adv = by_name.get(name)
         if adv is None:
             return None
-        op, reason = _ask_advisor(adv, name, question, opts, context)
+        op, reason_info = _ask_advisor(adv, name, question, opts, context)
         if op is None:
-            abstained.append({"name": name, "reason": reason})
+            abstained.append({"name": name, **reason_info})
             return None
         votes[name] = op["scores"]
         breakdown.append({"name": name, "weight": WEIGHTS.get(name, 0.0),
@@ -211,9 +247,9 @@ def deliberate(question, options, council, context=None):
     votes, breakdown, abstained = {}, [], []
     for adv in (council or []):
         name = getattr(adv, "name", "?")
-        op, reason = _ask_advisor(adv, name, question, opts, context)
+        op, reason_info = _ask_advisor(adv, name, question, opts, context)
         if op is None:
-            abstained.append({"name": name, "reason": reason})
+            abstained.append({"name": name, **reason_info})
             continue
         votes[name] = op["scores"]
         breakdown.append({"name": name, "weight": WEIGHTS.get(name, 0.0),

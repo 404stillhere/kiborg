@@ -7,11 +7,11 @@
 
 Контракт слота:
     advisor.name                              — 'ask_llm' | 'orchestra' | 'rank_ideas'
-    advisor.opine(question, options, context) — mind.opinion(...) | None (воздержался)
+    advisor.opine(question, options, context) — mind.opinion(...); пустые scores = воздержался
 
-Воздержание (None) — НЕ ошибка, а штатный режим: модуль не подключён, нет ключа/сети,
-или вопрос не по адресу. Движок перераспределит вес на живых. Так киборг думает и
-в неполной комплектации (автономность без Claude/без части ключей).
+Воздержание (opinion с пустыми scores; старый None тоже поддержан) — НЕ ошибка, а
+штатный режим: модуль не подключён, нет ключа/сети или вопрос не по адресу. Движок
+перераспределит вес на живых. Так киборг думает и в неполной комплектации.
 
 Что подключено СЕЙЧАС и что ждёт провода — см. build_council() внизу и
 .brain/design/mind-council.md. Боевое включение в живой цикл — гейт юзера.
@@ -21,12 +21,13 @@ import os
 import subprocess
 import sys
 
+import config
 import mind
 
 # --- пути к внешним модулям-органам (провод к другим проектам) ---------------
-_ASK_LLM_JS = os.environ.get("KIBORG_ASK_LLM_JS", "M:/projects/DarBench/organ.js")
-_ORCHESTRA_PY = os.environ.get("KIBORG_ORCHESTRA_PY", "M:/projects/Claude Code API Dual Mode/organ.py")
-_NODE_EXE = os.environ.get("KIBORG_NODE_EXE", "node")
+_ASK_LLM_JS = os.environ.get(config.ASK_LLM_JS_ENV, config.DEFAULT_ASK_LLM_JS)
+_ORCHESTRA_PY = os.environ.get(config.ORCHESTRA_PY_ENV, config.DEFAULT_ORCHESTRA_PY)
+_NODE_EXE = os.environ.get(config.NODE_EXE_ENV, config.DEFAULT_NODE_EXE)
 
 
 _TEXT_FIELDS = ("title", "text", "value", "name")
@@ -40,7 +41,20 @@ def _opt_text(o):
         if o.get(f):
             t = str(o[f])
             why = str(o.get("why") or o.get("reason") or "")
-            return (t + " — " + why[:120]) if why else t
+            parts = [t + (" — " + why[: config.RANK_IDEAS_WHY_MAX_CHARS] if why else "")]
+            verification = str(o.get("verification") or "").strip()
+            if verification:
+                parts.append("Проверка: " + verification[: config.RANK_IDEAS_VERIFICATION_MAX_CHARS])
+            refs = o.get("source_refs")
+            if isinstance(refs, list) and refs:
+                evidence = ", ".join(
+                    str(ref.get("title") or ref.get("path") or ref.get("id") or "")[: config.RANK_IDEAS_REF_TITLE_MAX_CHARS]
+                    for ref in refs[: config.RANK_IDEAS_MAX_REFS]
+                    if isinstance(ref, dict)
+                )
+                if evidence:
+                    parts.append("Основание: " + evidence)
+            return " | ".join(parts)
     return str(o.get("id"))
 
 
@@ -64,7 +78,7 @@ class RankIdeasAdvisor:
 
     def _load(self):
         if self._run is None:
-            _idea = "M:/projects/kiborg/idea_engine"
+            _idea = config.IDEA_ENGINE_DIR
             if _idea not in sys.path:
                 sys.path.insert(0, _idea)
             from organs import rank_ideas          # noqa
@@ -74,21 +88,18 @@ class RankIdeasAdvisor:
     def opine(self, question, options, context):
         import council_config
         if not council_config.is_enabled(self.name):
-            return None
+            return mind.opinion(None, reason_code="disabled")
         ctx = context or {}
         # арбитр судит СОДЕРЖАТЕЛЬНЫЕ варианты (идеи/предложения), не служебные развилки.
         # Набор полей — тот же, что видят ask_llm/orchestra (_has_text), чтобы самый весомый
         # советник не выпадал молча там, где двое других вариант прекрасно оценивают.
         if not options or not all(_has_text(o) for o in options):
-            return None
+            return mind.opinion(None, reason_code="not_applicable")
         llm = ctx.get("content_llm") or ctx.get("llm")
         ideas = [{"title": _opt_text(o), "why": str(o.get("why", "")), "_id": o["id"]} for o in options]
-        # keep=len-1, НЕ len: rank_ideas при keep>=len возвращает как есть БЕЗ вызова модели
-        # (rank_ideas.py:58). Чтобы арбитр реально судил живой моделью, оставляем один хвост
-        # за бортом (он получит балл 0). Компромисс площадки: судья не отдаёт полный порядок.
-        # Исключение: при 1 варианте keep=1=len — модель не зовётся, но единственный вариант
-        # тривиально получает 1.0, судить нечего.
-        keep = max(1, len(ideas) - 1)
+        # rank_ideas теперь вызывает модель даже при len==keep (fix #8).
+        # Раньше нужен был keep=len-1 workaround — теперь убран, худшая идея получает честный балл.
+        keep = len(ideas)
         rank_env = {"keep": keep}
         if callable(llm):
             rank_env["llm"] = llm
@@ -98,15 +109,34 @@ class RankIdeasAdvisor:
             run = self._load()
             out = run({"ideas": ideas}, rank_env)
         except Exception:
-            return None
+            return mind.opinion(None, reason_code="exception")
         best = out.get("ideas_best") or []
         if not best:
-            return None
+            return mind.opinion(None, reason_code="parse_fail")
+        if callable(llm):
+            # Для совета нужен ПОЛНЫЙ порядок. rank_ideas добирает пропущенные моделью
+            # элементы с judged="fill"; это страховка органа от потери карточек, но не
+            # суждение модели. Такой порядок нельзя выдавать за полноценный голос.
+            returned_ids = [idea.get("_id") for idea in best]
+            expected_ids = [idea["_id"] for idea in ideas]
+            if (
+                len(best) != len(ideas)
+                or any(idea.get("judged") != "llm" for idea in best)
+                or len(set(returned_ids)) != len(returned_ids)
+                or set(returned_ids) != set(expected_ids)
+            ):
+                return mind.opinion(None, reason_code="incomplete", raw=out)
         n = len(best)
         scores, order = {}, []
+        # Ранг — порядковый сигнал, не вероятность качества. Переводим его в прозрачный
+        # percentile/Borda score: доля остальных вариантов, стоящих ниже. Так мы не
+        # выдумываем фиксированную "уверенность" decay=0.7.
         for rank, idea in enumerate(best):
             oid = idea.get("_id")
-            scores[oid] = 1.0 if n == 1 else (n - 1 - rank) / (n - 1)   # 1.0 .. 0.0 по рангу
+            if n == 1:
+                scores[oid] = 1.0
+            else:
+                scores[oid] = (n - 1 - rank) / (n - 1)
             order.append(oid)
         for o in options:                           # варианты, не попавшие в ранжирование -> 0
             scores.setdefault(o["id"], 0.0)
@@ -114,16 +144,16 @@ class RankIdeasAdvisor:
         # карточки judged=llm/fill (живой суд) или fallback (стр.74/77). Нет ни одной метки llm =
         # живой вызов не сработал (502/непарс) ИЛИ llm не было → это ПОРЯДОК, не суждение. Раньше
         # мерили по callable(llm) → при мёртвой сети рапортовали «llm», хотя по факту фолбэк (root #1).
-        was_live = any(b.get("judged") == "llm" for b in best)
+        was_live = all(b.get("judged") == "llm" for b in best)
         # Ключ БЫЛ (llm передан), но живой суд не сработал (502/непарс → rank_ideas на порядок-фолбэк):
         # это НЕ суждение арбитра, а порядок. ВОЗДЕРЖИВАЕМСЯ (None) — иначе совет зачтёт фолбэк как
         # полноценный голос (вес 0.41) и рапортует «арбитр судил» на мусоре (audit medium, часть-b).
         # mind.deliberate воздержание обрабатывает: если и другие молчат — degraded → плоский откат.
         # БЕЗ ключа (offline) порядок-фолбэк — ШТАТНЫЙ детерминированный судья → голосуем как раньше.
         if callable(llm) and not was_live:
-            return None
+            return mind.opinion(None, reason_code="parse_fail", raw=out)
         judged = "llm" if was_live else "fallback(порядок)"
-        return mind.opinion(scores, rationale=f"рубрика/{judged}: топ {order[:3]}", raw=out)
+        return mind.opinion(scores, rationale=f"рубрика/{judged}: топ {order[: config.ADVISORS_ORDER_PREVIEW_LEN]}", raw=out)
 
 
 # =============================================================================
@@ -135,7 +165,8 @@ class AskLlmAdvisor:
     Воздерживается, если в context нет 'llm_chain' (ключей нет) или ответ не распарсился.
     """
     name = "ask_llm"
-    _MAX_TOKENS = 256          # потолок ответа модели в payload; None = без потолка (см. _IntuitionNoCap)
+    _MAX_TOKENS = config.ASK_LLM_ADVISOR_MAX_TOKENS
+    _TEMPERATURE = config.ASK_LLM_ADVISOR_TEMPERATURE
 
     def __init__(self, organ_js=None, node_exe=None):
         self._js = organ_js or _ASK_LLM_JS
@@ -149,16 +180,18 @@ class AskLlmAdvisor:
         if not os.path.exists(self._js):
             return None
         n = max(1, len(chain))
-        per_provider_ms = max(3000, budget_ms // n)     # чтобы медленный провайдер не съел весь бюджет
-        inputs = {"prompt": prompt, "temperature": 0.2}
+        per_provider_ms = max(config.ASK_LLM_MIN_PER_PROVIDER_MS, budget_ms // n)  # медленный не съест весь бюджет
+        inputs = {"prompt": prompt, "temperature": self._TEMPERATURE}
         if self._MAX_TOKENS is not None:                # None (напр. _IntuitionNoCap) → ключ не кладём
             inputs["max_tokens"] = self._MAX_TOKENS
         payload = {"inputs": inputs,
                    "env": {"chain": chain, "timeout_ms": per_provider_ms}}
         try:
-            proc = subprocess.run([self._node, self._js], input=json.dumps(payload),
-                                  capture_output=True, text=True, encoding="utf-8",
-                                  timeout=max(5, budget_ms // 1000 + 5))  # весь бюджет цепочки + запас
+            proc = subprocess.run(
+                [self._node, self._js], input=json.dumps(payload),
+                capture_output=True, text=True, encoding=config.HTTP_CHARSET_UTF8,
+                timeout=max(config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC, budget_ms // 1000 + config.ASK_LLM_SUBPROCESS_TIMEOUT_PAD_SEC),
+            )  # весь бюджет цепочки + запас
         except Exception:
             return None
         if proc.returncode != 0 and not proc.stdout.strip():
@@ -172,11 +205,13 @@ class AskLlmAdvisor:
     def opine(self, question, options, context):
         import council_config
         if not council_config.is_enabled(self.name):
-            return None
+            return mind.opinion(None, reason_code="disabled")
         ctx = context or {}
         chain = ctx.get("llm_chain")                # список провайдеров с ключами — приносит вызыватель
-        if not chain or not options:                # ключей/вариантов нет -> воздержание БЕЗ похода в сеть
-            return None
+        if not chain:                               # ключей нет -> воздержание БЕЗ похода в сеть
+            return mind.opinion(None, reason_code="no_keys")
+        if not options:
+            return mind.opinion(None, reason_code="not_applicable")
         listing = "\n".join(f'- id "{o["id"]}": {_opt_text(o)}' for o in options)
         prompt = (
             f"Задача: {question}\n\nВарианты:\n{listing}\n\n"
@@ -184,9 +219,9 @@ class AskLlmAdvisor:
             'Верни РОВНО одну строку JSON и ничего больше: '
             '{"scores":{"<id>":<0-100>, ...}}'
         )
-        text = self._ask(chain, prompt, int(ctx.get("llm_timeout_ms", 60000)))
+        text = self._ask(chain, prompt, int(ctx.get("llm_timeout_ms", config.ASK_LLM_ADVISOR_TIMEOUT_MS)))
         if not text:
-            return None
+            return mind.opinion(None, reason_code="provider_fail")
         raw = text.strip()
         if raw.startswith("```"):
             raw = "\n".join(ln for ln in raw.splitlines() if not ln.strip().startswith("```")).strip()
@@ -201,7 +236,7 @@ class AskLlmAdvisor:
             except Exception:
                 continue
         if not parsed or not isinstance(parsed.get("scores"), dict):
-            return None
+            return mind.opinion(None, reason_code="parse_fail")
         ids = {str(o["id"]) for o in options}
         scores = {}
         for k, v in parsed["scores"].items():
@@ -211,24 +246,18 @@ class AskLlmAdvisor:
                 except (TypeError, ValueError):
                     continue
         if not scores:
-            return None
+            return mind.opinion(None, reason_code="parse_fail")
+        if len(scores) != len(options):
+            # Пропуск id — ошибка контракта ответа, а не отрицательная оценка идеи.
+            # Не даём частичному ответу голосовать и выглядеть "уверенным".
+            return mind.opinion(None, reason_code="incomplete", raw=text)
         # ЭСКАЛАЦИЯ: интуиция САМА решает звать ли совет (think()). Эвристика — разброс:
         # два лучших варианта близки => интуиция не уверена => поднять флаг. Порог из ctx.
-        # Считаем на ФАКТИЧЕСКИХ баллах (реальный разброс мнения), ДО импутации.
-        gap = float(ctx.get("escalate_gap", 0.15))
+        # Считаем на ФАКТИЧЕСКИХ баллах (реальный разброс мнения), БЕЗ импутации.
+        gap = float(ctx.get("escalate_gap", config.ASK_LLM_ESCALATE_GAP))
         top = sorted(scores.values(), reverse=True)
         escalate = len(top) >= 2 and (top[0] - top[1]) < gap
-        # ИМПУТАЦИЯ пропущенных id: модель могла НЕ вернуть часть вариантов (ошибка форматирования —
-        # промпт просил оценить КАЖДЫЙ, это не «я против»). Без этого mind._tally зачёл бы им жёсткий
-        # 0 и утопил бы идею, которую судья ценит (audit medium, mind.py:84). Ставим СРЕДНЕЕ реальных
-        # баллов — нейтраль вместо 0. Фикс advisor-side: mind.py заморожен (контракт _tally цел — он
-        # по-прежнему 0-дефолтит, просто интуиция больше не отдаёт частичное).
-        n_rated = len(scores)
-        if n_rated < len(options):
-            mean = sum(scores.values()) / n_rated
-            for o in options:
-                scores.setdefault(o["id"], mean)
-        return mind.opinion(scores, rationale=f"модель оценила {n_rated}/{len(options)} вар.",
+        return mind.opinion(scores, rationale=f"модель оценила {len(options)}/{len(options)} вар.",
                             raw=text, escalate=escalate)
 
 
@@ -251,6 +280,7 @@ class OrchestraAdvisor:
     """
     name = "orchestra"
     _VERDICT_SCORE = {"approve": 1.0, "changes_requested": 0.5, "blocked": 0.0}
+    _BLOCKING_SEVERITIES = {"critical", "high"}
 
     def __init__(self, organ_py=None):
         self._py = organ_py or _ORCHESTRA_PY
@@ -267,43 +297,81 @@ class OrchestraAdvisor:
 
     @staticmethod
     def _score_verdicts(verdicts):
-        """Средний балл рецензентов по варианту. Вердикт НОРМАЛИЗУЕМ (регистр/пробелы) — «APPROVE»
-        и « blocked » матчат ключи. Неизвестный/None → 0.0 (fail-closed: как parse_review в
-        organ.py, неразобранное = НЕ одобрение), а НЕ нейтральные 0.5 — те копили пропуск как
-        «серединку» и подтягивали зарубленную идею вверх, а мис-регистр одобрения топили вниз."""
-        vals = [OrchestraAdvisor._VERDICT_SCORE.get(str(v).strip().lower(), 0.0) for v in verdicts]
+        """Средний балл известных verdict без evidence-aware veto."""
+        vals = [
+            OrchestraAdvisor._VERDICT_SCORE[key]
+            for v in verdicts
+            if (key := str(v).strip().lower()) in OrchestraAdvisor._VERDICT_SCORE
+        ]
         return sum(vals) / len(vals) if vals else 0.0
+
+    @staticmethod
+    def _score_reviewers(reviewers, findings):
+        """Отделить настоящий блокер от неразобранного ответа модели.
+
+        Внешний organ кодирует битый JSON как status=ok/verdict=blocked. Поэтому blocked
+        становится veto только вместе с high/critical finding того же reviewer. Иначе
+        это abstention. None означает, что содержательных голосов не осталось.
+        """
+        blocking_models = set()
+        for finding in findings or []:
+            severity = str(finding.get("severity", "")).strip().lower()
+            if severity not in OrchestraAdvisor._BLOCKING_SEVERITIES:
+                continue
+            mentioned = finding.get("mentioned_by") or []
+            if isinstance(mentioned, str):
+                mentioned = [mentioned]
+            blocking_models.update(str(model) for model in mentioned)
+
+        values = []
+        for reviewer in reviewers or []:
+            if reviewer.get("status") != "ok":
+                continue
+            verdict = str(reviewer.get("verdict", "")).strip().lower()
+            if verdict == "blocked":
+                identities = {
+                    str(reviewer.get("model", "")),
+                    str(reviewer.get("requested_model", "")),
+                }
+                if identities & blocking_models:
+                    return 0.0
+                continue
+            if verdict in {"approve", "changes_requested"}:
+                values.append(OrchestraAdvisor._VERDICT_SCORE[verdict])
+        return (sum(values) / len(values)) if values else None
 
     def opine(self, question, options, context):
         import council_config
         if not council_config.is_enabled(self.name):
-            return None
+            return mind.opinion(None, reason_code="disabled")
         ctx = context or {}
         cfg = ctx.get("orchestra")                  # {models:[...], chat|darbench_gateway:...}
         if not cfg or not cfg.get("models") or not os.path.exists(self._py):
-            return None                             # выключен -> воздержание (штатно)
+            return mind.opinion(None, reason_code="no_keys")  # нет конфига/орга → как нет ключей
         env = {k: cfg[k] for k in ("chat", "darbench_gateway", "node_exe", "max_workers") if k in cfg}
         if not (env.get("chat") or env.get("darbench_gateway")):
-            return None
+            return mind.opinion(None, reason_code="no_keys")  # нет gateway → не из чего звать
         try:
             run = self._load()
         except Exception:
-            return None
+            return mind.opinion(None, reason_code="exception")
         scores = {}
         for o in options:                           # по варианту — свод вердиктов рецензентов
             try:
                 out = run({"task": question, "content": _opt_text(o),
                            "models": list(cfg["models"]),
                            "focus": cfg.get("focus") or ["польза", "риски", "выполнимость"],
-                           "timeout_sec": int(cfg.get("timeout_sec", 180))}, env)
+                           "timeout_sec": int(cfg.get("timeout_sec", config.ORCHESTRA_TIMEOUT_SEC))}, env)
             except Exception:
                 continue
-            verdicts = [r.get("verdict") for r in (out.get("reviewers") or []) if r.get("status") == "ok"]
-            if not verdicts:
+            score = self._score_reviewers(out.get("reviewers") or [], out.get("findings") or [])
+            if score is None:
                 continue
-            scores[o["id"]] = self._score_verdicts(verdicts)   # средний вердикт совета по варианту
+            scores[o["id"]] = score
         if not scores:
-            return None
+            return mind.opinion(None, reason_code="parse_fail")  # никто не ответил → не удалось disaggreg
+        if len(scores) != len(options):
+            return mind.opinion(None, reason_code="incomplete")
         return mind.opinion(scores, rationale=f"совет оценил {len(scores)} вар.", raw=None)
 
 

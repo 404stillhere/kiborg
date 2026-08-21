@@ -29,8 +29,8 @@ def council_note(out):
 
 def _degrade_note(out):
     """Строка про ДЕГРАДАЦИЮ прогона для консоли/лога (root #1: показать сбой, а не прятать за
-    «доставлено N»). Пусто, если прогон здоров. Источник ушёл в фолбэк (4 захардкоженных
-    заголовка) → «источник в фолбэке»; доставка отсеяла болванки, но живые идеи БЫЛИ → «stub-отсеяно=N»;
+    «доставлено N»). Пусто, если прогон здоров. Не пришло реального сырья → «источники недоступны —
+    идей нет»; доставка отсеяла болванки, но живые идеи БЫЛИ → «stub-отсеяно=N»;
     модель не ответила ВОВСЕ (вся партия — болванки, инбокс пуст) → «мозг недоступен — идей нет»;
     провайдер генератора → «модель=…» ВСЕГДА (реш. юзера 2026-07-21: раньше прятали «бесплатную»
     gemini-подписку и флажили только платный фолбэк — теперь вся цепочка closerouter, делить на
@@ -40,7 +40,11 @@ def _degrade_note(out):
     в источник просочился секрет, surface, иначе счётчик redacted молча теряется)."""
     flags = []
     if out.get("degraded"):
-        flags.append("источник в фолбэке")
+        reason = str(out.get("degraded_reason") or "")
+        if reason.startswith("нет источников:"):
+            flags.append("источники выключены — идей нет")
+        else:
+            flags.append("источники недоступны — идей нет")
     if out.get("brain_down"):
         # ключ есть, но модель молчит: вся партия — болванки, в инбокс не пущены → он честно пуст
         flags.append("мозг недоступен — идей нет")
@@ -64,10 +68,10 @@ def _log(goal, out):
     import harvest
 
     os.makedirs(harvest.DATA, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.datetime.now().strftime(config.DATETIME_FMT)
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
-    rv = str(r)[:120] if r is not None else "нет"
+    rv = str(r)[: config.HARVEST_LOG_RESULT_MAX_CHARS] if r is not None else "нет"
     line = f"- [{ts}] «{goal}» → {steps} | {out['deliverable']}={rv}"
     note = council_note(out)
     if note:
@@ -76,8 +80,8 @@ def _log(goal, out):
     if dn:
         line += f" | ⚠ {dn}"  # деградация видна в истории пульта, не только в консоли
     line += "\n"
-    runs_path = os.path.join(harvest.DATA, "runs.md")
-    with open(runs_path, "a", encoding="utf-8") as f:
+    runs_path = config.RUNS_MD
+    with open(runs_path, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(harvest.scrub_secrets.scrub_text(line))
     _rotate_if_needed(runs_path)
     # АЛЕРТЫ при семантических сбоях (не python-traceback — те видны по rc≠0). brain_down =
@@ -98,7 +102,7 @@ def _rotate_if_needed(path):
     harvest_gate, чтобы обрыв записи не бил файл). Нет файла — no-op (первый прогон).
     Идемпотентна: файлы ≤ лимита не трогает."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             lines = f.readlines()
     except FileNotFoundError:
         return  # первый прогон / файл удалён вручную — нечего ротировать
@@ -106,7 +110,7 @@ def _rotate_if_needed(path):
         return
     keep = "".join(lines[-config.MAX_LOG_ENTRIES :])
     # атомарно: во временный рядом + os.replace (обрыв записи НЕ обрежет runs.md)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    tmp = path + config.ATOMIC_TMP_SUFFIX
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(keep)
     os.replace(tmp, path)

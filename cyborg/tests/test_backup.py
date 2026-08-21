@@ -18,6 +18,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
 import backup  # noqa: E402
+import config  # noqa: E402
 
 
 class TestBackupState(unittest.TestCase):
@@ -35,9 +36,9 @@ class TestBackupState(unittest.TestCase):
         backup.config.IE_STATE_JSON = self._state_src
         backup.seen_items.PATH = self._seen_src
         # По умолчанию оба source-файла существуют с валидным содержимым.
-        with open(self._state_src, "w", encoding="utf-8") as f:
+        with open(self._state_src, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write('{"ideas": ["test"]}')
-        with open(self._seen_src, "w", encoding="utf-8") as f:
+        with open(self._seen_src, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{}")
 
     def tearDown(self):

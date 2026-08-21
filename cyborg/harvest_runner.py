@@ -6,8 +6,6 @@
 долетают до живого кода. Сам фасад harvest.py вызывает main() в `if __name__ == "__main__"`.
 """
 
-import os
-
 
 def main(argv):
     import bootstrap_paths
@@ -15,6 +13,14 @@ def main(argv):
 
     # создать data dirs на свежем клоне (до всего остального)
     bootstrap_paths.ensure_data_dirs()
+
+    # Применить пользовательские triage-сигналы ДО нового совета, чтобы следующий отбор
+    # уже использовал свежие адаптивные веса. Best-effort: повреждённый журнал/конфиг
+    # не должен останавливать автосбор.
+    try:
+        harvest.feedback_cortex.main()
+    except Exception as exc:
+        print(f"[feedback_cortex] пропущен: {str(exc)[: harvest.config.HARVEST_RUNNER_ERROR_MAX_CHARS]}")
 
     # АВТО-ВОССТАНОВЛЕНИЕ state.json при повреждении (ДО backup_state, ДО органов).
     # Если state.json битый/отсутствует и есть валидный бэкап — восстанавливаем, шлём
@@ -35,7 +41,7 @@ def main(argv):
     force = "--force" in argv or "force" in argv  # ручной клик из пульта перебивает гейт
     nums = [a for a in argv if a.isdigit()]
     n = int(nums[0]) if nums else 1
-    n = max(1, min(n, 50))  # предохранитель: не больше 50 прогонов за вызов
+    n = max(1, min(n, config.HARVEST_RUNNER_MAX_RUNS))  # предохранитель: не больше N прогонов за вызов
     goal = "приноси свежие идеи"  # та же цель/цепочка, что у ручной кнопки → deliver в общий инбокс
     # РЕЗЕРВНОЕ КОПИРОВАНИЕ state.json + seen_items.json перед прогоном (ОДИН раз за вызов main,
     # НЕ за каждый прогон в цикле — иначе N прогонов = N бэкапов под одним таймстемпом, а state.json
@@ -47,12 +53,12 @@ def main(argv):
     env = harvest._harvest_env()
     mode = (
         (f"идеи={harvest.ask_llm._MODEL}" if harvest.ask_llm.available() else "идеи=stub (ключа нет)")
-        + f" · источники={'+'.join(harvest._active_sources())} (бюджет {harvest.SOURCE_N})"
+        + f" · источники={'+'.join(harvest._active_sources())} (бюджет {env.get('n', harvest.SOURCE_N)})"
         + (" · force" if force else "")
     )
 
     cy = harvest.Cyborg(
-        harvest.build_organs(), safe_mode=True, k=6
+        harvest.build_organs(), safe_mode=True, k=config.CYBORG_ROUTE_K_FULL_CHAIN
     )  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     total, skipped, total_dropped = 0, 0, 0
     try:
@@ -76,15 +82,26 @@ def main(argv):
             # gate_out=None → _run_collect фетчит сам, как раньше (фолбэк цел)
             # A6 CACHE_CHECK: отрезаем заголовки, которые уже отдавали генератору в последних 3 прогонах
             # (TTL 30 мин). Только автосбор — ручной run.py не ставит prefetched_out через этот путь
-            # (решение юзера: жмёшь кнопку → хочешь идей сейчас, даже если посты мелькали). mark_seen
-            # звём тут же: items УЖЕ свежие (прошли фильтр) → уйдут в генерацию → метим как виденные.
+            # (решение юзера: жмёшь кнопку → хочешь идей сейчас, даже если посты мелькали).
+            fresh_items = None
             if isinstance(gate_out, dict):
                 try:
                     import items_cache
 
                     fresh_items = items_cache.filter_fresh(gate_out.get("items") or [])
+                    # GUARD «прогон из пустоты» (council 2026-08-17, #5а): гейт пускает по
+                    # свежести ГЕЙТА (fresh_n), но items_cache мог уже метить эти же items —
+                    # прошлый тик упал ПОСЛЕ mark_seen. filter_fresh вырезает всё → без
+                    # guard ideate получил бы пустой промпт («идеи из пустоты») и ложный
+                    # CRITICAL «мозг недоступен». Пусто = нечего генерировать — пропуск.
+                    if not fresh_items:
+                        skipped += 1
+                        print(
+                            f"прогон {i + 1}/{n}: cache_check вырезал всё (прошлый тик упал после mark_seen?)"
+                            " — пропуск (без вызова LLM)"
+                        )
+                        continue
                     gate_out = {**gate_out, "items": fresh_items}
-                    items_cache.mark_seen(fresh_items)
                 except Exception:
                     pass  # cache_check НИКОГДА не роняет автосбор — тише едешь, хоть и с дублями
             run_env = {**env, "prefetched_out": gate_out} if isinstance(gate_out, dict) else env
@@ -93,6 +110,18 @@ def main(argv):
             added = r if isinstance(r, int) else 0
             total += added
             total_dropped += int(out.get("dropped_stub") or 0)  # болванки, отсеянные доставкой за тик
+            # mark_seen ПОСЛЕ прогона (council 2026-08-17, #5б): «сбой LLM не сжигает сырьё» —
+            # тот же принцип, что seen_items (метит после успешной генерации; докстринг
+            # items_cache обещает именно это). Не метим, если прогон явно неудачный: вся
+            # партия вышла болванками (added=0 при dropped_stub>0) — следующий тик честно
+            # попробует те же материалы ещё раз.
+            if fresh_items and not (added == 0 and int(out.get("dropped_stub") or 0) > 0):
+                try:
+                    import items_cache
+
+                    items_cache.mark_seen(fresh_items)
+                except Exception:
+                    pass
             if sig is not None:
                 harvest._save_sig(sig)  # запоминаем ленту только после реального прогона
             harvest._log(goal, out)
@@ -107,11 +136,11 @@ def main(argv):
     if total_dropped:  # шапка выше = конфиг-модель; тут ФАКТ: болванки = ключ есть, но сеть/парс подвели
         line += f" | ⚠ болванок отсеяно (сеть/парс LLM подводили): {total_dropped}"
     print(line)
-    inbox_md = os.path.join(harvest._IE_DATA, "inbox.md")
+    inbox_md = config.INBOX_MD
     try:
         import store as _ie_store  # idea_engine/store.py (idea_engine уже в sys.path через wiring)
 
-        open_n = len(_ie_store.Store(os.path.join(harvest._IE_DATA, "state.json"), cap=0).open_ideas())
+        open_n = len(_ie_store.Store(config.IE_STATE_JSON, cap=0).open_ideas())
         print(f"ВСЕГО в инбоксе (открытых идей): {open_n}")
     except Exception:
         pass

@@ -1,62 +1,49 @@
-# Idea Engine — первый срез киборга «приносит идеи»
+# Idea Engine — органы генерации идей и планов
 
-Первая проверка, что органы работают ВМЕСТЕ. Одна работа: приносить свежие идеи
-(новый проект / аддон / скилл), а когда их накопилось — толкать к финишу старое.
+Пакет органов для kiborg: сбор сырья, генерация идей, их отбор и доставка,
+а также **Oracle-режим** — построение пошаговых планов по цели для локального проекта.
 
-## Как крутится (один `tick`)
-- **Дорожка A (новые идеи), cap=0 — без потолка.** Есть сырьё → `collect` (тянет свежее
-  извне) → `ideate` (делает идеи с ценником) → идеи копятся одной кучей. Механика потолка +
-  обратной тяги в `store.py` цела (cap>0 её включит, живёт для тестов), но по умолчанию cap=0
-  (снят 2026-07-13): разгребаешь (`take`/`later`/`trash`) в своём темпе, поток не заперт.
-- **Дорожка B (доделать существующее), 1 слот.** Дорожка A полна → киборг не
-  простаивает, а достаёт «самый маленький шаг доделать» из карты проектов
-  (`panelofprojects/recon.json`, 17 проектов) с ротацией.
+## Дорожки
+
+- **Идеи (ideas):** `collect_source → ideate → rank_ideas → readability_gate → scrub_secrets → deliver`.
+  Идеи копятся в `data/inbox.md`, cap=0 по умолчанию — поток не заперт.
+- **Oracle:** `oracle_scan → oracle_plan → deliver_oracle`. Сканирует проект,
+  строит план через LLM, сохраняет в `data/oracles/{slug}/{date}.md` и кладёт карточку в инбокс.
 
 ## Запуск
+
 ```
-python run.py tick [--seed FILE]     # один шаг
+# идеи
+python run.py tick [--seed FILE]
 python run.py status <id> take|later|trash
 python run.py show
+
+# oracle
+python ../cyborg/run.py --mode oracle --project "M:/projects/myapp" --goal "добавить авторизацию"
+# или напрямую
+python ../cyborg/oracle_mode.py --project "M:/projects/myapp" --goal "добавить авторизацию"
 ```
-Всё на stdlib, без venv. Результат — `data/inbox.md` (человеку) + `data/notify.md`
-(файловое «уведомление», ТГ-пуш — следующим шагом).
 
 ## Органы (контракт `run(inputs, env)`)
-| Орган | Что делает | Среда через env |
+
+| Орган | Что делает | env |
 |---|---|---|
-| `organs/collect_source.py` | тянет свежие items | `source`/`sources`, `n`, `timeout` (edge/IO-орган: сеть по назначению, конфиг инжектится) |
-| `organs/ideate.py` | items → идеи с ценником | `llm` (callable; в проде ask_llm с ключом), `k` |
-| `organs/rank_ideas.py` | судит идеи по рубрике, берёт топ (генератор себя сам не судит) | `llm`, `keep` |
-| `organs/readability_gate.py` | ставит `why` балл читаемости, ниже порога переписывает самонесущим; правку берёт, только если балл вырос | `llm`/`score_llm`, `min_score` |
-| `organs/finish_step.py` | режим B: шаг доделать | `recon_path`, `cursor`, `skip_folders` |
+| `organs/collect_source.py` | items из лент / локальных папок | `source`/`sources`, `n`, `timeout` |
+| `organs/ideate.py` | items → идеи | `llm`, `k` |
+| `organs/rank_ideas.py` | отбор идей советом | `llm`, `keep` |
+| `organs/readability_gate.py` | переписывание для читаемости | `llm`/`score_llm`, `min_score` |
+| `organs/scrub_secrets.py` | чистка секретов из текста | — |
+| `organs/deliver.py` | идеи → `data/inbox.md` | `cap`, `inbox_path` |
+| `organs/oracle_scan.py` | карта проекта: файлы, entrypoints, README | `oracle_root` |
+| `organs/oracle_plan.py` | карта + цель → план | `oracle_goal`, `llm` |
+| `organs/deliver_oracle.py` | план → `data/oracles/` + индекс + inbox | `inbox_path` |
 
-> `rank_ideas` и `readability_gate` физически лежат здесь, но в цепочку их включает ПЛАТФОРМА
-> `../cyborg/` (wiring: `collect→ideate→rank→readability→scrub→deliver`). Демо-`tick` в `run.py`
-> намеренно короткий (`collect→ideate→finish`) — это первый срез, не весь конвейер.
-
-Ядро (`store.py`) — чистая логика: потолок, статусы, две дорожки. Сети и ключей внутри нет.
-
-> NB: сам орган `collect_source` с тех пор вырос — умеет `sources` (список) и мержит источники:
-> HN·Reddit·Lobsters·GitHub·Telegram (последняя — по кредам) + локальный `files` (файлы из папок как
-> сырьё, `env["files_paths"]`; секреты/мусор отсеивает сам). Этот демо-срез намеренно пинит один
-> `source: hn`, n=8; полный мультиисточник крутит платформа `../cyborg/` (её README + пульт).
-
-## Что пока заглушка (честно)
-- **Мозг идей.** Без ключа работает `stub`-мозг (детерминированный). С ключом
-  `ideate` идёт через `env["llm"]` = ask_llm. В демо 3 реальные идеи поданы как `--seed`
-  (стенд-ин ответа ask_llm) — код-путь настоящий, помечены `мозг: llm`.
-- **Доставка.** Сейчас файл. ТГ-уведомление — следующий шаг (нужен твой бот/чат).
-- **Органы сбора/идей — локальные.** Форма органов реестра; подмена на реальные
-  извлечённые органы из `_shared/organs.json` — тоже следующий шаг.
+> Полная цепочка органов собирается в `../cyborg/wiring*.py`. Idea Engine — библиотека органов.
 
 ## Проверено
-- `tests.test_store` — ядро store (потолок, обратная тяга, разбор освобождает место, A↔B,
-  статусы, персистентность, защита id/status от подделки, переоткрытие уважает потолок, дедуп).
-- Органы пакета покрыты своими модулями: `test_collect_source` (сетевые ленты + локальный `files`:
-  честный degrade без ложного `error`, per_n-split, telegram payload, скрытие секретов из содержимого
-  файлов), `test_ideate`, `test_rank_ideas`,
-  `test_readability_gate` (балл читаемости, переписывание, ре-оценка правки). Прогон всего
-  пакета — `python ../run_tests.py` из корня kiborg (голый `pytest` врёт из-за коллизии имён).
+
+`python ../run_tests.py` — 172 теста idea_engine + 473 cyborg + 89 panel = 734 passed.
+
 - Живой end-to-end: наполнил 3 (llm) → полно → режим B (пул 17) → разобрал → долил (stub).
 - Состязательная проверка 3 скептиками (прод-безопасность GREEN, контракт YELLOW-ок).
   Нашли RED: потолок пробивался через `set_status(id,"open")` — **исправлено**:

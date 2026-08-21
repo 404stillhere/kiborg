@@ -25,8 +25,10 @@ def load_obj(path):
     """Прочитать JSON-объект с диска. Нет файла / битый / не-dict → {}. Атомарности не
     требует (чтение), но защиту от мусора даёт — все 4 модуля имели одинаковый try/except
     + isinstance(dict) guard. Возвращает dict (никогда не None и не другой тип)."""
+    import config  # stdlib-only module, project config imported locally
+
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)
     except Exception:
         return {}
@@ -40,8 +42,10 @@ def atomic_save(path, payload):
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    import config
+
+    tmp = path + config.ATOMIC_TMP_SUFFIX
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     return payload

@@ -9,6 +9,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import rejected  # noqa: E402
 
 
@@ -55,14 +56,34 @@ class TestRejected(unittest.TestCase):
 
     def test_persists_atomic(self):
         rejected.add("одна")
-        with open(rejected.PATH, encoding="utf-8") as f:
+        with open(rejected.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(any(p.endswith(".tmp") for p in os.listdir(self.tmp)))
+        self.assertFalse(any(p.endswith(config.ATOMIC_TMP_SUFFIX) for p in os.listdir(self.tmp)))
 
     def test_broken_file_falls_to_empty(self):
-        with open(rejected.PATH, "w", encoding="utf-8") as f:
+        with open(rejected.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{битый")
         self.assertEqual(rejected.recent(), [])  # не падаем
+        self.assertEqual(rejected.count(), 0)
+        self.assertEqual(rejected.load(), {"rejected": []})
+
+    def test_broken_file_add_refuses_and_preserves(self):
+        # council 2026-08-17 #3: битый rejected.json — add ОТКАЗЫВАЕТ, история отказов
+        # не перезаписывается одним новым элементом, снимается карантин-копия.
+        with open(rejected.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            f.write('{"rejected": [{"title": "ста')  # обрыв посреди JSON
+        with self.assertRaises(rejected.CorruptedError):
+            rejected.add("Новая мусорная", "почему")
+        with open(rejected.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
+            self.assertIn("ста", f.read())  # файл НЕ перезаписан
+        copies = [p for p in os.listdir(self.tmp) if ".corrupted-" in p]
+        self.assertEqual(len(copies), 1)
+
+    def test_bom_file_is_valid_not_corrupted(self):
+        # блокнотная правка с BOM — валидный файл: utf-8-sig читает, аварии нет
+        with open(rejected.PATH, "w", encoding="utf-8-sig") as f:
+            json.dump({"rejected": [{"title": "после блокнота", "why": "", "ts": "x"}]}, f, ensure_ascii=False)
+        self.assertEqual(rejected.recent(), ["после блокнота"])
 
 
 if __name__ == "__main__":

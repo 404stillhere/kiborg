@@ -31,6 +31,7 @@ try:
 except Exception:
     pass
 
+import config  # noqa: E402
 import harvest  # noqa: E402
 import seen_items  # noqa: E402
 from organs import collect_source  # noqa: E402
@@ -43,12 +44,13 @@ WHERE = {
     "lobsters": ("Lobsters", "открываю горячее"),
     "gh_trending": ("GitHub Trending", "смотрю, что в тренде"),
     "telegram": ("Telegram", "захожу в паблик"),
+    "self": ("Сам Киборг", "смотрю на собственный код"),
     "files": ("Папки-источник", "открываю файлы в папках"),
 }
-ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "files"]
+ORDER = ["hn", "reddit", "lobsters", "gh_trending", "telegram", "self", "files"]
 
-_ITEM_PAUSE = 0.28  # пауза между постами — чтобы в пульте строки шли живым потоком, не пачкой
-_STEP_PAUSE = 0.35
+_ITEM_PAUSE = config.OBSERVE_ITEM_PAUSE
+_STEP_PAUSE = config.OBSERVE_STEP_PAUSE
 
 
 def say(s="", pause=0.0):
@@ -62,7 +64,7 @@ def main():
     seen = seen_items.load()  # снимок «уже видел» ОДИН раз, БЕЗ мутации
     tg_channels = base_env.get("telegram_channels") or []
 
-    say("=" * 60)
+    say("=" * config.OBSERVE_FRAME_WIDTH)
     say("🤖  Киборг просыпается. Задача: принести свежее сырьё для идей.", _STEP_PAUSE)
     say("    Обхожу источники по одному и рассказываю, что вижу.", _STEP_PAUSE)
     say("")
@@ -78,24 +80,26 @@ def main():
         tail = ""
         if name == "telegram" and tg_channels:
             tail = f" ({', '.join(tg_channels)})"
+        elif name == "self" and base_env.get("self_path"):
+            tail = f" ({base_env['self_path']})"
         elif name == "files" and files_paths:
             tail = f" ({', '.join(files_paths)})"
         say(f"┌─ {human}{tail}")
         say(f"│  🚪 {verb}…", _STEP_PAUSE)
 
         env = dict(base_env)
-        env.update(source=name, sources=None, n=6, timeout=7)
+        env.update(source=name, sources=None, n=config.OBSERVE_SOURCE_N, timeout=config.OBSERVE_SOURCE_TIMEOUT)
         t0 = time.time()
         try:
             out = collect_source.run({}, env)
         except Exception as e:
-            say(f"│  🔴 сорвался: {type(e).__name__}: {str(e)[:80]}")
+            say(f"│  🔴 сорвался: {type(e).__name__}: {str(e)[: config.OBSERVE_ERROR_MAX_CHARS]}")
             say("│  ⏭  пропускаю\n")
             continue
         dt = time.time() - t0
 
         if out.get("degraded"):
-            why = str(out.get("degraded_reason", "нет ответа"))[:80]
+            why = str(out.get("degraded_reason", "нет ответа"))[: config.OBSERVE_DEGRADED_MAX_CHARS]
             say(f"│  🔴 не пустили / пусто — {why}")
             say("│  ⏭  пропускаю\n")
             continue
@@ -105,7 +109,7 @@ def main():
             read += 1
             # заголовок файла может содержать секрет (фильтр _files неполон) — чистим ДО показа
             # в консоли пульта (тот же класс, что защита в wiring._run_collect от утечки в промпт)
-            title = scrub_secrets.scrub_text((it.get("title") or "").strip())[:72]
+            title = scrub_secrets.scrub_text((it.get("title") or "").strip())[: config.OBSERVE_TITLE_MAX_CHARS]
             say(f"│  📖 прочитал: «{title}»", _ITEM_PAUSE)
             key = seen_items._item_key(it)
             if key is not None and key in seen:
@@ -117,10 +121,10 @@ def main():
         grand_fresh += fresh
         say(f"│  ✅ {human}: прочитал {read}, из них новых {fresh}  ({dt:.1f}с)\n")
 
-    say("└" + "─" * 59)
+    say("└" + "─" * (config.OBSERVE_FRAME_WIDTH - 1))
     say(f"🏁  Обход закончен: прочитал {grand_read} постов, новых (не видел) {grand_fresh}.")
     say("    Свежее дальше подхватил бы орган «придумай идею» (в наблюдении не зову).")
-    say("=" * 60)
+    say("=" * config.OBSERVE_FRAME_WIDTH)
 
 
 if __name__ == "__main__":

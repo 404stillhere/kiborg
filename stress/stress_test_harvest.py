@@ -35,6 +35,7 @@ import bootstrap_paths
 
 bootstrap_paths.ensure_project_paths()
 
+import config  # noqa: E402
 import harvest  # noqa: E402
 import wiring  # noqa: E402
 
@@ -47,15 +48,15 @@ def _patched_state(tmpdir):
     orig_data = harvest.DATA
 
     # paths от config (mutation для тестов)
-    harvest.STATE_FILE = os.path.join(tmpdir, "harvest_state.json")
+    harvest.STATE_FILE = os.path.join(tmpdir, config.HARVEST_STATE_FILE_NAME)
     harvest._IE_DATA = tmpdir  # inbox/state внутри tmpdir
     harvest.DATA = tmpdir  # runs.md внутри tmpdir
 
-    # seen_items тоже редиректим (он живёт в idea_engine)
+    # seen_items тоже редиректим (он живёт в cyborg)
     import seen_items
 
     orig_seen = seen_items.PATH
-    seen_items.PATH = os.path.join(tmpdir, "seen_items.json")
+    seen_items.PATH = os.path.join(tmpdir, config.SEEN_ITEMS_FILE)
 
     try:
         yield
@@ -77,9 +78,24 @@ def _patched_collect():
         """Фейковый источник — 3 items, без сети, без degradation."""
         return {
             "items": [
-                {"title": "stub-idea-1", "url": "http://example.com/1", "id": "1", "source": "stress"},
-                {"title": "stub-idea-2", "url": "http://example.com/2", "id": "2", "source": "stress"},
-                {"title": "stub-idea-3", "url": "http://example.com/3", "id": "3", "source": "stress"},
+                {
+                    "title": config.STRESS_FAKE_TITLE_TEMPLATE.format(i=1),
+                    "url": config.STRESS_FAKE_URL_TEMPLATE.format(i=1),
+                    "id": "1",
+                    "source": config.STRESS_FAKE_SOURCE,
+                },
+                {
+                    "title": config.STRESS_FAKE_TITLE_TEMPLATE.format(i=2),
+                    "url": config.STRESS_FAKE_URL_TEMPLATE.format(i=2),
+                    "id": "2",
+                    "source": config.STRESS_FAKE_SOURCE,
+                },
+                {
+                    "title": config.STRESS_FAKE_TITLE_TEMPLATE.format(i=3),
+                    "url": config.STRESS_FAKE_URL_TEMPLATE.format(i=3),
+                    "id": "3",
+                    "source": config.STRESS_FAKE_SOURCE,
+                },
             ],
             "degraded": False,
         }
@@ -113,7 +129,7 @@ def _count_runs_md_errors(tmpdir):
     if not os.path.exists(runs_path):
         return 0
     errors = 0
-    with open(runs_path, encoding="utf-8") as f:
+    with open(runs_path, encoding=config.HTTP_CHARSET_UTF8) as f:
         for line in f:
             # Признаки ошибки: слово "ошибка", "error", "Exception", "Traceback" (полагаем на русском логе)
             if any(word in line for word in ["ошибка", "error", "Exception", "Traceback", "Failed", "failed"]):
@@ -126,7 +142,7 @@ def main(n=50):
     print(f"=== Stress test: {n} прогонов harvest ===")
     print("Моки: LLM=unavailable, collect_source=3 stub items, files→tmpdir")
 
-    tmpdir = tempfile.mkdtemp(prefix="stress_")
+    tmpdir = tempfile.mkdtemp(prefix=config.STRESS_TMPDIR_PREFIX)
     print(f"Временная директория: {tmpdir}")
 
     tracemalloc.start()
@@ -187,8 +203,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Стресс-тест kiborg: N прогонов harvest")
-    parser.add_argument("n", nargs="?", type=int, default=50, help="Число прогонов (по умолчанию 50)")
+    parser.add_argument(
+        "n",
+        nargs="?",
+        type=int,
+        default=config.STRESS_DEFAULT_ITERATIONS,
+        help="Число прогонов (по умолчанию {config.STRESS_DEFAULT_ITERATIONS})",
+    )
     args = parser.parse_args()
 
-    n = max(1, min(args.n, 1000))  # ceiling 1000
+    n = max(1, min(args.n, config.STRESS_MAX_ITERATIONS))  # hard ceiling
     sys.exit(main(n))

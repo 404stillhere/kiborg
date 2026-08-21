@@ -13,6 +13,8 @@ harvest._load_darbot_tg_creds, harvest._KIBORG_TG_SESSION) долетали до
 
 import os
 
+import config
+
 
 def _active_sources():
     """Источники прогона: включённые в пульте ленты (feeds) + 'files', ЕСЛИ заданы папки
@@ -34,7 +36,7 @@ def _load_darbot_tg_creds():
     if not os.path.exists(darbot_env):
         return None, None
     vals = {}
-    with open(darbot_env, encoding="utf-8") as f:
+    with open(darbot_env, encoding=config.HTTP_CHARSET_UTF8) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -42,6 +44,27 @@ def _load_darbot_tg_creds():
             k, _, v = line.partition("=")
             vals[k.strip()] = v.strip().strip('"').strip("'")
     return vals.get("TG_API_ID"), vals.get("TG_API_HASH")
+
+
+def _load_kiborg_reddit_creds():
+    """Читает REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET из llm_keys.env (read-only; файл в
+    .gitignore, пишет его только юзер). App-only OAuth reddit: публичный .json блокируется
+    анти-ботом (403 Blocked). Путь перекрывается KIBORG_LLM_KEYS — как в keychain, но без
+    кэша при импорте (читаем на каждом вызове — тестируемо и подхватывает правку без
+    перезапуска). Нет файла/ключей -> (None, None), _reddit уходит на публичный URL и
+    мягко деградирует, как раньше."""
+    path = os.environ.get(config.LLM_KEYS_ENV, config.DEFAULT_LLM_KEYS_FILE)
+    if not path or not os.path.exists(path):
+        return None, None
+    vals = {}
+    with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            vals[k.strip()] = v.strip().strip('"').strip("'")
+    return vals.get("REDDIT_CLIENT_ID"), vals.get("REDDIT_CLIENT_SECRET")
 
 
 def _source_env():
@@ -52,7 +75,35 @@ def _source_env():
     import harvest
 
     active = _active_sources()
-    env = {"n": harvest.SOURCE_N, "sources": active}
+    # Параметры генерации из пульта (genparams.json). Все 5 — точка настройки юзера: сколько
+    # идей генерить (gen_k), сколько оставлять после совета (rank_keep), сколько сырья собирать
+    # (source_n), порог читаемости и мин.балл совета. Долетают до wiring_ideate/wiring_council
+    # через env.get(...). source_n сюда вшит намеренно (вместо harvest.SOURCE_N из config) —
+    # теперь юзер правит его в пульте, а не правит код. config.SOURCE_N=105 остаётся как дефолт.
+    gp = harvest.genparams.load()
+    env = {
+        "n": gp["source_n"],  # collect_source делит бюджет между источниками
+        "sources": active,
+        "gen_k": gp["gen_k"],  # wiring_ideate._run_ideate
+        "rank_keep": gp["rank_keep"],  # wiring_council._run_rank
+        "read_min_score": gp["read_min_score"],  # wiring_council._run_readability
+        "keep_min_score": gp["keep_min_score"],  # wiring_council._rank_by_council
+    }
+    # gh_enrich: description из api.github.com превращает слепой «owner/repo» в осмысленную
+    # карточку. Без токена GitHub даёт 60 req/h, а автоцикл разрешён от 5 минут: максимум 5
+    # enrich-вызовов за прогон удерживает потолок. Остальные репо остаются обычными title.
+    if "gh_trending" in active:
+        env["gh_enrich"] = True
+        env["gh_enrich_limit"] = config.GH_TRENDING_ENRICH_LIMIT
+    # hn_show_mix: половина бюджета HN из showstories (Show HN — реальные проекты), половина из
+    # topstories (тренды). Топ HN засорён новостями/некрологами; Show HN — чистое проектное топливо.
+    if "hn" in active:
+        env["hn_show_mix"] = config.HN_SHOW_MIX_DEFAULT
+    # Встроенный источник «Сам Киборг» не зависит от пользовательских папок:
+    # он всегда смотрит только на корень этого проекта. Это отдельное сырьё,
+    # поэтому обычные ленты продолжают работать и смешиваться с ним.
+    if "self" in active:
+        env["self_path"] = config.PROJECT_ROOT
     # Телеграм-креды/каналы — ТОЛЬКО когда telegram реально включён (тумблер в пульте). Иначе
     # env тащил telegram_session даже при выключенной ленте → _collect_locked брал tg-замок (130с
     # таймаут) на прогон, где телеги нет: files-only прогон вис на замке. Нет telegram в active →
@@ -64,7 +115,15 @@ def _source_env():
             env["telegram_api_id"] = api_id
             env["telegram_api_hash"] = api_hash
             env["telegram_session"] = harvest._KIBORG_TG_SESSION
-            env["telegram_timeout"] = 90  # 21 канал × 5 постов — глубже фетч, шире таймаут (время не важно)
+            env["telegram_timeout"] = config.TELEGRAM_FETCH_TIMEOUT  # 21 канал × 5 постов — глубже фетч, шире таймаут
+    # Reddit OAuth-креды — тоже только при включённой ленте (как telegram): пустой env не
+    # должен тащить лишнее в прогоны без reddit. Нет кредов -> ключей нет -> _reddit ходит
+    # публичным путём (который сейчас 403) и честно деградирует в per-source error.
+    if "reddit" in active:
+        cid, sec = harvest._load_kiborg_reddit_creds()
+        if cid and sec:
+            env["reddit_client_id"] = cid
+            env["reddit_client_secret"] = sec
     if harvest.ask_llm.available():
         env["content_llm"] = harvest.ask_llm.ask
     d = harvest.direction.current()
@@ -92,7 +151,7 @@ def wire_council(env):
     chain = harvest.keychain.build_chain()
     if chain:
         env["llm_chain"] = chain
-    if not os.environ.get("KIBORG_SLEEP_ORCHESTRA"):
+    if not os.environ.get(config.SLEEP_ORCHESTRA_ENV):
         orch = harvest.keychain.orchestra_context()
         if orch:
             env["orchestra"] = orch

@@ -4,6 +4,10 @@
     {"enabled": false, "weights": {"ask_llm": 0.39, "orchestra": 0.20, "rank_ideas": 0.41},
      "updated_after": 0}
 
+updated_after = число уже просмотренных JSON-объектов append-only журнала triage.
+Feedback Cortex использует его как курсор, чтобы старые решения не обучали веса повторно;
+порог активации отдельно считает только настоящие triage-действия.
+
 По умолчанию enabled=false (канон mind.WEIGHTS неизменен, scoped rebind в wiring_council
 НЕ активируется). Веса = DEFAULT_WEIGHTS (= mind.WEIGHTS на момент написания). Когда
 Feedback Cortex (B4) накопит ≥20 триажей → processor обновит веса и поставит enabled=true.
@@ -18,17 +22,29 @@ is_enabled(), и подменяет mind.WEIGHTS в try/finally вокруг del
 обёртку → WEIGHTS остаётся каноническим).
 """
 
+import math
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "council_weights.json")
+PATH = os.path.join(DATA, config.COUNCIL_WEIGHTS_FILE)
 
-ALL_ADVISORS = ["rank_ideas", "ask_llm", "orchestra"]
-# Канон = mind.WEIGHTS (mind.py:33-37). Копия здесь — чтобы не плодить зависимость от
-# замороженного модуля в обёртке. Если mind.WEIGHTS когда-то поменяют — синхронизировать.
-DEFAULT_WEIGHTS = {"ask_llm": 0.39, "orchestra": 0.20, "rank_ideas": 0.41}
+ALL_ADVISORS = list(config.ALL_ADVISORS)
+# Канон = config.ADVISOR_WEIGHTS (mind.py берёт оттуда же). Копия здесь — чтобы не плодить
+# зависимость от замороженного модуля в обёртке. Если веса поменяют — править в config.py.
+DEFAULT_WEIGHTS = dict(config.ADVISOR_WEIGHTS)
+
+
+def _normalize_updated_after(value):
+    """Безопасный неотрицательный курсор журнала; ручная порча конфига → 0."""
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def load():
@@ -40,15 +56,24 @@ def load():
     weights = d.get("weights")
     if not isinstance(weights, dict):
         weights = dict(DEFAULT_WEIGHTS)
-    return {"enabled": enabled, "weights": _merge_defaults(weights), "updated_after": d.get("updated_after", 0)}
+    return {
+        "enabled": enabled,
+        "weights": _merge_defaults(weights),
+        "updated_after": _normalize_updated_after(d.get("updated_after", 0)),
+    }
 
 
 def _merge_defaults(weights):
-    """Слить partial weights с DEFAULT: только известные советники, неизвестные — дефолт."""
+    """Слить partial weights с DEFAULT: только известные и безопасные веса.
+
+    Конфиг можно испортить вручную. ``bool`` — подкласс ``int``, а JSON-декодер Python
+    принимает ``NaN``/``Infinity``; такие значения нельзя передавать в scoped rebind
+    ``mind.WEIGHTS``, иначе подсчёт всего совета станет нечисловым.
+    """
     out = {}
     for adv in ALL_ADVISORS:
         v = weights.get(adv)
-        if isinstance(v, (int, float)):
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(float(v)) and v > 0:
             out[adv] = v
         else:
             out[adv] = DEFAULT_WEIGHTS[adv]
@@ -78,7 +103,7 @@ def save(obj):
     payload = {
         "enabled": enabled,
         "weights": _merge_defaults(weights),
-        "updated_after": obj.get("updated_after", 0),
+        "updated_after": _normalize_updated_after(obj.get("updated_after", 0)),
     }
     _panel_config.atomic_save(PATH, payload)
     return payload

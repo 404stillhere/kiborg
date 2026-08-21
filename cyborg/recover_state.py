@@ -27,11 +27,13 @@ import json
 import os
 import shutil
 
+import config
+
 
 def _is_valid_json(path):
     """True если файл существует и json.load проходит. Иначе False."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)
         return True
     except (OSError, ValueError):
@@ -49,7 +51,7 @@ def _find_latest_valid_backup(backups_dir):
     except OSError:
         return None
     for name in sorted(names, reverse=True):  # свежие первыми
-        candidate = os.path.join(backups_dir, name, "state.json")
+        candidate = os.path.join(backups_dir, name, config.IE_STATE_FILE)
         if _is_valid_json(candidate):
             return name
     return None
@@ -89,13 +91,13 @@ def auto_recover_state_if_needed(state_path, backups_dir, max_backups=None):
         print(f"[recover] {err} — восстановление невозможно, прогон продолжится как есть")
         return {"recovered": False, "backup_ts": None, "error": err}
 
-    src = os.path.join(backups_dir, backup_ts, "state.json")
+    src = os.path.join(backups_dir, backup_ts, config.IE_STATE_FILE)
 
     # Сохранить повреждённый файл для разбора (если он существует — при отсутствии
     # сохранять нечего). Имя со таймстемпом, чтобы не затирать предыдущие дампы.
-    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    ts = datetime.datetime.now().strftime(config.BACKUP_TS_FMT)
     if os.path.exists(state_path):
-        corrupted_copy = f"{state_path}.corrupted-{ts}"
+        corrupted_copy = f"{state_path}{config.STATE_CORRUPTED_PREFIX}{ts}"
         try:
             shutil.copy2(state_path, corrupted_copy)
             print(f"[recover] повреждённый state.json сохранён для разбора: {corrupted_copy}")

@@ -22,6 +22,7 @@ sys.path.insert(0, BASE)
 sys.path.insert(0, os.path.join(os.path.dirname(BASE), "idea_engine"))
 
 import deliver  # noqa: E402
+import notify  # noqa: E402
 
 
 class TestDeliverStubFilter(unittest.TestCase):
@@ -36,10 +37,18 @@ class TestDeliverStubFilter(unittest.TestCase):
             _write_inbox=lambda store: None,
         )
         self._orig = deliver._load_ie_run
+        self._orig_notify = notify._send
+        self.notify_calls = []
+        notify._send = lambda token, chat_id, text: self.notify_calls.append((token, chat_id, text))
+        os.environ["KIBORG_NOTIFY_TOKEN"] = "token"
+        os.environ["KIBORG_NOTIFY_CHAT_ID"] = "123"
         deliver._load_ie_run = lambda: fake_ie
 
     def tearDown(self):
         deliver._load_ie_run = self._orig
+        notify._send = self._orig_notify
+        os.environ.pop("KIBORG_NOTIFY_TOKEN", None)
+        os.environ.pop("KIBORG_NOTIFY_CHAT_ID", None)
 
     def _open_titles(self):
         from store import Store
@@ -72,6 +81,8 @@ class TestDeliverStubFilter(unittest.TestCase):
         self.assertEqual(out["dropped_stub"], 0)
         self.assertFalse(out["brain_down"])  # нет ключа → это штатный stub-режим, не отказ мозга
         self.assertEqual(len(self._open_titles()), 2)
+        self.assertEqual(len(self.notify_calls), 1)
+        self.assertIn("Доставлено идей: 2", self.notify_calls[0][2])
 
     def test_real_ideas_pass_in_llm_mode(self):
         # живые идеи (brain='llm') при живом ключе доставляются

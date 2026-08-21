@@ -9,14 +9,19 @@
 
 import json
 import os
+import signal
 import sys
 import tempfile
+import threading
+import types
 import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # panel/
 sys.path.insert(0, BASE)
 
 import serve  # noqa: E402
+
+from cyborg import config  # noqa: E402
 
 
 class TestReadRuns(unittest.TestCase):
@@ -31,7 +36,7 @@ class TestReadRuns(unittest.TestCase):
 
     def test_parses_real_line(self):
         p = os.path.join(self.tmp, "data", "runs.md")
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("# журнал\n")
             f.write(
                 "- [2026-07-11 11:52:34] «приноси свежие идеи» → " "collect_source -> ideate -> deliver | delivered=3\n"
@@ -49,7 +54,7 @@ class TestReadRuns(unittest.TestCase):
         # незакоммиченная правка: _read_runs парсит хвост « | ⚠ <flag>» в поле degraded
         # (то, что harvest._log пишет через _degrade_note → пульт показывает деградацию).
         p = os.path.join(self.tmp, "data", "runs.md")
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(
                 "- [2026-07-11 11:52:34] «приноси свежие идеи» → "
                 "collect_source -> deliver | delivered=1 | ⚠ stub-отсеяно=2 · дубликатов=1\n"
@@ -64,7 +69,7 @@ class TestReadRuns(unittest.TestCase):
         # оба хвоста в ОДНОЙ строке. Прод-порядок (harvest._log:317-321): совет ПЕРВЫМ,
         # потом ⚠. Парсер должен корректно разделить оба, не склеив совет в degraded.
         p = os.path.join(self.tmp, "data", "runs.md")
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write(
                 "- [2026-07-11 11:52:34] «приноси свежие идеи» → ideate | ideas=2 "
                 "| совет: оркестр ПРОСНУЛСЯ | ⚠ источник в фолбэке\n"
@@ -99,7 +104,7 @@ class TestReadSourceStatus(unittest.TestCase):
                 "reddit": {"items": 0, "ok": False, "error": "reddit: 403"},
             },
         }
-        with open(p, "w", encoding="utf-8") as f:
+        with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump(payload, f)
         r = serve._read_source_status()
         self.assertFalse(r["sources"]["reddit"]["ok"])
@@ -108,6 +113,55 @@ class TestReadSourceStatus(unittest.TestCase):
     def test_missing_file_none(self):
         # файла ещё нет (harvest не гоняли) -> None, пульт просто не рисует строку
         self.assertIsNone(serve._read_source_status())
+
+
+class TestReadInbox(unittest.TestCase):
+    """Пульт читает все три исхода триажа отдельными списками."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_inbox_")
+        self.data = os.path.join(self.tmp, "data")
+        os.makedirs(self.data)
+        self._saved = {
+            "idea": serve.IDEA,
+            "state": serve.config.IE_STATE_JSON,
+            "taken": serve.triage_store.TAKEN_PATH,
+            "later": serve.triage_store.LATER_PATH,
+            "rejected_path": serve.rejected.PATH,
+            "rejected_data": serve.rejected.DATA,
+        }
+        serve.IDEA = self.tmp
+        # state.json читается по config.IE_STATE_JSON (НЕ по IDEA): без подмены тест
+        # молча читал БОЕВОЙ state на машине разработчика и падал на CI, где его нет
+        serve.config.IE_STATE_JSON = os.path.join(self.data, "state.json")
+        serve.triage_store.TAKEN_PATH = os.path.join(self.data, "taken.json")
+        serve.triage_store.LATER_PATH = os.path.join(self.data, "later.json")
+        serve.rejected.DATA = self.data
+        serve.rejected.PATH = os.path.join(self.data, "rejected.json")
+
+    def tearDown(self):
+        serve.IDEA = self._saved["idea"]
+        serve.config.IE_STATE_JSON = self._saved["state"]
+        serve.triage_store.TAKEN_PATH = self._saved["taken"]
+        serve.triage_store.LATER_PATH = self._saved["later"]
+        serve.rejected.PATH = self._saved["rejected_path"]
+        serve.rejected.DATA = self._saved["rejected_data"]
+
+    def test_reads_taken_later_and_rejected_lists(self):
+        with open(os.path.join(self.data, "state.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            json.dump({"ideas": [{"id": 1, "status": "open"}]}, f)
+        with open(serve.triage_store.TAKEN_PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            json.dump({"taken": [{"id": 2, "title": "Взятая"}]}, f)
+        with open(serve.triage_store.LATER_PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            json.dump({"later": [{"id": 3, "title": "Позже"}]}, f)
+        with open(serve.rejected.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            json.dump({"rejected": [{"title": "Отклонённая", "ts": "2026-07-25 12:00:00"}]}, f)
+
+        inbox = serve._read_inbox()
+
+        self.assertEqual(inbox["taken"][0]["title"], "Взятая")
+        self.assertEqual(inbox["later"][0]["title"], "Позже")
+        self.assertEqual(inbox["rejected"][0]["title"], "Отклонённая")
 
 
 class TestSetIdeaGate(unittest.TestCase):
@@ -135,6 +189,33 @@ class TestSetIdeaGate(unittest.TestCase):
         finally:
             serve.subprocess.run = orig_sub
             serve.RUN["running"] = orig_running
+
+    def test_triage_holds_lock_through_subprocess(self):
+        # Гонка из ревью: busy-проверка брала _LOCK и отпускала ДО subprocess —
+        # в этом окне мог стартовать прогон (или второй триаж) и параллельно
+        # мутировать state.json. Фикс: _LOCK держится весь subprocess — сервер
+        # потоковый, конкурентные хендлеры просто подождут ~1с.
+        orig_sub = serve.subprocess.run
+        seen = {}
+
+        def _fake_sub(*a, **k):
+            # acquire(False) == True значит «лок был свободен» — окно гонки открыто.
+            free = serve._LOCK.acquire(blocking=False)
+            if free:
+                serve._LOCK.release()
+            seen["lock_free_during_subprocess"] = free
+            return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+        serve.subprocess.run = _fake_sub
+        try:
+            r = serve._set_idea(1, "trash")
+            self.assertTrue(r["ok"])
+            self.assertFalse(
+                seen.get("lock_free_during_subprocess"),
+                "subprocess триажа работал с отпущенным _LOCK — окно гонки открыто",
+            )
+        finally:
+            serve.subprocess.run = orig_sub
 
 
 class TestStopRun(unittest.TestCase):
@@ -185,30 +266,111 @@ class TestStopRun(unittest.TestCase):
         self.assertFalse(serve._stop_run())
 
 
+class TestStartFuse(unittest.TestCase):
+    """Кнопка «🧬 Ультра-идея»: запускает fuse_mode.py через общий _start_proc.
+
+    Ультра-режим живёт в том же RUN-консоли/watchdog/стопе, что и обычный прогон —
+    отдельного состояния нет, поэтому тестируем только аргументы запуска и busy-гейт.
+    """
+
+    def setUp(self):
+        self._orig_run = dict(serve.RUN)
+        self._orig_proc = dict(serve._PROC)
+
+    def tearDown(self):
+        serve.RUN.clear()
+        serve.RUN.update(self._orig_run)
+        serve._PROC.clear()
+        serve._PROC.update(self._orig_proc)
+
+    def test_fuse_runs_fuse_mode_script(self):
+        # аргументы дошли до _start_proc как есть: python fuse_mode.py (без run.py)
+        seen = {}
+
+        def _fake_start(goal, args):
+            seen["goal"] = goal
+            seen["args"] = args
+            return True
+
+        orig = serve._start_proc
+        serve._start_proc = _fake_start
+        try:
+            self.assertTrue(serve._start_fuse())
+        finally:
+            serve._start_proc = orig
+        self.assertEqual(seen["args"], ["fuse_mode.py"])
+        self.assertIn("ультра", seen["goal"])
+
+    def test_fuse_rejected_while_busy(self):
+        # идёт другой прогон → Popen не зовётся вовсе (гейт в _start_proc до потока)
+        def _boom(*a, **k):
+            raise AssertionError("Popen не должен вызываться при занятом прогоне")
+
+        serve.RUN.update(running=True)
+        orig = serve.subprocess.Popen
+        serve.subprocess.Popen = _boom
+        try:
+            self.assertFalse(serve._start_fuse())
+        finally:
+            serve.subprocess.Popen = orig
+
+
 class TestGracefulShutdown(unittest.TestCase):
-    """Graceful shutdown: signal модуль импортирован, _shutdown/_stop_run вызываемы."""
+    """Graceful shutdown: сигналы зарегистрированы, srv.shutdown вызывается ИЗ ОТДЕЛЬНОГО
+    ПОТОКА (прямой вызов из сигнального хендлера главного потока = дедлок socketserver,
+    council 2026-08-17 #6). Поведенческий тест — вместо старой проверки слов в исходнике."""
 
     def test_signal_module_imported(self):
         """signal модуль импортирован (зависимость для SIGTERM/SIGINT)."""
         import signal  # noqa: F401
 
-        # Если этот тест упал — signal не доступен (неприменимо для stdlib, но проверка что импорт есть)
         self.assertTrue(hasattr(signal, "SIGTERM"))
         self.assertTrue(hasattr(signal, "SIGINT"))
 
-    def test_shutdown_function_exists(self):
-        """В serve.py есть _shutdown функция (устанавливается как handler в main)."""
-        # Не можем запустить main() в тесте (HTTP сервер блокирует), но проверяем что функция существует
-        # и она вызывает _stop_run (что проверено в TestStopRun)
+    def test_main_registers_signal_handlers(self):
         import inspect
 
-        # Проверяем что main существует и содержит signal.signal вызовы
         self.assertTrue(callable(serve.main))
         source = inspect.getsource(serve.main)
         self.assertIn("signal.signal", source)
-        self.assertIn("SIGTERM", source)
-        self.assertIn("SIGINT", source)
-        self.assertIn("srv.shutdown", source)
+        self.assertIn("_make_shutdown_handler", source)
+
+    def test_shutdown_calls_srv_shutdown_from_another_thread(self):
+        # ЯДРО регрессии: хендлер НЕ должен звать srv.shutdown() синхронно — иначе
+        # зависает намертво (serve_forever ждёт хендлер, хендлер ждёт serve_forever).
+        called = threading.Event()
+        seen = {}
+
+        class FakeSrv:
+            def shutdown(self):
+                seen["thread"] = threading.current_thread().name
+                called.set()
+
+        stopped = []
+        handler = serve._make_shutdown_handler(FakeSrv(), lambda: stopped.append(True))
+        handler(signal.SIGINT, None)  # синхронный вызов, как его вызвал бы ОС-сигнал
+        self.assertTrue(called.wait(timeout=5), "srv.shutdown не вызвался (поток не стартовал?)")
+        self.assertEqual(stopped, [True])  # прогон остановлен ДО shutdown
+        self.assertNotEqual(seen["thread"], threading.current_thread().name)  # из ДРУГОГО потока
+
+    def test_shutdown_returns_fast_even_if_server_hangs(self):
+        # поведенческая суть дедлока: хендлер обязан ВЕРНУТЬСЯ быстро, даже если
+        # shutdown блокируется (реальный serve_forever не может завершиться, пока
+        # хендлер сидит в его же стеке). Прямой вызов тут завис бы навсегда.
+        import time
+
+        called = threading.Event()
+
+        class HangingSrv:
+            def shutdown(self):
+                called.set()
+                time.sleep(30)  # "serve_forever не может выйти" — блокируется надолго
+
+        handler = serve._make_shutdown_handler(HangingSrv(), lambda: None)
+        t0 = time.monotonic()
+        handler(signal.SIGTERM, None)
+        self.assertLess(time.monotonic() - t0, 5)  # хендлер не ждал зависающий shutdown
+        self.assertTrue(called.wait(timeout=5))
 
 
 class TestAutoConfig(unittest.TestCase):
@@ -238,19 +400,172 @@ class TestAutoConfig(unittest.TestCase):
         self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})  # нет файла -> off/30
 
     def test_load_defaults_on_corrupt_json(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             fh.write("{битый json")
         self.assertEqual(serve._load_auto(), {"on": False, "interval_min": 30})
 
     def test_load_clamps_stored_out_of_range(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             json.dump({"on": True, "interval_min": 9999}, fh)
         self.assertEqual(serve._load_auto()["interval_min"], serve._AUTO_MAX)  # clamp и на чтении
 
     def test_save_is_atomic_no_tmp_leftover(self):
         serve._save_auto(False, 45)
-        self.assertFalse(os.path.exists(self.f + ".tmp"))  # os.replace убрал tmp
+        self.assertFalse(os.path.exists(self.f + config.ATOMIC_TMP_SUFFIX))  # os.replace убрал tmp
         self.assertTrue(os.path.exists(self.f))
+
+
+class TestDefaultModeConfig(unittest.TestCase):
+    """_load_mode/_save_mode — дефолт-режим авто-петли (кружки у кнопок пульта):
+    чужой ключ/битый файл → bring (прежнее поведение авто), атомарная запись."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_mode_")
+        self.f = os.path.join(self.tmp, "mode.json")
+        self._orig = serve.MODE_FILE
+        serve.MODE_FILE = self.f
+
+    def tearDown(self):
+        serve.MODE_FILE = self._orig
+
+    def test_load_defaults_to_bring_when_no_file(self):
+        self.assertEqual(serve._load_mode(), "bring")  # нет файла -> прежний автосбор
+
+    def test_load_defaults_on_corrupt_json(self):
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
+            fh.write("{битый json")
+        self.assertEqual(serve._load_mode(), "bring")
+
+    def test_load_defaults_on_foreign_mode(self):
+        # oracle — режим пульта, но НЕ авто-режим (нужен путь к проекту) -> игнор
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
+            json.dump({"mode": "oracle"}, fh)
+        self.assertEqual(serve._load_mode(), "bring")
+
+    def test_save_load_roundtrip(self):
+        for m in serve.AUTO_MODES:  # каждый авто-режим сохраняется и читается
+            self.assertEqual(serve._save_mode(m), m)
+            self.assertEqual(serve._load_mode(), m)
+
+    def test_save_rejects_foreign_mode(self):
+        self.assertIsNone(serve._save_mode("oracle"))  # не авто-режим
+        self.assertIsNone(serve._save_mode(""))
+        self.assertIsNone(serve._save_mode(None))
+        self.assertFalse(os.path.exists(self.f))  # ничего не записал
+
+    def test_save_is_atomic_no_tmp_leftover(self):
+        serve._save_mode("ultra")
+        self.assertFalse(os.path.exists(self.f + config.ATOMIC_TMP_SUFFIX))
+        self.assertTrue(os.path.exists(self.f))
+
+
+class TestAutoTickDefaultMode(unittest.TestCase):
+    """_auto_tick запускает СКРИПТ ДЕФОЛТНОГО режима (кружок у кнопки), а не хардкод harvest:
+    ultra -> fuse_mode.py, finish -> run.py с целью «доделать», bring -> harvest.py (как было)."""
+
+    def setUp(self):
+        self._orig = (dict(serve.RUN), dict(serve._AUTO), serve._load_auto, serve._load_mode, serve._start_proc)
+        self.started = []
+        serve._start_proc = lambda *a, **k: (self.started.append(a) or True)
+
+    def tearDown(self):
+        run, auto, load_auto, load_mode, start = self._orig
+        serve.RUN.clear()
+        serve.RUN.update(run)
+        serve._AUTO.clear()
+        serve._AUTO.update(auto)
+        serve._load_auto = load_auto
+        serve._load_mode = load_mode
+        serve._start_proc = start
+
+    def _ready(self, mode):
+        serve._load_auto = lambda: {"on": True, "interval_min": 30}
+        serve._load_mode = lambda: mode
+        serve._AUTO["last"] = 0.0  # давно → пора
+        serve.RUN["running"] = False
+
+    def test_ultra_default_launches_fuse_mode(self):
+        self._ready("ultra")
+        self.assertTrue(serve._auto_tick())
+        # --auto: авто-ультра идёт через гейт «пул материалов не менялся → пропуск»
+        self.assertEqual(self.started, [(serve.AUTO_MODES["ultra"][0], ["fuse_mode.py", "--auto"])])
+
+    def test_finish_default_launches_run_py_with_goal(self):
+        self._ready("finish")
+        self.assertTrue(serve._auto_tick())
+        goal, args = self.started[0]
+        self.assertEqual(args, ["run.py", "доделать существующие проекты"])
+        self.assertIn("додел", goal)
+
+    def test_bring_default_launches_harvest_as_before(self):
+        self._ready("bring")
+        self.assertTrue(serve._auto_tick())
+        self.assertEqual(self.started, [("автосбор идей (по расписанию)", ["harvest.py", "1"])])
+
+
+class TestGenparamsInState(unittest.TestCase):
+    """Параметры генерации (gen_k/rank_keep/source_n/пороги) — проброс в _api_state и
+    POST/GET /api/genparams. Логика save/reset/clamp покрыта в cyborg/tests/test_genparams.py,
+    здесь — только что serve отдаёт поле genparams в /api/state корректной структуры и что
+    запись через genparams доходит. Раньше параметров не было (хардкод в wiring) — добавлено
+    при выносе в UI drawer «Настройки»."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="serve_gp_")
+        self._orig = serve.genparams.PATH
+        serve.genparams.PATH = os.path.join(self.tmp, "genparams.json")
+
+    def tearDown(self):
+        serve.genparams.PATH = self._orig
+
+    def test_api_state_contains_genparams(self):
+        # _api_state должно нести genparams с meta-полями для UI (min/max/default/value/is_float)
+        st = serve._api_state()
+        self.assertIn("genparams", st)
+        gp = st["genparams"]
+        expected_keys = {"gen_k", "rank_keep", "source_n", "read_min_score", "keep_min_score"}
+        self.assertEqual(set(gp.keys()), expected_keys)
+        for spec in gp.values():
+            for field in ("min", "max", "default", "is_float", "value"):
+                self.assertIn(field, spec)
+
+    def test_genparams_defaults_when_no_file(self):
+        # нет файла → /api/state отдаёт дефолты (юзер ни разу не открывал настройки)
+        st = serve._api_state()
+        gp = st["genparams"]
+        self.assertEqual(gp["gen_k"]["value"], 8)
+        self.assertEqual(gp["source_n"]["value"], 105)
+
+    def test_save_via_genparams_reflects_in_state(self):
+        # roundtrip: genparams.save → следующий _api_state видит новое значение
+        serve.genparams.save({"gen_k": 12, "rank_keep": 5})
+        gp = serve._api_state()["genparams"]
+        self.assertEqual(gp["gen_k"]["value"], 12)
+        self.assertEqual(gp["rank_keep"]["value"], 5)
+        # не тронутые ключи остались дефолтными
+        self.assertEqual(gp["source_n"]["value"], 105)
+
+    def test_reset_reflects_in_state(self):
+        # кнопка «↺ сброс» — reset() возвращает дефолты, видимые в /api/state
+        serve.genparams.save({"gen_k": 16, "rank_keep": 8})
+        serve.genparams.reset()
+        gp = serve._api_state()["genparams"]
+        self.assertEqual(gp["gen_k"]["value"], 8)
+        self.assertEqual(gp["rank_keep"]["value"], 3)
+
+    def test_reset_actually_persists_to_disk(self):
+        # регрессия: роут POST /api/genparams {reset:true} должен ЗВАТЬ genparams.reset(),
+        # а не просто возвращать meta() (которая читает несброшенный файл). Симптом до фикса:
+        # юзер жмёт «сброс», UI показывает дефолты на секунду, но файл не перезаписан →
+        # следующий poll /api/state (5сек) возвращает старые значения. Проверяем что reset
+        # действительно записал дефолты на диск.
+        serve.genparams.save({"gen_k": 16, "source_n": 300})
+        serve.genparams.reset()
+        # файл на диске должен содержать дефолты (не 16/300)
+        with open(serve.genparams.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
+            on_disk = json.load(f)
+        self.assertEqual(on_disk["gen_k"], 8)
+        self.assertEqual(on_disk["source_n"], 105)
 
 
 class TestAutoTick(unittest.TestCase):
@@ -320,12 +635,12 @@ class TestReadLab(unittest.TestCase):
         self.assertEqual(serve._read_lab(), {"exists": False, "locked": False, "features": [], "needs_manual": 0})
 
     def test_corrupt_json_safe(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             fh.write("{битый json")
         self.assertFalse(serve._read_lab()["exists"])  # битый роутер не роняет /api/state
 
     def test_ready_unreviewed_is_locked(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             json.dump(
                 {
                     "features": [
@@ -340,7 +655,7 @@ class TestReadLab(unittest.TestCase):
         self.assertEqual(lab["features"][0]["slug"], "f1")
 
     def test_reviewed_not_locked(self):
-        with open(self.f, "w", encoding="utf-8") as fh:
+        with open(self.f, "w", encoding=config.HTTP_CHARSET_UTF8) as fh:
             json.dump(
                 {"features": [{"slug": "f1", "status": "ready", "reviewed": True}], "needs_manual": ["x", "y"]}, fh
             )
@@ -401,27 +716,33 @@ class TestHealth(unittest.TestCase):
         self._orig_state = serve.config.IE_STATE_JSON
         self._orig_cyborg = serve.CYBORG  # _read_source_status читает {CYBORG}/data/source_status.json
         self._orig_recent = serve.lock_monitor.recent_timeouts
+        self._orig_feeds_enabled = serve.feeds.enabled
+        self._orig_folders_current = serve.folders.current
         self.tmp = tempfile.mkdtemp(prefix="serve_h_")
         serve.CYBORG = self.tmp
         os.makedirs(os.path.join(self.tmp, "data"), exist_ok=True)
         # state.json по умолчанию валиден — тесты, которым нужен сбой, патчат сами
         self._state_path = os.path.join(self.tmp, "state.json")
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"ideas": [], "seen": []}, f)
         serve.config.IE_STATE_JSON = self._state_path
         serve.ask_llm.available = lambda: True
         # По умолчанию таймаутов state_lock не было — пульт должен показывать 0.
         serve.lock_monitor.recent_timeouts = lambda minutes=60: 0
+        serve.feeds.enabled = lambda: ["telegram", "reddit"]
+        serve.folders.current = lambda: []
 
     def tearDown(self):
         serve.ask_llm.available = self._orig_avail
         serve.config.IE_STATE_JSON = self._orig_state
         serve.CYBORG = self._orig_cyborg
         serve.lock_monitor.recent_timeouts = self._orig_recent
+        serve.feeds.enabled = self._orig_feeds_enabled
+        serve.folders.current = self._orig_folders_current
 
     def _write_source_status(self, sources_dict):
         """Положить source_status.json в {CYBORG}/data/ для теста источников."""
-        with open(os.path.join(self.tmp, "data", "source_status.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(self.tmp, "data", "source_status.json"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"sources": sources_dict}, f)
 
     def test_all_healthy(self):
@@ -440,7 +761,7 @@ class TestHealth(unittest.TestCase):
         self.assertFalse(h["llm"]["available"])
 
     def test_state_json_corrupted(self):
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ это не json !!!")
         h = serve._health()
         self.assertFalse(h["ok"])
@@ -459,6 +780,20 @@ class TestHealth(unittest.TestCase):
         self.assertFalse(h["ok"])
         self.assertIn("reddit", h["sources"]["down"])
         self.assertNotIn("telegram", h["sources"]["down"])
+
+    def test_disabled_source_error_does_not_make_health_red(self):
+        # source_status хранит прошлый обход. После выключения ленты её старая ошибка
+        # остаётся в файле, но не должна делать /api/health красным.
+        serve.feeds.enabled = lambda: ["hn"]
+        self._write_source_status(
+            {
+                "hn": {"ok": True, "error": None},
+                "reddit": {"ok": False, "error": "HTTP Error 403: Blocked"},
+            }
+        )
+        h = serve._health()
+        self.assertTrue(h["ok"])
+        self.assertEqual(h["sources"]["down"], [])
 
     def test_no_source_status_file_is_ok(self):
         # Нет source_status.json (ещё не гоняли) → sources.down пуст, ok=True (если LLM+state ок)
@@ -517,7 +852,7 @@ class TestPurgeLowScore(unittest.TestCase):
         serve.RUN.update(self._orig_run)
 
     def _write_state(self, ideas):
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"ideas": ideas}, f)
 
     def test_purges_only_open_below_threshold(self):
@@ -582,7 +917,7 @@ class TestPurgeLowScore(unittest.TestCase):
 
     def test_state_corrupt_returns_error(self):
         # state.json битый → отказ с причиной, без падения
-        with open(self._state_path, "w", encoding="utf-8") as f:
+        with open(self._state_path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ битый json !!!")
         r = serve._purge_low_score(8.0)
         self.assertFalse(r["ok"])

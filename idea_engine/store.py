@@ -18,9 +18,11 @@ import os
 import re
 import time
 
-DEFAULT_CAP = 3
-_SEEN_CAP = 5000       # потолок памяти предложенного: помним последние N заголовков. Поднят 500→5000
-                       # (режим «максимум качества»): больше памяти новизны = меньше повторов со временем
+import config  # noqa: E402
+
+DEFAULT_CAP = config.STORE_DEFAULT_CAP
+_SEEN_CAP = config.STORE_SEEN_CAP       # потолок памяти предложенного: помним последние N заголовков. Поднят 500→5000
+                                        # (режим «максимум качества»): больше памяти новизны = меньше повторов со временем
 
 
 @contextlib.contextmanager
@@ -33,7 +35,7 @@ def state_lock(path, timeout=5.0, poll=0.03):
     (держат / стейл после краша) → ПРОХОДИМ без лока (дедлока НЕТ, редкий стейл сам разберётся).
     Полной сериализации не обещаем — это безопасное СМЯГЧЕНИЕ окна гонки. Чужой лок при проходе НЕ
     трогаем (снимаем только свой)."""
-    lockpath = path + ".lock"
+    lockpath = path + config.TG_LOCK_SUFFIX
     fd, waited = None, 0.0
     while waited < timeout:
         try:
@@ -78,12 +80,12 @@ def _content(title):
 def _sig(title):
     return " ".join(_content(title))
 
-OPEN = "open"
-TAKE = "take"
-LATER = "later"
-TRASH = "trash"
-_CLEARED = {TAKE, LATER, TRASH}
-_VALID = _CLEARED | {OPEN}
+OPEN = config.STORE_STATUS_OPEN
+TAKE = config.STORE_STATUS_TAKE
+LATER = config.STORE_STATUS_LATER
+TRASH = config.STORE_STATUS_TRASH
+_CLEARED = config.STORE_CLEARED_STATUSES
+_VALID = config.STORE_VALID_STATUSES
 
 
 class Store:
@@ -99,7 +101,7 @@ class Store:
             "seen": [],        # память предложенного: сигнатуры заголовков (растёт, не чистится)
         }
         if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
+            with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
                 self.data.update(json.load(f))
         self.data["cap"] = cap  # cap — конфиг, а не состояние: конструктор авторитетен
         # старое состояние без «seen» — засеять из уже бывших идей, чтобы их не повторять
@@ -112,9 +114,9 @@ class Store:
         # tmp с pid: state.json реально пишут РАЗНЫЕ процессы (живой deliver + триаж-спавн с пульта),
         # уникальное имя снимает гонку за общий .tmp. (Lost-update это НЕ лечит — нужен замок в serve.)
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        tmp = f"{self.path}.{os.getpid()}.tmp"
+        tmp = f"{self.path}.{config.ATOMIC_TMP_PID_SUFFIX.format(pid=os.getpid())}"
         try:
-            with open(tmp, "w", encoding="utf-8") as f:
+            with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self.path)
         except Exception:

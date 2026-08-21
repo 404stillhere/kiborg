@@ -20,6 +20,8 @@ sys.path.insert(0, BASE)
 
 import alerts  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
 
 class TestMaybeAlert(unittest.TestCase):
     def setUp(self):
@@ -61,7 +63,7 @@ class TestMaybeAlert(unittest.TestCase):
 
         def fake_urlopen(req, timeout):
             captured["url"] = req.full_url
-            captured["data"] = req.data.decode("utf-8")
+            captured["data"] = req.data.decode(config.HTTP_CHARSET_UTF8)
             captured["method"] = req.method
             captured["timeout"] = timeout
             return _FakeResp()

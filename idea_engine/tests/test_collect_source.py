@@ -1,8 +1,8 @@
 """Тест collect_source: честный degrade без ложного ключа 'error'.
 
-При обрыве сети орган отдаёт фолбэк-сэмпл и помечает degraded=True + degraded_reason — но НЕ
-'error' (ключ 'error' в контракте киборга = «орган упал, переизбрать/заблокировать»; здесь орган
-УСПЕШНО отдал сырьё через резерв, блокировать его нельзя).
+При обрыве сети орган отдаёт пустой список и помечает degraded=True + degraded_reason — но НЕ
+'error' (ключ 'error' в контракте киборга = «орган упал, переизбрать/заблокировать»; здесь
+достаточно честно остановить генерацию и повторить сбор на следующем тике).
 """
 
 import json
@@ -14,7 +14,9 @@ import unittest
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
+sys.path.insert(0, os.path.join(BASE, "..", "cyborg"))
 
+import config  # noqa: E402
 from organs import collect_source  # noqa: E402
 
 
@@ -25,13 +27,13 @@ class TestCollectSource(unittest.TestCase):
     def tearDown(self):
         collect_source.urllib.request.urlopen = self._orig
 
-    def test_degrade_on_network_fail_no_false_error(self):
+    def test_degrade_on_network_fail_returns_no_fake_items(self):
         def boom(*a, **k):
             raise OSError("network down")
 
         collect_source.urllib.request.urlopen = boom
         out = collect_source.run({}, {"n": 4, "source": "hn"})
-        self.assertTrue(out["items"])  # резерв отдан
+        self.assertEqual(out["items"], [])  # сырья нет, придумывать его нельзя
         self.assertTrue(out["degraded"])
         self.assertIn("degraded_reason", out)  # причина сохранена для диагностики
         self.assertNotIn("error", out)  # но НЕ ложный 'error' (иначе киборг зря блокирует)
@@ -43,7 +45,7 @@ class TestCollectSource(unittest.TestCase):
 
     def test_empty_sources_collects_nothing_not_hn(self):
         # D7 (аудит 2026-07-17): все ленты выключены + папок нет → sources=[] (ЯВНО пусто).
-        # Орган НЕ дефолтит на hn и НЕ выдаёт _FALLBACK — честно пусто + degraded, пульт предупредит.
+        # Орган НЕ дефолтит на hn — честно пусто + degraded, пульт предупредит.
         def boom(*a, **k):
             raise AssertionError("не должен ходить в сеть при пустом списке источников")
 
@@ -82,10 +84,53 @@ class TestNewSources(unittest.TestCase):
         self.assertFalse(out["degraded"])
         titles = [it["title"] for it in out["items"]]
         self.assertIn("Show HN: local-first thing", titles)
-        self.assertNotIn("", titles)  # пост без title отброшен
+        self.assertNotIn("", titles)  # пост без title отбрасывается
         self.assertEqual(len(out["items"]), 2)  # 3 id, один без title
         self.assertTrue(all(it["source"] == "hn" for it in out["items"]))
         self.assertEqual(out["items"][0]["id"], 101)  # id проброшен из item
+
+    def test_hn_show_mix_blends_top_and_show_stories(self):
+        # hn_show_mix=True: половина бюджета из topstories (тренды), половина из showstories
+        # (реальные проекты «Show HN»). Топ HN засорён новостями/некрологами — Show HN даёт
+        # чистое проектное топливо. Без флага — только topstories (старое поведение, см. тест выше).
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "topstories" in url:
+                return [201, 202]
+            if "showstories" in url:
+                return [301, 302]
+            iid = int(url.rsplit("/", 1)[1].split(".")[0])
+            data = {
+                201: {"id": 201, "title": "Trend: SIMD tricks", "url": "https://h/201"},
+                202: {"id": 202, "title": "Trend: tokenization speedup", "url": "https://h/202"},
+                301: {"id": 301, "title": "Show HN: my CLI tool", "url": "https://h/301"},
+                302: {"id": 302, "title": "Show HN: tiny CRDT", "url": "https://h/302"},
+            }
+            return data.get(iid, {"id": iid, "title": ""})
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 4, "source": "hn", "hn_show_mix": True})
+        self.assertFalse(out["degraded"])
+        titles = [it["title"] for it in out["items"]]
+        # И тренды, И Show HN — смешано (не только топ)
+        self.assertIn("Trend: SIMD tricks", titles)
+        self.assertIn("Show HN: my CLI tool", titles)
+
+    def test_hn_show_mix_no_showstories_falls_back_to_top(self):
+        # showstories упал/пуст -> не краш, берём сколько есть из топа (degrade, не блок)
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "showstories" in url:
+                raise OSError("show endpoint down")
+            if "topstories" in url:
+                return [201, 202]
+            iid = int(url.rsplit("/", 1)[1].split(".")[0])
+            return {"id": iid, "title": f"Trend {iid}", "url": f"https://h/{iid}"}
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 4, "source": "hn", "hn_show_mix": True})
+        self.assertFalse(out["degraded"])
+        self.assertGreater(len(out["items"]), 0)
 
     def test_reddit_parses_children(self):
         def fake_get(url_or_req, timeout):
@@ -129,7 +174,7 @@ class TestNewSources(unittest.TestCase):
                 return False
 
             def read(self):
-                return html.encode("utf-8")
+                return html.encode(config.HTTP_CHARSET_UTF8)
 
         collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
         out = collect_source.run({}, {"n": 5, "source": "gh_trending"})
@@ -151,6 +196,96 @@ class TestNewSources(unittest.TestCase):
         out = collect_source.run({}, {"n": 5, "source": "gh_trending"})
         self.assertTrue(out["degraded"])
         self.assertNotIn("error", out)
+
+    def test_gh_trending_enrich_adds_description_from_api(self):
+        # gh_enrich=True: после парсинга HTML, для каждого owner/repo тянем описание через
+        # api.github.com/repos/{o}/{r} (JSON через _get). Карточка «octocat/hello-world»
+        # превращается в осмысленную «octocat/hello-world — <description>», а не слепой путь.
+        html = (
+            '<h2 class="lh-condensed"><a href="/octocat/hello-world">octocat / hello-world</a></h2>'
+            '<h2 class="lh-condensed"><a href="/foo/bar">foo / bar</a></h2>'
+        )
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return html.encode(config.HTTP_CHARSET_UTF8)
+
+        collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
+
+        def fake_get(url_or_req, timeout):
+            url = url_or_req if isinstance(url_or_req, str) else url_or_req.full_url
+            if "octocat/hello-world" in url:
+                return {"full_name": "octocat/hello-world", "description": "A real project that does things"}
+            if "foo/bar" in url:
+                return {"full_name": "foo/bar", "description": ""}
+            return {}
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 5, "source": "gh_trending", "gh_enrich": True})
+        self.assertFalse(out["degraded"])
+        titles = [it["title"] for it in out["items"]]
+        # репо с описанием — обогащено; без описания — как раньше (просто owner/repo)
+        self.assertIn("octocat/hello-world — A real project that does things", titles)
+        self.assertIn("foo/bar", titles)
+
+    def test_gh_trending_enrich_limit_bounds_api_calls(self):
+        html = "".join(f'<h2 class="lh-condensed"><a href="/org/repo{n}">org / repo{n}</a></h2>' for n in range(3))
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return html.encode(config.HTTP_CHARSET_UTF8)
+
+        calls = []
+        collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
+
+        def fake_get(url_or_req, timeout):
+            calls.append(url_or_req)
+            return {"description": "useful description"}
+
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 3, "source": "gh_trending", "gh_enrich": True, "gh_enrich_limit": 2})
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(
+            [it["title"] for it in out["items"][:2]],
+            [
+                "org/repo0 — useful description",
+                "org/repo1 — useful description",
+            ],
+        )
+        self.assertEqual(out["items"][2]["title"], "org/repo2")
+
+    def test_gh_trending_enrich_failure_falls_back_to_plain(self):
+        # при лимите/сбое API обогащения — карточка остаётся «owner/repo» (degrade, не краш)
+        html = '<h2 class="lh-condensed"><a href="/octocat/hello-world">octocat / hello-world</a></h2>'
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return html.encode(config.HTTP_CHARSET_UTF8)
+
+        collect_source.urllib.request.urlopen = lambda req, timeout: _Resp()
+        collect_source._get = lambda url, timeout: (_ for _ in ()).throw(OSError("rate limited"))
+        out = collect_source.run({}, {"n": 5, "source": "gh_trending", "gh_enrich": True})
+        self.assertFalse(out["degraded"])  # HTML дал репо — сырьё есть, enrich не помешал
+        self.assertEqual(out["items"][0]["title"], "octocat/hello-world")
 
     def test_merged_sources_split_budget_and_tag_origin(self):
         def fake_get(url_or_req, timeout):
@@ -182,16 +317,200 @@ class TestNewSources(unittest.TestCase):
         self.assertIn("partial_errors", out)
         self.assertTrue(any("lobsters" in e for e in out["partial_errors"]))
 
-    def test_all_sources_down_degrades_with_fallback(self):
+    def test_all_sources_down_degrades_without_fake_items(self):
         def boom(*a, **k):
             raise OSError("network down")
 
         collect_source._get = boom
         out = collect_source.run({}, {"n": 4, "sources": ["reddit", "lobsters"]})
-        self.assertTrue(out["items"])
+        self.assertEqual(out["items"], [])
         self.assertTrue(out["degraded"])
         self.assertIn("degraded_reason", out)
         self.assertNotIn("error", out)
+
+
+class TestRedditOAuth(unittest.TestCase):
+    """Reddit через OAuth (app-only): публичный .json отвечает 403 Blocked анти-ботом reddit,
+    официальный путь — токен client_credentials + oauth.reddit.com с Bearer. Креды приходят
+    из env (reddit_client_id/secret, их кладёт harvest_env из llm_keys.env); нет кредов —
+    прежний публичный URL, чтобы ничего не ломалось и оффлайн-тесты не требовали секрета."""
+
+    CREDS = {"n": 5, "source": "reddit", "reddit_client_id": "cid1", "reddit_client_secret": "sec1"}
+
+    def setUp(self):
+        self._orig_get = collect_source._get
+        self._orig_post = collect_source._post_form
+        collect_source._REDDIT_TOKEN.update({"value": None, "exp": 0.0})  # чистый кэш на тест
+
+    def tearDown(self):
+        collect_source._get = self._orig_get
+        collect_source._post_form = self._orig_post
+        collect_source._REDDIT_TOKEN.update({"value": None, "exp": 0.0})
+
+    def test_oauth_creds_use_token_then_bearer(self):
+        seen = []
+
+        def fake_post(url, data, headers, timeout):
+            seen.append(url)
+            self.assertIn("access_token", url)
+            self.assertIn(b"grant_type=client_credentials", data)
+            self.assertTrue(headers["Authorization"].startswith("Basic "))
+            return {"access_token": "tok123", "expires_in": 3600}
+
+        def fake_get(url_or_req, timeout):
+            url = url_or_req.full_url if hasattr(url_or_req, "full_url") else url_or_req
+            seen.append(url)
+            self.assertIn("oauth.reddit.com", url)  # данные — через oauth-хост, не публичный .json
+            self.assertEqual(url_or_req.headers.get("Authorization"), "Bearer tok123")
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "OAuth idea", "url": "https://r/1", "id": "x1"}},
+                    ]
+                }
+            }
+
+        collect_source._post_form = fake_post
+        collect_source._get = fake_get
+        out = collect_source.run({}, dict(self.CREDS))
+        self.assertFalse(out["degraded"])
+        self.assertEqual(out["items"][0]["title"], "OAuth idea")
+        self.assertEqual(len(seen), 2)  # сначала токен, потом ровно один запрос данных
+
+    def test_no_creds_fall_back_to_public_url(self):
+        def no_post(*a, **k):
+            raise AssertionError("без кредов токен запрашиваться не должен")
+
+        def fake_get(url_or_req, timeout):
+            url = url_or_req.full_url if hasattr(url_or_req, "full_url") else url_or_req
+            self.assertIn("www.reddit.com", url)  # прежний публичный путь
+            self.assertNotIn("Authorization", url_or_req.headers)
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "pub", "url": "u", "id": "i"}},
+                    ]
+                }
+            }
+
+        collect_source._post_form = no_post
+        collect_source._get = fake_get
+        out = collect_source.run({}, {"n": 5, "source": "reddit"})
+        self.assertFalse(out["degraded"])
+        self.assertEqual(out["items"][0]["title"], "pub")
+
+    def test_token_cached_within_process(self):
+        calls = {"post": 0}
+
+        def fake_post(url, data, headers, timeout):
+            calls["post"] += 1
+            return {"access_token": "tok123", "expires_in": 3600}
+
+        def fake_get(url_or_req, timeout):
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "t", "url": "u", "id": "i"}},
+                    ]
+                }
+            }
+
+        collect_source._post_form = fake_post
+        collect_source._get = fake_get
+        collect_source.run({}, dict(self.CREDS))
+        collect_source.run({}, dict(self.CREDS))  # гейт-фетч + прогон в одном процессе
+        self.assertEqual(calls["post"], 1)  # второй сбор переиспользует живой токен
+
+
+class TestRedditRssFallback(unittest.TestCase):
+    """Reddit без OAuth: публичный .json режется анти-ботом reddit по IP (403 Blocked), но
+    Atom-RSS (.rss) того же саба с тем же bot-UA проходит. Fallback: .json упал HTTPError ->
+    RSS-парс с тем же контрактом items [{title,url,id}]. OAuth-путь fallback не использует
+    (у oauth-хоста свои коды ошибок — честная деградация, без тихого отхода на RSS)."""
+
+    ATOM = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        "<entry><title>Idea one</title>"
+        '<link href="https://www.reddit.com/r/SideProject/comments/abc1/one/"/>'
+        "<id>t3_abc1</id></entry>"
+        "<entry><title>Idea two</title>"
+        '<link href="https://www.reddit.com/r/SideProject/comments/abc2/two/"/>'
+        "<id>t3_abc2</id></entry>"
+        "</feed>"
+    )
+
+    def setUp(self):
+        self._orig_get = collect_source._get
+        self._orig_raw = collect_source._get_raw
+        self._orig_post = collect_source._post_form
+        collect_source._REDDIT_TOKEN.update({"value": None, "exp": 0.0})
+
+    def tearDown(self):
+        collect_source._get = self._orig_get
+        collect_source._get_raw = self._orig_raw
+        collect_source._post_form = self._orig_post
+        collect_source._REDDIT_TOKEN.update({"value": None, "exp": 0.0})
+
+    def _blocked_json(self, url_or_req, timeout):
+        raise collect_source.urllib.error.HTTPError(url_or_req.full_url, 403, "Blocked", hdrs=None, fp=None)
+
+    def test_public_403_falls_back_to_rss(self):
+        raw_urls = []
+
+        def fake_raw(url_or_req, timeout):
+            raw_urls.append(url_or_req.full_url)
+            return self.ATOM.encode(config.HTTP_CHARSET_UTF8)
+
+        collect_source._get = self._blocked_json
+        collect_source._get_raw = fake_raw
+        out = collect_source.run({}, {"n": 5, "source": "reddit"})
+        self.assertFalse(out["degraded"])
+        self.assertEqual(
+            out["items"][0],
+            {
+                "title": "Idea one",
+                "url": "https://www.reddit.com/r/SideProject/comments/abc1/one/",
+                "id": "t3_abc1",
+                "source": "reddit",  # run() тегирует каждый item его источником
+            },
+        )
+        self.assertEqual(len(out["items"]), 2)
+        self.assertIn(".rss", raw_urls[0])  # RSS-эндпоинт, а не повторная попытка .json
+
+    def test_public_json_ok_rss_not_called(self):
+        def no_raw(url_or_req, timeout):
+            raise AssertionError("RSS не должен зваться, когда публичный .json жив")
+
+        def fake_get(url_or_req, timeout):
+            return {
+                "data": {
+                    "children": [
+                        {"data": {"title": "pub", "url": "https://x", "id": "i"}},
+                    ]
+                }
+            }
+
+        collect_source._get = fake_get
+        collect_source._get_raw = no_raw
+        out = collect_source.run({}, {"n": 5, "source": "reddit"})
+        self.assertFalse(out["degraded"])
+        self.assertEqual(out["items"][0]["title"], "pub")
+
+    def test_rss_slice_respects_n(self):
+        atom3 = self.ATOM.replace("</feed>", "") + (
+            "<entry><title>Idea three</title>"
+            '<link href="https://www.reddit.com/r/SideProject/comments/abc3/three/"/>'
+            "<id>t3_abc3</id></entry></feed>"
+        )
+
+        def fake_raw(url_or_req, timeout):
+            return atom3.encode(config.HTTP_CHARSET_UTF8)
+
+        collect_source._get = self._blocked_json
+        collect_source._get_raw = fake_raw
+        out = collect_source.run({}, {"n": 2, "source": "reddit"})
+        self.assertEqual(len(out["items"]), 2)
 
 
 class _FakeProc:
@@ -243,7 +562,7 @@ class TestTelegramSource(unittest.TestCase):
                 "items": [{"channel": "@a", "id": 5, "text": "Идея из ТГ\nвторая строка", "url": "https://t.me/a/5"}],
                 "warnings": [],
             }
-            return _FakeProc(0, json.dumps(payload).encode("utf-8"))
+            return _FakeProc(0, json.dumps(payload).encode(config.HTTP_CHARSET_UTF8))
 
         collect_source.subprocess.run = fake_run
         out = collect_source.run({}, self._creds_env())
@@ -264,7 +583,7 @@ class TestTelegramSource(unittest.TestCase):
     def test_all_channels_unresolved_degrades(self):
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
             payload = {"items": [], "warnings": ["@a: Username not found: a"]}
-            return _FakeProc(0, json.dumps(payload).encode("utf-8"))
+            return _FakeProc(0, json.dumps(payload).encode(config.HTTP_CHARSET_UTF8))
 
         collect_source.subprocess.run = fake_run
         out = collect_source.run({}, self._creds_env())
@@ -279,7 +598,7 @@ class TestTelegramSource(unittest.TestCase):
 
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
             payload = {"items": [{"channel": "@a", "id": 1, "text": "TG idea"}], "warnings": []}
-            return _FakeProc(0, json.dumps(payload).encode("utf-8"))
+            return _FakeProc(0, json.dumps(payload).encode(config.HTTP_CHARSET_UTF8))
 
         collect_source._get = fake_get
         collect_source.subprocess.run = fake_run
@@ -297,9 +616,12 @@ class TestTelegramSource(unittest.TestCase):
         captured = {}
 
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
-            captured["payload"] = json.loads(input.decode("utf-8"))
+            captured["payload"] = json.loads(input.decode(config.HTTP_CHARSET_UTF8))
             return _FakeProc(
-                0, json.dumps({"items": [{"channel": "@a", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8")
+                0,
+                json.dumps({"items": [{"channel": "@a", "id": 1, "text": "t"}], "warnings": []}).encode(
+                    config.HTTP_CHARSET_UTF8
+                ),
             )
 
         collect_source.subprocess.run = fake_run
@@ -314,9 +636,12 @@ class TestTelegramSource(unittest.TestCase):
         captured = {}
 
         def fake_run(cmd, input, capture_output, timeout):  # noqa: A002
-            captured["payload"] = json.loads(input.decode("utf-8"))
+            captured["payload"] = json.loads(input.decode(config.HTTP_CHARSET_UTF8))
             return _FakeProc(
-                0, json.dumps({"items": [{"channel": "@x", "id": 1, "text": "t"}], "warnings": []}).encode("utf-8")
+                0,
+                json.dumps({"items": [{"channel": "@x", "id": 1, "text": "t"}], "warnings": []}).encode(
+                    config.HTTP_CHARSET_UTF8
+                ),
             )
 
         collect_source.subprocess.run = fake_run
@@ -379,7 +704,7 @@ class _TmpDirTest(unittest.TestCase):
         p = os.path.join(self.tmp, rel)
         os.makedirs(os.path.dirname(p) or self.tmp, exist_ok=True)
         mode = "wb" if isinstance(content, bytes) else "w"
-        with open(p, mode, **({} if mode == "wb" else {"encoding": "utf-8"})) as f:
+        with open(p, mode, **({} if mode == "wb" else {"encoding": config.HTTP_CHARSET_UTF8})) as f:
             f.write(content)
         return p
 
@@ -406,6 +731,23 @@ class TestFilesSource(_TmpDirTest):
         self.assertTrue(any("README.md" in t and "Киборг" in t for t in titles))
         self.assertTrue(all(it["source"] == "files" for it in out["items"]))
 
+    def test_includes_bounded_context_beyond_headline(self):
+        self._write(
+            "reflect.py",
+            '"""Саморефлексия проекта."""\n'
+            "import os\n"
+            "# Находит слабые места по тестам и журналу решений.\n"
+            "def inspect_failures():\n"
+            "    return []\n",
+        )
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        item = out["items"][0]
+        self.assertIn("Саморефлексия проекта", item["title"])
+        self.assertIn("Находит слабые места", item["context"])
+        self.assertIn("def inspect_failures", item["context"])
+        self.assertNotIn("import os", item["context"])  # импортный шум не кормим модели
+        self.assertLessEqual(len(item["context"]), collect_source._FILES_CONTEXT_CHARS)
+
     def test_skips_secret_files(self):
         self._write("llm_keys.env", "OPENAI_KEY=sk-secret\n")
         self._write("kiborg_tg.session", "session-bytes\n")
@@ -421,17 +763,19 @@ class TestFilesSource(_TmpDirTest):
     def test_skips_junk_dirs_and_binaries(self):
         self._write("src/main.py", '"""главный модуль."""\n')
         self._write("node_modules/lib/index.js", "// dep\n")
+        self._write("handoffs/old.md", "# Устаревший снимок проекта\n")
         self._write("__pycache__/main.cpython-312.pyc", b"\x00\x01bin")
         self._write("logo.png", b"\x89PNG\r\n")
         out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
         titles = " ".join(it["title"] for it in out["items"])
         self.assertIn("main.py", titles)
         self.assertNotIn("node_modules", titles)  # мусорная папка отсечена
+        self.assertNotIn("Устаревший снимок", titles)  # история чатов не забивает код
         self.assertNotIn(".pyc", titles)
         self.assertNotIn(".png", titles)  # бинарь по расширению
 
     def test_oversized_file_skipped(self):
-        self._write("big.md", "# huge\n" + ("x" * (300 * 1024)))
+        self._write("big.md", "# huge\n" + ("x" * (collect_source._FILES_MAX_BYTES + 1)))
         self._write("small.md", "# small doc\nтекст\n")
         out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
         titles = " ".join(it["title"] for it in out["items"])
@@ -448,10 +792,32 @@ class TestFilesSource(_TmpDirTest):
         p = self._write("m.py", "#!/usr/bin/env python\nimport os\n# настоящий смысл файла\ncode\n")
         self.assertEqual(collect_source._files_headline(p), "настоящий смысл файла")
 
-    def test_id_is_abspath_for_dedup(self):
-        self._write("a.py", '"""a."""\n')
+    def test_ids_keep_same_basenames_in_different_folders_distinct(self):
+        # Раньше item id был абсолютным путём, а seen_items сворачивал его до basename:
+        # сотни разных main.py из M:/projects считались одним уже виденным файлом.
+        self._write("left/main.py", '"""левая программа."""\n')
+        self._write("right/main.py", '"""правая программа."""\n')
         out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
-        self.assertTrue(all(os.path.isabs(it["id"]) for it in out["items"]))
+        ids = [it["id"] for it in out["items"]]
+        self.assertEqual(len(ids), 2)
+        self.assertEqual(len(set(ids)), 2)
+        self.assertTrue(all(i.startswith("f2:") for i in ids))
+
+    def test_id_stays_stable_after_project_move_but_changes_with_visible_headline(self):
+        old = collect_source._files_item_id("C:/old/kiborg/src/main.py", "C:/old/kiborg", "запуск")
+        moved = collect_source._files_item_id("D:/new/kiborg/src/main.py", "D:/new/kiborg", "запуск")
+        changed = collect_source._files_item_id("D:/new/kiborg/src/main.py", "D:/new/kiborg", "другая суть")
+        self.assertEqual(old, moved)
+        self.assertNotEqual(moved, changed)
+
+    def test_id_changes_when_visible_context_changes(self):
+        before = collect_source._files_item_id(
+            "M:/projects/kiborg/src/main.py", "M:/projects/kiborg", "запуск", "def old(): pass"
+        )
+        after = collect_source._files_item_id(
+            "M:/projects/kiborg/src/main.py", "M:/projects/kiborg", "запуск", "def improved(): pass"
+        )
+        self.assertNotEqual(before, after)  # изменение ниже шапки снова становится свежим
 
     def test_single_file_path_allowed(self):
         p = self._write("solo.md", "# соло\nтекст\n")
@@ -464,8 +830,14 @@ class TestFilesSource(_TmpDirTest):
         for i in range(8):
             self._write(f"f{i}.py", f'"""файл {i}."""\n')
         out = collect_source.run({}, {"n": 3, "source": "files", "files_paths": [self.tmp]})
-        self.assertFalse(out["degraded"])  # источник жив (не фолбэк-заглушка)
+        self.assertFalse(out["degraded"])  # источник жив
         self.assertEqual(len(out["items"]), 3)  # 8 файлов -> ровно бюджет n=3
+
+    def test_file_context_has_own_prompt_size_cap(self):
+        for i in range(collect_source._FILES_MAX_ITEMS + 7):
+            self._write(f"f{i}.py", f'"""файл {i}."""\ndef work_{i}(): pass\n')
+        out = collect_source.run({}, {"n": 300, "source": "files", "files_paths": [self.tmp]})
+        self.assertEqual(len(out["items"]), collect_source._FILES_MAX_ITEMS)
 
     def test_merges_with_keyless_sources(self):
         self._write("x.py", '"""икс."""\n')
@@ -497,9 +869,9 @@ class TestFilesSource(_TmpDirTest):
         self._write("deploy.sh", f"#!/bin/sh\nexport AWS_SECRET_ACCESS_KEY={awssec}\n")
         self._write("db.py", f'DATABASE_URL = "postgres://user:{dbpass}@host/db"\n')
         out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
-        blob = " ".join(it["title"] for it in out["items"])
+        blob = " ".join((it["title"] + " " + it.get("context", "")) for it in out["items"])
         for secret in [openai, tgtok, awssec, dbpass]:
-            self.assertNotIn(secret, blob)  # ни одна собранная форма не утекла в заголовок
+            self.assertNotIn(secret, blob)  # ни одна собранная форма не утекла в prompt-поля
         # при этом секрет-строку сменяет следующая чистая строка (докстринг), файл не потерян
         self.assertTrue(any("cfg.py" in it["title"] and "докстринг" in it["title"] for it in out["items"]))
 
@@ -509,13 +881,13 @@ class TestFilesSource(_TmpDirTest):
         self.assertEqual(collect_source._files_headline(p), "Coding standards")
 
     def test_headline_skips_pep263_coding(self):
-        p = self._write("m2.py", "# -*- coding: utf-8 -*-\n# настоящий смысл\nx=1\n")
+        p = self._write("m2.py", f"# -*- coding: {config.HTTP_CHARSET_UTF8} -*-\n# настоящий смысл\nx=1\n")
         self.assertEqual(collect_source._files_headline(p), "настоящий смысл")
 
     def test_headline_handles_utf8_bom(self):
         p = os.path.join(self.tmp, "bom.md")
         with open(p, "wb") as f:
-            f.write("﻿# Заголовок с BOM\nтекст\n".encode("utf-8"))
+            f.write("﻿# Заголовок с BOM\nтекст\n".encode(config.HTTP_CHARSET_UTF8))
         self.assertEqual(collect_source._files_headline(p), "Заголовок с BOM")
 
     def test_walk_bounded_by_scan_cap(self):
@@ -527,9 +899,136 @@ class TestFilesSource(_TmpDirTest):
         collect_source._FILES_MAX_SCAN = 10
         try:
             out = collect_source.run({}, {"n": 100, "source": "files", "files_paths": [self.tmp]})
-            self.assertLessEqual(len(out["items"]), 10)  # осмотрено <=10 из 50 -> обход оборван
+            file_items = [item for item in out["items"] if not item.get("project_map")]
+            self.assertLessEqual(len(file_items), 10)  # карта — не осмотренный файл
         finally:
             collect_source._FILES_MAX_SCAN = orig
+
+    def test_reads_project_manifests_configs_styles_and_windows_scripts(self):
+        for rel in (
+            "pyproject.toml",
+            "settings.yaml",
+            "panel/style.css",
+            "deploy/task.ps1",
+            "schema/model.xml",
+            "Dockerfile",
+        ):
+            self._write(rel, "# purpose\nsetting = true\n")
+        out = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(item["title"] for item in out["items"])
+        for name in ("pyproject.toml", "settings.yaml", "style.css", "task.ps1", "model.xml", "Dockerfile"):
+            self.assertIn(name, titles)
+
+    def test_deep_context_finds_signal_below_old_16k_limit_and_keeps_indentation(self):
+        prefix = "".join(f"padding_{i} = {i}\n" for i in range(1800))
+        p = self._write(
+            "deep.py",
+            prefix
+            + "# TODO: корневая проблема находится далеко внизу\n"
+            + "def repair_deep_state():\n"
+            + "    return True\n",
+        )
+        self.assertGreater(os.path.getsize(p), 16 * 1024)
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
+        context = out["items"][0]["context"]
+        self.assertIn("TODO: корневая проблема", context)
+        self.assertIn("def repair_deep_state", context)
+        self.assertIn("    return True", context)
+        self.assertRegex(context, r"L1[0-9]{3}:")
+
+    def test_cp1251_file_decodes_without_mojibake(self):
+        self._write("legacy.txt", "Старый русский проект\nважная логика\n".encode(config.FILES_DECODE_ENCODING_CP1251))
+        out = collect_source.run({}, {"n": 4, "source": "files", "files_paths": [self.tmp]})
+        blob = " ".join(item["title"] + " " + item.get("context", "") for item in out["items"])
+        self.assertIn("Старый русский проект", blob)
+        self.assertNotIn("����", blob)
+
+    def test_multiple_roots_keep_project_identity(self):
+        left = os.path.join(self.tmp, "left")
+        right = os.path.join(self.tmp, "right")
+        self._write("left/main.py", '"""Левый запуск."""\n')
+        self._write("right/main.py", '"""Правый запуск."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [left, right]})
+        titles = " ".join(item["title"] for item in out["items"])
+        self.assertIn("[left] main.py", titles)
+        self.assertIn("[right] main.py", titles)
+
+    def test_project_map_covers_whole_root_and_changes_with_inventory(self):
+        for i in range(8):
+            self._write(f"src/f{i}.py", f'"""модуль {i}."""\n')
+        first = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        maps = [item for item in first["items"] if item.get("project_map")]
+        self.assertEqual(len(maps), 1)
+        self.assertTrue(maps[0]["always_context"])
+        self.assertIn("Зоны:", maps[0]["context"])
+        old_id = maps[0]["id"]
+        self._write("src/f0.py", '"""модуль 0 изменён глубоко."""\nновая_строка = True\n')
+        second = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        new_map = next(item for item in second["items"] if item.get("project_map"))
+        self.assertNotEqual(old_id, new_map["id"])
+
+    def test_selection_balances_areas_instead_of_biggest_folder_winning(self):
+        for i in range(70):
+            self._write(f"giant/f{i}.py", f'"""гигант {i}."""\n')
+        for i in range(2):
+            self._write(f"tiny/key{i}.py", f'"""малый {i}."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp]})
+        file_titles = [item["title"] for item in out["items"] if not item.get("project_map")]
+        self.assertTrue(any("tiny" in title for title in file_titles))
+
+    def test_case_insensitive_junk_hidden_ci_and_legitimate_tokenizer(self):
+        self._write("Node_Modules/dep.js", "// dependency\n")
+        self._write(".github/workflows/ci.yml", "name: CI\n")
+        self._write("tokenizer.py", '"""Разбирает текст на токены."""\n')
+        self._write("my_token.txt", "секрет\n")
+        out = collect_source.run({}, {"n": 20, "source": "files", "files_paths": [self.tmp]})
+        titles = " ".join(item["title"] for item in out["items"])
+        self.assertNotIn("Node_Modules", titles)
+        self.assertIn(".github", titles)
+        self.assertIn("tokenizer.py", titles)
+        self.assertNotIn("my_token.txt", titles)
+
+    def test_overlapping_roots_do_not_duplicate_same_file(self):
+        nested = os.path.join(self.tmp, "src")
+        self._write("src/main.py", '"""Единственный запуск."""\n')
+        out = collect_source.run({}, {"n": 10, "source": "files", "files_paths": [self.tmp, nested]})
+        files = [item for item in out["items"] if not item.get("project_map")]
+        self.assertEqual(len(files), 1)
+        self.assertIn("[src] main.py", files[0]["title"])
+
+
+class TestSelfSource(_TmpDirTest):
+    """«Сам Киборг» — самостоятельный источник, а не особая настройка обычных папок."""
+
+    _PREFIX = "kiborg_self_"
+
+    def test_reads_fixed_project_path_and_marks_self_reflection(self):
+        self._write(
+            "cyborg/health.py",
+            '"""Проверяет здоровье источников."""\n'
+            "# TODO: отличать сетевой сбой от выключенного источника.\n"
+            "def source_health():\n"
+            "    return {}\n",
+        )
+        out = collect_source.run({}, {"n": 4, "source": "self", "self_path": self.tmp})
+        self.assertFalse(out["degraded"])
+        item = out["items"][0]
+        self.assertEqual(item["source"], "self")
+        self.assertEqual(item["kind"], "self_reflection")
+        self.assertTrue(item["id"].startswith("self:f2:"))
+        self.assertIn("TODO: отличать сетевой сбой", item["context"])
+
+    def test_does_not_require_generic_folders(self):
+        self._write("app.py", '"""Пульт kiborg."""\n')
+        out = collect_source.run({}, {"n": 2, "sources": ["self"], "self_path": self.tmp})
+        self.assertFalse(out["degraded"])
+        self.assertEqual({item["source"] for item in out["items"]}, {"self"})
+
+    def test_missing_project_path_degrades_without_falling_back_to_files(self):
+        out = collect_source.run({}, {"n": 2, "source": "self"})
+        self.assertTrue(out["degraded"])
+        self.assertIn("self_path", out["degraded_reason"])
+        self.assertNotIn("error", out)
 
 
 class TestProbePaths(_TmpDirTest):

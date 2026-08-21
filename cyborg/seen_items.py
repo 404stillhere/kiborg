@@ -13,9 +13,10 @@ TTL_DAYS (90) — иначе рос бы без огранички (263 запи
 load() на каждом тике автосбора начал бы тормозить). Страховочный MAX_RECORDS (5000) — если
 TTL не спасёт при массовом притоке, обрежем по самым свежим. Файл атомарен через .tmp+rename.
 
-Стабилизация ключей: files:* хранит ХЕШ basename, а не абсолютный путь (M:\\projects\\kiborg\\
-умирает при переносе проекта → ключ инвалидируется → тот же файл снова «свежий» → двойная
-генерация). basename стабилен при перемещении; хеш — короткий и без спецсимволов в JSON.
+Стабилизация ключей: collect_source выдаёт files:* версионированный `f2:`-id из имени корня,
+относительного пути и видимого заголовка. Он переживает перенос корня, различает одноимённые
+файлы в разных папках и замечает изменение сырья, которое увидит LLM. Старые пути и хеши
+basename изолируются под `legacy-`: потерянный каталог восстановить уже нельзя.
 Для источников со стабильным id (hn/lobsters/gh_trending/reddit) — id как есть, без хеша.
 
 Персист: cyborg/data/seen_items.json.
@@ -25,13 +26,46 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-PATH = os.path.join(DATA, "seen_items.json")
+# path-bootstrap: seen_items.py импортируется из run.py как скрипт (cyborg/ в path),
+# из тестов как модуль (project-root в path), и из harvest_* подмодулей как сосед.
+# Единый хак: гарантируем, что project-root на пути, чтобы `from cyborg import config` работал.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-TTL_DAYS = 90  # запись старше 90 дней выкидывается при ближайшем mark_seen/_save
-MAX_RECORDS = 5000  # жёсткий потолок размера (страховка, если TTL не справится)
+from cyborg import config
+
+DATA = os.path.join(_HERE, "data")
+PATH = os.path.join(DATA, config.SEEN_ITEMS_FILE)
+
+TTL_DAYS = config.SEEN_ITEMS_TTL_DAYS
+MAX_RECORDS = config.SEEN_ITEMS_MAX_RECORDS
+
+
+_FILES_V2_PREFIX = "f2:"
+_FILES_MAP_PREFIX = "map:"
+_FILES_LEGACY_PREFIX = "legacy-"
+_FILES_LEGACY_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+def _legacy_files_token(value):
+    """Старый files-id → отдельное legacy-пространство.
+
+    Прошлая схема сжимала абсолютный путь до basename и уже потеряла каталог.
+    Восстановить эту информацию нельзя; отделяем старые ключи от v2, чтобы они
+    больше не подавляли сотни разных файлов с одним именем.
+    """
+    raw = str(value).replace("\\", "/")
+    basename = raw.rsplit("/", 1)[-1]
+    if _FILES_LEGACY_HASH_RE.match(basename):
+        digest = basename
+    else:
+        digest = hashlib.sha1(basename.encode(config.HTTP_CHARSET_UTF8)).hexdigest()[: config.SEEN_ITEMS_HASH_LEN]
+    return _FILES_LEGACY_PREFIX + digest
 
 
 def _item_key(it):
@@ -41,17 +75,13 @@ def _item_key(it):
     if iid in (None, ""):
         return None  # без id дедуп невозможен — пропускаем как «всегда свежий», не теряем сырьё
     src = it.get("source", "?")
-    # files: id = абсолютный путь к файлу — НЕстабилен (перенос проекта инвалидирует все ключи
-    # разом → весь архив снова «свежий» → двойная генерация). Хешируем BASENAME (только имя
-    # файла, без каталогов) — стабилен при перемещении проекта. Риск коллизии: два файла с
-    # одинаковым basename в разных папках дадут один ключ — редкий случай для нашей схемы
-    # источников (папки тематические, имена файлов уникальны внутри). Для источников со
-    # стабильным id (hn/lobsters/gh_trending/reddit/telegram) — id как есть, без хеша.
+    # files: v2-id приходит от collect_source как хеш имени корня + относительного пути +
+    # видимого headline. Не сжимаем его до basename: M:/projects содержит сотни main.py,
+    # и старое сжатие теряло до четверти файлов. Старые пути/хеши держим отдельно в legacy,
+    # чтобы новый точный id не наследовал их необратимые коллизии.
     if src == "files":
-        # КРОСС-ПЛАТФОРМЕННАЯ СТАБИЛЬНОСТЬ: см. _normalize_key — Windows-пути с '\\' на Linux
-        # дают другой basename. Нормализуем '\\' → '/' перед basename, чтобы хеш был одинаковый.
-        iid_norm = str(iid).replace("\\", "/")
-        iid = hashlib.sha1(os.path.basename(iid_norm).encode("utf-8")).hexdigest()[:12]
+        raw = str(iid)
+        iid = raw if raw.startswith((_FILES_V2_PREFIX, _FILES_MAP_PREFIX)) else _legacy_files_token(raw)
     return f"{src}:{iid}"
 
 
@@ -60,27 +90,16 @@ def _now():
 
 
 def _ttl_cutoff():
-    return _now() - TTL_DAYS * 86400
+    return _now() - TTL_DAYS * config.SECONDS_PER_DAY
 
 
 def _normalize_key(k):
-    """Перевести ключ в канонический вид. files:* в старом формате хранил ПОЛНЫЙ путь
-    (files:M:\\projects\\kiborg\\README.md) — нестабильно при переносе проекта. Новый формат
-    хеширует basename. Эту нормализацию надо применить и к СУЩЕСТВУЮЩИМ ключам при миграции
-    (иначе старые files-ключи останутся с путями, а новые будут хеши — два формата в одном
-    файле, дедуп ломается: один и тот же файл = два разных ключа)."""
+    """Перевести старые files-ключи в явное legacy-пространство, v2 не трогать."""
     if isinstance(k, str) and k.startswith("files:"):
-        # вытаскиваем путь после префикса; если это уже хеш (12 hexchar) — оставляем как есть
         rest = k[len("files:") :]
-        if re.match(r"^[0-9a-f]{12}$", rest):
-            return k  # уже нормализован
-        # КРОСС-ПЛАТФОРМЕННАЯ СТАБИЛЬНОСТЬ (баг всплыл на CI 2026-07-21): os.path.basename
-        # на Linux НЕ понимает обратные слеши (считает разделителем только '/') — для путей
-        # с '\\' (Windows-прогон создал ключ) возвращает весь путь целиком, basename не
-        # выделяется → хеш разный между платформами. Нормализуем '\\' → '/' ПЕРЕД basename,
-        # тогда обе платформы дают один и тот же basename и тот же хеш.
-        rest = rest.replace("\\", "/")
-        return "files:" + hashlib.sha1(os.path.basename(rest).encode("utf-8")).hexdigest()[:12]
+        if rest.startswith((_FILES_V2_PREFIX, _FILES_MAP_PREFIX, _FILES_LEGACY_PREFIX)):
+            return k
+        return "files:" + _legacy_files_token(rest)
     return k
 
 
@@ -111,7 +130,7 @@ def load():
     НЕ чистит TTL (read-only) — чистка только в _save (write-path). count_fresh/filter_fresh
     читают без мутации, TTL-уборка им не нужна — она и так случится при ближайшей записи."""
     try:
-        with open(PATH, encoding="utf-8") as f:
+        with open(PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             return _migrate(json.load(f))
     except Exception:
         return {}
@@ -134,8 +153,8 @@ def _save(seen):
     бесконтрольно, даже если mark_seen дёргают часто)."""
     os.makedirs(DATA, exist_ok=True)
     seen = _prune(seen)
-    tmp = PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    tmp = PATH + config.ATOMIC_TMP_SUFFIX
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         json.dump(seen, f, ensure_ascii=False, sort_keys=True)
     os.replace(tmp, PATH)
 
@@ -183,3 +202,42 @@ def mark_seen(items):
             seen[key] = now
     if seen != original:
         _save(seen)
+
+
+def _title_sig(t):
+    """Нормализованная сигнатура заголовка для кросс-источникового дедупа: lower, только буквы/
+    цифры, служебные знаки срезаны, пробелы схлопнуты. «SIMD Tricks!» и «simd tricks» → одна
+    сигнатура. СТРОГАЯ (точное совпадение сигнатуры = дубль), не Jaccard — иначе «SIMD tricks»
+    и «SIMD for collision» схлопнулись бы (это разные посты, похожие слова)."""
+    return " ".join(re.findall(r"[a-zа-яё0-9]+", (t or "").lower()))
+
+
+def cross_dedup(items):
+    """Убрать кросс-источниковые дубли ВНУТРИ одного прогона (чистая функция, без персиста).
+
+    Реальный кейс: один и тот же пост приходит с HN (item id) и Lobsters (short_id) → в
+    seen_items это два разных ключа (hn:1 и lobsters:abc), оба проходят filter_fresh → LLM
+    тратится на две похожие идеи. Здесь — убираем дубль ДО ideate, по нормализованному
+    заголовку: первое вхождение выигрывает, мимо — дубли.
+
+    СТРОГАЯ: только точное совпадение нормализованной сигнатуры (не Jaccard). «SIMD tricks» и
+    «SIMD for collision» — РАЗНЫЕ посты, не схлопываются. Пустой title / без title — пропускаем
+    как есть (не дедупим — лучше показать, чем потерять сырьё). Сохраняет порядок первого
+    вхождения. Не-список → []. Не трогает seen_items.json (чистый read-only вычислитель)."""
+    if not isinstance(items, list):
+        return []
+    out = []
+    seen_sigs = set()
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        sig = _title_sig(it.get("title"))
+        # пустой title (только служебные слова/нет слов) — не дедупим, пропускаем как есть
+        if not sig:
+            out.append(it)
+            continue
+        if sig in seen_sigs:
+            continue
+        seen_sigs.add(sig)
+        out.append(it)
+    return out

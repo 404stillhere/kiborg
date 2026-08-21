@@ -3,8 +3,9 @@
 Хранит набор ВКЛЮЧЁННЫХ лент в data/feeds.json:
     {"enabled": ["telegram", "hn"]}
 
-Доступные ленты — ALL_FEEDS (5 публичных). Папки («files») сюда НЕ входят: у них
-свой контрол — они включаются фактом наличия папок (см. folders.py). Нет файла /
+Доступные источники — ALL_FEEDS (5 публичных + встроенный «Сам Киборг»). Папки
+(«files») сюда НЕ входят: у них свой контрол — они включаются фактом наличия
+папок (см. folders.py). Нет файла /
 битый / нет ключа "enabled" → дефолт DEFAULT_FEEDS (как было захардкожено в
 harvest.SOURCES: только telegram, лично курированный юзером). Пустой список —
 валиден (юзер выключил все ленты; идеи тогда только из папок, если заданы).
@@ -14,14 +15,15 @@ harvest.SOURCES: только telegram, лично курированный юз
 import os
 
 import _panel_config
+import config
 
 DATA = _panel_config.data_dir_for(__file__)
-PATH = os.path.join(DATA, "feeds.json")
+PATH = os.path.join(DATA, config.FEEDS_FILE)
 
 # Порядок = порядок показа тумблеров в пульте. Совпадает с collect_source._SOURCES
 # минус 'files' (у папок свой блок). Меняется вместе с составом источников органа.
-ALL_FEEDS = ["hn", "reddit", "lobsters", "gh_trending", "telegram"]
-DEFAULT_FEEDS = ["telegram"]  # дефолт при отсутствии файла = прежний harvest.SOURCES
+ALL_FEEDS = list(config.ALL_FEEDS)
+DEFAULT_FEEDS = list(config.DEFAULT_FEEDS)
 
 
 def _clean(seq):

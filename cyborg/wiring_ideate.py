@@ -7,6 +7,7 @@
 
 import re
 
+import config
 from wiring_runtime import _content_llm
 
 # ПРОИСХОЖДЕНИЕ идеи (A5): item-источник приписывается post-factum по Jaccard значимых
@@ -60,12 +61,8 @@ _PROV_STOP = {
     "is",
     "be",
 }
-# Порог Jaccard для приписывания источника. Ниже — считаем, что модель синтезировала
-# новую идею (заголовок был лишь толчком), и не навязываем ложный source. Для provenance
-# (в отличие от дедупа) нужен мягкий порог: модель синтезирует — даже 1 значимое совпадение
-# из 5 слов (=0.2) уже сигнал. Ложный source менее вреден чем в дедупе (юзер видит title и
-# source_title рядом, сам рассудит), поэтому порог мягче.
-_PROV_THRESHOLD = 0.2
+# Порог Jaccard для приписывания источника. Единый источник истины — config.PROVENANCE_JACCARD_THRESHOLD.
+_PROV_THRESHOLD = config.PROVENANCE_JACCARD_THRESHOLD
 
 
 def _prov_tokens(text):
@@ -84,31 +81,62 @@ def _jaccard(a, b):
 
 
 def _attach_provenance(ideas, items):
-    """A5: приписать каждой идее item-источник по лучшему Jaccard(title) ≥ порога.
+    """Приписать доказательные источники.
 
-    Промпт ideate отдаёт модели ТОЛЬКО title item'ов — почему Jaccard на title корректен:
-    модель не видит url/source/id, значит новый текст идеи мог родиться только из title.
-    Идея без словаря / без title пропускается (source не навязываем).
+    Новый контракт ideate просит модель вернуть source_ids. Их разрешаем точно и сохраняем
+    все совпавшие ссылки. Для старой модели/битого ответа остаётся мягкий Jaccard-фолбэк.
     """
     if not ideas or not items:
         return
-    # кэш токенов item'ов — один проход по пулу источников, не O(ideas×items) парсингов
-    pool = []
+    pool, by_id = [], {}
     for it in items:
         if not isinstance(it, dict):
             continue
+        iid = it.get("id")
+        if iid is not None:
+            by_id[str(iid)] = it
         title = it.get("title")
         if not isinstance(title, str) or not title.strip():
             continue
-        toks = _prov_tokens(title)
+        # Старый фолбэк теперь знает и короткий context: модель видит оба поля.
+        context = str(it.get("context") or "")
+        toks = _prov_tokens(title + " " + context[: config.PROVENANCE_CONTEXT_MAX_CHARS])
         if not toks:
             continue
         pool.append((toks, it))
-    if not pool:
+    if not pool and not by_id:
         return
+
+    def attach_primary(idea, item):
+        idea["inspired_by"] = item.get("id")
+        idea["source_name"] = item.get("source")
+        idea["source_url"] = item.get("url")
+        idea["source_title"] = item.get("title")
+
     for idea in ideas:
         if not isinstance(idea, dict):
             continue
+        declared = idea.get("source_ids")
+        if isinstance(declared, list):
+            matched = []
+            for raw in declared[: config.PROVENANCE_MAX_DECLARED_SOURCE_IDS]:
+                item = by_id.get(str(raw))
+                if item is None or item in matched:
+                    continue
+                matched.append(item)
+            if matched:
+                idea["source_refs"] = [
+                    {
+                        "id": item.get("id"),
+                        "source": item.get("source"),
+                        "title": item.get("title"),
+                        "project": item.get("project"),
+                        "path": item.get("path"),
+                    }
+                    for item in matched
+                ]
+                attach_primary(idea, matched[0])
+                continue
         itoks = _prov_tokens(idea.get("title", ""))
         if not itoks:
             continue
@@ -118,16 +146,21 @@ def _attach_provenance(ideas, items):
             if j > best_j:
                 best_j, best_item = j, it
         if best_item is not None and best_j >= _PROV_THRESHOLD:
-            idea["inspired_by"] = best_item.get("id")
-            idea["source_name"] = best_item.get("source")
-            idea["source_url"] = best_item.get("url")
-            idea["source_title"] = best_item.get("title")
+            attach_primary(idea, best_item)
 
 
 def _run_ideate(inputs, env):
     import wiring
 
     inp = inputs or {}
+    if inp.get("degraded"):
+        # Без сырья генератору нечего думать: не даём LLM превратить сетевой сбой
+        # в «свежую» идею. Лог и пульт увидят честный ноль и причину.
+        return {
+            "ideas": [],
+            "degraded": True,
+            "degraded_reason": inp.get("degraded_reason") or "нет сырья для идей",
+        }
     # ПАМЯТЬ — работа Мозга, не Глаз (2026-07-13, переехало из _run_collect). Фильтр «уже
     # видели» — ТОЛЬКО когда явно попросили (харвест ставит флаг в env). Интерактивный
     # «приноси идеи» (панель, ручной клик) флаг не ставит — юзер жмёт кнопку, ожидая идей
@@ -136,9 +169,17 @@ def _run_ideate(inputs, env):
     fresh = None
     if env.get("filter_seen_items") and inp.get("items"):
         inp = dict(inp)
-        fresh = wiring.seen_items.filter_fresh(inp["items"], mark=False)  # фильтруем БЕЗ пометки
+        always = [item for item in inp["items"] if isinstance(item, dict) and item.get("always_context")]
+        regular = [item for item in inp["items"] if not (isinstance(item, dict) and item.get("always_context"))]
+        fresh_regular = wiring.seen_items.filter_fresh(regular, mark=False)
+        # Карта проекта и архитектурные опоры нужны КАЖДОМУ prompt, иначе свежий файл
+        # снова оказывается вырванным из контекста. Они не влияют на fresh_n гейта:
+        # гейт по-прежнему запускает LLM только при новом ID.
+        fresh = always + fresh_regular
         inp["items"] = fresh
-    e = {"k": 8}  # генерим 8 кандидатов — баланс: разнообразие без размытия качества и без мультипликатора оркестра
+    # Сколько кандидатов генерить — из env (по умолчанию config.DEFAULT_GEN_K). Настраивается в пульте:
+    # больше = шире выбор для совета, но дольше прогон и риск размытия качества. Раньше было хардкод 8.
+    e = {"k": int(env.get("gen_k", config.DEFAULT_GEN_K))}
     llm = _content_llm(env)
     if llm:
         e["llm"] = llm

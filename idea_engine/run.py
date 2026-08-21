@@ -15,10 +15,14 @@ CLI:
 """
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cyborg"))
+
+import config  # noqa: E402
 import rejected  # noqa: E402  (мусор = отклонена: суть уходит сюда, учит генератор/судью)
 import triage_store  # noqa: E402  (take/later = разобрана: полная идея уходит в taken.json/later.json)
 from organs import collect_source, finish_step, ideate  # noqa: E402
@@ -26,23 +30,64 @@ from store import Store, state_lock  # noqa: E402
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data")
-STATE = os.path.join(DATA, "state.json")
-INBOX = os.path.join(DATA, "inbox.md")
-NOTIFY = os.path.join(DATA, "notify.md")
+STATE = config.IE_STATE_JSON
+INBOX = config.INBOX_MD
+NOTIFY = config.IE_NOTIFY_MD
+ORACLE_INDEX = os.path.join(DATA, "oracles", config.ORACLE_INDEX_FILE)
+
+_ORACLE_LINE = re.compile(r"^-\s+\[(.+?)\]\((.+?)\)\s*(?:[—-]\s*(.*))?$")
+_ORACLE_INBOX_MAX = 5  # последние N планов в инбоксе; полный список — в самом oracles/index.md
+
+
+def _oracle_section():
+    """Секция «планы Oracle» для inbox.md — РЕГЕНЕРИРУЕТСЯ из oracles/index.md.
+
+    Раньше deliver_oracle (заморожен) дописывал карточку в конец inbox.md ("a"), а
+    _write_inbox перегенерировал файл целиком ("w") — любой тик/триаж СТИРАЛ
+    Oracle-карточки (council 2026-08-17, #2; подтверждено вживую: планы 15–16.08
+    были в oracles/, в inbox.md — ни одной). Регенерация из индекса возвращает и уже
+    потерянные планы, а inbox остаётся полностью производным видом (мастер — индекс).
+    Дубли ссылок (известная шероховатость индекса) пропускаем; пути в карточках —
+    относительно data/ (инбокс лежит рядом с oracles/)."""
+    if not os.path.isfile(ORACLE_INDEX):
+        return []  # ни одного плана — секции нет, формат инбокса как раньше
+    try:
+        with open(ORACLE_INDEX, encoding="utf-8-sig") as f:
+            raw = f.read().splitlines()
+    except OSError:
+        return []
+    seen, cards = set(), []
+    for ln in raw:
+        m = _ORACLE_LINE.match(ln.strip())
+        if not m:
+            continue
+        title, path, rest = m.group(1).strip(), m.group(2).strip(), (m.group(3) or "").strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        goal = rest.split(" (")[0].strip() or "—"
+        proj = path.split("/")[0] if "/" in path else "?"
+        cards.append([f"- **{title}** — `{goal}`", f"    - проект: `{proj}`", f"    - план: `oracles/{path}`"])
+    if not cards:
+        return []
+    return ["", "## Дорожка C — планы Oracle (по кодовой базе)", ""] + [
+        ln for card in cards[-_ORACLE_INBOX_MAX:] for ln in card
+    ]
+
 
 CFG = {
-    "cap": 0,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
-    "n": 8,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
-    "source": "hn",
-    "k": 3,  # сколько идей за раз
-    "recon_path": "M:/projects/panelofprojects/recon.json",
+    "cap": config.LEGACY_TICK_CAP,  # 0 = без потолка: идеи копятся в одну кучу, разбираешь в своём темпе
+    "n": config.LEGACY_TICK_SOURCE_N,  # (только legacy standalone-tick; живой конвейер берёт n из harvest.SOURCE_N)
+    "source": config.LEGACY_TICK_SOURCE,
+    "k": config.LEGACY_TICK_K,  # сколько идей за раз
+    "recon_path": config.RECON_FILE,
     "skip_folders": [],  # folder'ы режима B, которые не толкать (пусто = не фильтровать); knob finish_step
 }
 
 
 def _seed_brain(seed_path):
     """Файл со строками JSON -> callable(prompt)->str. Стенд-ин ask_llm до ключа."""
-    with open(seed_path, encoding="utf-8") as f:
+    with open(seed_path, encoding=config.HTTP_CHARSET_UTF8) as f:
         blob = f.read()
     return lambda _prompt: blob
 
@@ -111,8 +156,12 @@ def _write_inbox(store):
     else:
         lines.append("_пока пусто_")
     lines.append("")
+    # Дорожка C: Oracle-планы регенерируются из oracles/index.md — deliver_oracle
+    # дописывает карточку в конец, но следующий же тик переписывает файл целиком;
+    # без регенерации планы пропадали из инбокса (см. _oracle_section).
+    lines += _oracle_section()
     os.makedirs(DATA, exist_ok=True)
-    with open(INBOX, "w", encoding="utf-8") as f:
+    with open(INBOX, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("\n".join(lines) + "\n")
 
 
@@ -123,7 +172,7 @@ def _notify(store, info):
         msg = f"tick {t}: режим A — добавлено идей {info['added']} (мозг {info['brain']}{', DEGRADED' if info['degraded'] else ''})"
     else:
         msg = f"tick {t}: режим B — очередь полна, напоминание доделать ({'есть' if info['nudge'] else 'нет'})"
-    with open(NOTIFY, "a", encoding="utf-8") as f:
+    with open(NOTIFY, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(msg + "\n")
 
 
@@ -143,7 +192,7 @@ def _cli(argv):
         print("inbox ->", INBOX)
     elif cmd == "status":
         idea_id, st = int(argv[1]), argv[2]
-        if st not in ("take", "later", "trash"):
+        if st not in config.STORE_CLEARED_STATUSES:
             print("статус должен быть take|later|trash")
             return
         with state_lock(STATE):  # триаж пульта: замок вокруг load→set_status→save
@@ -158,42 +207,56 @@ def _cli(argv):
                 # статус в victim — забираем victim с обновлённым статусом, потом удаляем.
                 victim = next((i for i in store.data["ideas"] if i["id"] == idea_id), None)
                 if victim:
-                    if st == "trash":
-                        # мусор = отклонена: СУТЬ (title+why) → rejected.json — учит генератор/судью
-                        # не приносить похожее. Полная идея здесь не нужна (храним суть, не архив).
-                        rejected.add(victim.get("title", ""), victim.get("why", ""))
-                    else:
-                        # взять/позже: ПОЛНАЯ идея (id/title/why/score/born_tick/…) → taken/later,
-                        # с меткой triaged_ts. Без потолка — разобранные идеи не должны теряться.
-                        triage_store.add(
-                            triage_store.TAKEN_PATH if st == "take" else triage_store.LATER_PATH,
-                            victim,
+                    try:
+                        if st == config.STORE_STATUS_TRASH:
+                            # мусор = отклонена: СУТЬ (title+why) → rejected.json — учит генератор/судью
+                            # не приносить похожее. Полная идея здесь не нужна (храним суть, не архив).
+                            rejected.add(victim.get("title", ""), victim.get("why", ""))
+                        else:
+                            # взять/позже: ПОЛНАЯ идея (id/title/why/score/born_tick/…) → taken/later,
+                            # с меткой triaged_ts. Без потолка — разобранные идеи не должны теряться.
+                            triage_store.add(
+                                triage_store.TAKEN_PATH if st == config.STORE_STATUS_TAKE else triage_store.LATER_PATH,
+                                victim,
+                            )
+                    except triage_store.CorruptedError as exc:
+                        # Битый файл разобранного (council 2026-08-17 #3): ОТКАЗ до store.save() —
+                        # идея остаётся в инбоксе, битый файл не перезаписан (карантин-копия снята
+                        # внутри). Панель покажет refusal как ошибку действия.
+                        print(
+                            f"REFUSED #{idea_id} -> {st}: файл разобранного битый ({exc}) — почини руками, действие отменено"
                         )
+                        sys.exit(1)
                     store.data["ideas"] = [i for i in store.data["ideas"] if i["id"] != idea_id]
             store.save()
             _write_inbox(store)
             # B3: журнал триажа для Feedback Cortex (B4 адаптирует веса/профиль по этим сигналам).
             # Событие = суть действия: что разобрали, как, откуда идея, с каким баллом/судьёй.
             # ts проставляет triage_events.append. Не роняет триаж при ошибке (best-effort).
+            # Фаза 2 Feedback Cortex: breakdown_votes (если есть на карточке — ставит _rank_by_council
+            # Фазы 1) едет в событие → feedback_cortex наказывает/поощряет КОНКРЕТНОГО советника,
+            # а не «всех сразу» по judged. Обратно совместимо: нет поля → не пишем (старые данные ок).
             if ok and victim:
                 try:
                     import triage_events
 
-                    triage_events.append(
-                        {
-                            "idea_id": idea_id,
-                            "action": st,
-                            "title": victim.get("title", ""),
-                            "source_name": victim.get("source_name"),
-                            "score": victim.get("score"),
-                            "judged": victim.get("judged"),
-                        }
-                    )
+                    event = {
+                        "idea_id": idea_id,
+                        "action": st,
+                        "title": victim.get("title", ""),
+                        "source_name": victim.get("source_name"),
+                        "score": victim.get("score"),
+                        "judged": victim.get("judged"),
+                    }
+                    votes = victim.get("breakdown_votes")
+                    if isinstance(votes, dict) and votes:
+                        event["breakdown_votes"] = votes
+                    triage_events.append(event)
                 except Exception:
                     pass  # журнал — best-effort, триаж уже сохранён
         print("OK" if ok else "NOT_FOUND", f"#{idea_id} -> {st}")
     elif cmd == "show":
-        print(open(INBOX, encoding="utf-8").read() if os.path.exists(INBOX) else "(инбокса ещё нет)")
+        print(open(INBOX, encoding=config.HTTP_CHARSET_UTF8).read() if os.path.exists(INBOX) else "(инбокса ещё нет)")
     else:
         print("неизвестная команда:", cmd)
         print(__doc__)

@@ -69,7 +69,7 @@ def _pre_restore_copy(original_path, ts):
     """Скопировать текущий файл в <path>.pre-restore-<TS> перед перезаписью (страховка)."""
     if not os.path.exists(original_path):
         return None
-    backup = f"{original_path}.pre-restore-{ts}"
+    backup = f"{original_path}{config.PRE_RESTORE_PREFIX}{ts}"
     shutil.copy2(original_path, backup)
     return backup
 
@@ -83,10 +83,10 @@ def restore(backup_name):
 
     # Куда копируем (реальные пути state.json + seen_items.json).
     targets = {
-        "state.json": config.IE_STATE_JSON,
-        "seen_items.json": seen_items.PATH,
+        config.IE_STATE_FILE: config.IE_STATE_JSON,
+        config.SEEN_ITEMS_FILE: seen_items.PATH,
     }
-    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    ts = datetime.datetime.now().strftime(config.BACKUP_TS_FMT)
 
     # Шаг 1: pre-restore страховка текущих файлов.
     pre_copied = []
@@ -146,7 +146,11 @@ def _interactive():
         print(f"нужно число (1..{len(names)})")
         return
     name = names[idx - 1]
-    confirm = input(f"перезаписать ТЕКУЩИЕ state.json/seen_items.json из {name}? [y/N]: ").strip().lower()
+    try:
+        confirm = input(f"перезаписать ТЕКУЩИЕ state.json/seen_items.json из {name}? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\nотмена")
+        return
     if confirm != "y":
         print("отмена")
         return

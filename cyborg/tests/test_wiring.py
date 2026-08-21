@@ -16,8 +16,37 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ask_llm  # noqa: E402  (last_provider мок для provider-проброса в _run_ideate)
+import config  # noqa: E402
 import seen_items  # noqa: E402
+import shadow_metrics  # noqa: E402
 import wiring  # noqa: E402
+
+_ORIGINAL_SHADOW_PATH = None
+_MODULE_SHADOW_PATH = None
+
+
+def setUpModule():
+    """Все wiring-тесты пишут shadow-метрики только во временный файл."""
+    global _ORIGINAL_SHADOW_PATH, _MODULE_SHADOW_PATH
+    _ORIGINAL_SHADOW_PATH = shadow_metrics.PATH
+    fd, _MODULE_SHADOW_PATH = tempfile.mkstemp(prefix="kiborg_wiring_shadow_", suffix=".jsonl")
+    os.close(fd)
+    os.remove(_MODULE_SHADOW_PATH)
+    shadow_metrics.PATH = _MODULE_SHADOW_PATH
+
+
+def tearDownModule():
+    shadow_metrics.PATH = _ORIGINAL_SHADOW_PATH
+    try:
+        os.remove(_MODULE_SHADOW_PATH)
+    except OSError:
+        pass
+
+
+class TestModuleDataIsolation(unittest.TestCase):
+    def test_shadow_metrics_path_is_not_live_data(self):
+        live = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        self.assertNotEqual(os.path.dirname(os.path.abspath(shadow_metrics.PATH)), live)
 
 
 class TestRunCollectPassesEnv(unittest.TestCase):
@@ -97,7 +126,7 @@ class TestRunCollectPassesEnv(unittest.TestCase):
     def test_files_paths_reach_collect_source(self):
         # РЕГРЕССИЯ 2026-07-15: тот же класс, что telegram — 'files' в sources есть, но files_paths
         # НЕ прокидывался через _run_collect → _files давал «no folders configured», весь прогон
-        # уходил в 4 захардкоженных заголовка (degraded=True), папка юзера НЕ читалась.
+        # честно деградировал в пустое сырьё, а папка юзера НЕ читалась.
         captured = {}
 
         def fake_run(inputs, env):
@@ -108,6 +137,42 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         wiring._run_collect({}, {"n": 30, "sources": ["files"], "files_paths": ["M:/projects/kiborg", "C:/notes"]})
         self.assertEqual(captured["files_paths"], ["M:/projects/kiborg", "C:/notes"])
         self.assertEqual(captured["sources"], ["files"])
+
+    def test_self_path_reaches_collect_source(self):
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            return {"items": [{"title": "x", "source": "self"}], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect({}, {"n": 30, "sources": ["self"], "self_path": "M:/projects/kiborg"})
+        self.assertEqual(captured["self_path"], "M:/projects/kiborg")
+        self.assertEqual(captured["sources"], ["self"])
+
+    def test_source_quality_flags_reach_collect_source(self):
+        """Ручной run.py не делает gate-prefetch, поэтому флаги качества обязаны пройти
+        через _run_collect сами: иначе фон видит Show HN и GitHub descriptions, а кнопка
+        «Принеси идеи» — только topstories и голые owner/repo."""
+        captured = {}
+
+        def fake_run(inputs, env):
+            captured.update(env)
+            return {"items": [], "degraded": False}
+
+        wiring.collect_source.run = fake_run
+        wiring._run_collect(
+            {},
+            {
+                "sources": ["hn", "gh_trending"],
+                "hn_show_mix": True,
+                "gh_enrich": True,
+                "gh_enrich_limit": 5,
+            },
+        )
+        self.assertTrue(captured["hn_show_mix"])
+        self.assertTrue(captured["gh_enrich"])
+        self.assertEqual(captured["gh_enrich_limit"], 5)
 
     def test_no_files_paths_when_absent(self):
         # без files_paths в env — не плодим ключ (не None), поведение не-files прогонов не меняем
@@ -121,14 +186,21 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         wiring._run_collect({}, {"n": 8, "sources": ["hn"]})
         self.assertNotIn("files_paths", captured)
 
-    def test_collect_scrubs_secret_from_item_title(self):
+    def test_collect_scrubs_secret_from_item_prompt_fields(self):
         # БЕЗОПАСНОСТЬ 2026-07-15: файл-источник может принести СЕКРЕТ в заголовке (фильтр _files
         # неполон) — заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. _run_collect чистит
         # заголовки scrub_secrets ДО генерации (downstream-scrub поздно — промпт уже ушёл).
+        title_secret = "AQ." + "FAKEfake1234567890abcdefgh"
+        context_secret = "AQ." + "OTHERfake1234567890abcdefgh"
+
         def fake_run(inputs, env):
             return {
                 "items": [
-                    {"title": "config.py — AQ.FAKEfake1234567890abcdefgh", "source": "files"},
+                    {
+                        "title": "config.py — " + title_secret,
+                        "context": "служебный пароль: " + context_secret,
+                        "source": "files",
+                    },
                     {"title": "обычный заголовок без секрета", "source": "files"},
                 ],
                 "degraded": False,
@@ -136,7 +208,8 @@ class TestRunCollectPassesEnv(unittest.TestCase):
 
         wiring.collect_source.run = fake_run
         out = wiring._run_collect({}, {"sources": ["files"], "files_paths": ["x"]})
-        self.assertNotIn("AQ.FAKEfake1234567890abcdefgh", out["items"][0]["title"])  # секрет НЕ утёк
+        self.assertNotIn(title_secret, out["items"][0]["title"])  # секрет НЕ утёк
+        self.assertNotIn(context_secret, out["items"][0]["context"])
         self.assertEqual(out["items"][1]["title"], "обычный заголовок без секрета")  # чистое не тронуто
 
     def test_no_telegram_keys_when_absent(self):
@@ -162,6 +235,24 @@ class TestRunCollectPassesEnv(unittest.TestCase):
         pf = {"items": [{"title": "из гейта", "id": 1, "source": "telegram"}], "degraded": False}
         out = wiring._run_collect({}, {"prefetched_out": pf})
         self.assertIs(out, pf)  # тот же выхлоп гейта, без нового фетча
+
+    def test_prefetched_out_is_also_scrubbed(self):
+        # council 2026-08-17 #4: ранний return из prefetched_out обходил scrub — секрет
+        # чистился только на ручном пути, а автономный (ГЛАВНЫЙ, harvest) шёл сырьём
+        # в промпт. Фетч переиспользуем, ОБРАБОТКУ — нет.
+        secret = "AQ." + "FAKEfake1234567890abcdefgh"
+
+        wiring.collect_source.run = lambda i, e: (_ for _ in ()).throw(AssertionError("фетча быть не должно"))
+        pf = {
+            "items": [
+                {"title": "гейт принёс секрет " + secret, "context": "ok", "source": "files"},
+                {"title": "чистый заголовок", "context": "тоже ок", "source": "files"},
+            ],
+            "degraded": False,
+        }
+        out = wiring._run_collect({}, {"prefetched_out": pf})
+        self.assertNotIn(secret, out["items"][0]["title"])  # секрет НЕ утёк в промпт
+        self.assertEqual(out["items"][1]["title"], "чистый заголовок")  # чистое не тронуто
 
     def test_no_prefetch_fetches_normally(self):
         captured = {}
@@ -242,6 +333,36 @@ class TestRunIdeateFilterSeenItems(unittest.TestCase):
         self.assertEqual(out1["n_in"], 2)  # первый раз — оба новые
         out2 = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
         self.assertEqual(out2["n_in"], 0)  # второй раз — те же items, уже видели
+
+    def test_always_context_survives_seen_filter(self):
+        items = [
+            {"title": "Карта", "source": "files", "id": "map:1", "always_context": True},
+            {"title": "Свежий файл", "source": "files", "id": "f2:1"},
+        ]
+        first = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
+        second = wiring._run_ideate({"items": items}, {"filter_seen_items": True})
+        self.assertEqual(first["n_in"], 2)
+        self.assertEqual(second["n_in"], 1)  # карта остаётся, обычный уже просмотрен
+
+
+class TestRunIdeateDegradedInput(unittest.TestCase):
+    def test_degraded_source_never_reaches_generator(self):
+        def boom(inputs, env):
+            raise AssertionError("generator must not invent ideas without source material")
+
+        orig = wiring.ideate.run
+        wiring.ideate.run = boom
+        try:
+            out = wiring._run_ideate(
+                {"items": [], "degraded": True, "degraded_reason": "hn: network down"},
+                {"content_llm": lambda prompt: "invented idea"},
+            )
+        finally:
+            wiring.ideate.run = orig
+
+        self.assertEqual(out["ideas"], [])
+        self.assertTrue(out["degraded"])
+        self.assertEqual(out["degraded_reason"], "hn: network down")
 
 
 class TestRunIdeateRankForcing(unittest.TestCase):
@@ -624,6 +745,148 @@ class TestRunRankCouncil(unittest.TestCase):
         wiring.mind.deliberate = fake_think
         wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
         self.assertNotIn("направлении", seen["q"])  # без руля вопрос обычный
+
+
+class TestBreakdownVotesAttached(unittest.TestCase):
+    """Фаза 1 Feedback Cortex: после совета каждая карточка-победитель несёт
+    breakdown_votes = {advisor_name: {"score": 0..1}} — проекция verdict["breakdown"]
+    на конкретную идею. Без этого triage не знает, кто из советников как голосовал,
+    и feedback_cortex штрафует «всех сразу» (грубая эвристика по judged).
+
+    breakdown_votes = additive поле (старые тесты/карточки без него не ломаются).
+    Хранится ТОЛЬКО score (why не нужен адаптации, меньше риск + размер).
+    """
+
+    IDEAS = [
+        {"title": "A", "why": "a"},
+        {"title": "B", "why": "b"},
+        {"title": "C", "why": "c"},
+        {"title": "D", "why": "d"},
+        {"title": "E", "why": "e"},
+        {"title": "F", "why": "f"},
+        {"title": "G", "why": "g"},
+    ]
+
+    def setUp(self):
+        self._orig_deliberate = wiring.mind.deliberate
+
+    def tearDown(self):
+        wiring.mind.deliberate = self._orig_deliberate
+
+    def test_card_carries_breakdown_votes_per_advisor(self):
+        # verdict с breakdown → каждая карточка-победитель несёт breakdown_votes с score
+        # по каждому советнику. oid в breakdown = индекс в options = индекс в IDEAS.
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "breakdown": [
+                    {
+                        "name": "rank_ideas",
+                        "weight": 0.41,
+                        "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                        "why": "arb",
+                    },
+                    {
+                        "name": "ask_llm",
+                        "weight": 0.39,
+                        "scores": {0: 0.7, 1: 0.3, 2: 0.6, 3: 0.85, 4: 0.2, 5: 0.65, 6: 0.4},
+                        "why": "int",
+                    },
+                ],
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        # топ-3 по anti-bland баллу: D(0.9/0.85) A(0.8/0.7) F(0.7/0.65) — порядок как в TestRunRankCouncil
+        by_title = {i["title"]: i for i in out["ideas_best"]}
+        for title in ("D", "A", "F"):
+            self.assertIn("breakdown_votes", by_title[title], f"идея {title} без breakdown_votes")
+            votes = by_title[title]["breakdown_votes"]
+            self.assertIsInstance(votes, dict)
+            # оба советника, что голосовали — присутствуют
+            self.assertIn("rank_ideas", votes)
+            self.assertIn("ask_llm", votes)
+            # score — число в [0,1]
+            for name, v in votes.items():
+                self.assertIsInstance(v, dict)
+                self.assertIn("score", v)
+                self.assertIsInstance(v["score"], (int, float))
+                self.assertGreaterEqual(v["score"], 0.0)
+                self.assertLessEqual(v["score"], 1.0)
+
+    def test_breakdown_votes_score_matches_verdict_per_idea(self):
+        # конкретные значения: для идеи D (oid=3) rank_ideas=0.9, ask_llm=0.85
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "breakdown": [
+                    {"name": "rank_ideas", "weight": 0.41, "scores": {3: 0.9}, "why": "x"},
+                    {"name": "ask_llm", "weight": 0.39, "scores": {3: 0.85}, "why": "y"},
+                ],
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        by_title = {i["title"]: i for i in out["ideas_best"]}
+        self.assertAlmostEqual(by_title["D"]["breakdown_votes"]["rank_ideas"]["score"], 0.9)
+        self.assertAlmostEqual(by_title["D"]["breakdown_votes"]["ask_llm"]["score"], 0.85)
+
+    def test_no_breakdown_no_field_but_no_crash(self):
+        # инвариант: deliberate БЕЗ breakdown (как во всех старых тестах/моках) → карточки
+        # без breakdown_votes, но ничего не падает. backward compat.
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {0: 0.8, 1: 0.2, 2: 0.5, 3: 0.9, 4: 0.1, 5: 0.7, 6: 0.3},
+                "why": "t",  # НЕТ breakdown
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        # карты формируются, отсутствие breakdown_votes — допустимо (не crash)
+        self.assertEqual([i["title"] for i in out["ideas_best"]], ["D", "A", "F"])
+        for card in out["ideas_best"]:
+            # поле либо отсутствует, либо пустой dict — но не падает
+            if "breakdown_votes" in card:
+                self.assertEqual(card["breakdown_votes"], {})
+
+    def test_breakdown_votes_has_no_why_field(self):
+        # ТЗ Фазы 1: хранить ТОЛЬКО score, без why. why не нужен адаптации, меньше риск
+        # протащить лишний текст в state.json.
+        def fake_think(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm"],
+                "degraded": False,
+                "scores": {3: 0.9},
+                "breakdown": [
+                    {"name": "rank_ideas", "weight": 0.41, "scores": {3: 0.9}, "why": "секретный комментарий"},
+                ],
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake_think
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}]})
+        for card in out["ideas_best"]:
+            if "breakdown_votes" in card:
+                for v in card["breakdown_votes"].values():
+                    self.assertNotIn("why", v)
+
+    def test_invalid_breakdown_scores_are_skipped(self):
+        import wiring_council
+
+        for bad_score in (True, -0.01, 1.01, float("nan"), float("inf")):
+            votes = wiring_council._breakdown_to_votes(
+                [{"name": "rank_ideas", "scores": {0: bad_score}}],
+                [0],
+            )
+            self.assertEqual(votes[0], {})
 
 
 class TestDynamicKeepThreshold(unittest.TestCase):
@@ -1040,6 +1303,111 @@ class TestLazyOrchestra(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)  # orchestra нет → Фаза 2 не запускается
 
 
+class TestShadowLogging(unittest.TestCase):
+    """C4 shadow-логирование: на канон-пути (оркестр всегда) после deliberate считаем overlap
+    rank_ideas×ask_llm и пишем запись в shadow_metrics.jsonl. Реальное поведение НЕ меняется —
+    только наблюдатель. Любой сбой (нет breakdown, исключение) → тихо, прогон не роняется.
+    """
+
+    IDEAS = [{"title": t, "why": t.lower()} for t in ("A", "B", "C", "D", "E")]
+
+    def setUp(self):
+        self._orig_deliberate = wiring.mind.deliberate
+        self._orig_sm_path = shadow_metrics.PATH
+        # redirect PATH в tmp чтобы не писать в реальный data/
+        self.tmp = os.path.join(tempfile.gettempdir(), "kiborg_shadow_test.jsonl")
+        shadow_metrics.PATH = self.tmp
+        self._cleanup()
+
+    def tearDown(self):
+        wiring.mind.deliberate = self._orig_deliberate
+        shadow_metrics.PATH = self._orig_sm_path
+        self._cleanup()
+
+    def _cleanup(self):
+        try:
+            os.remove(self.tmp)
+        except OSError:
+            pass
+
+    def _patch_deliberate(self, breakdown):
+        """Патчит deliberate чтобы вернуть verdict с заданным breakdown."""
+
+        def fake(q, options, council, context):
+            return {
+                "live": ["rank_ideas", "ask_llm", "orchestra"],
+                "degraded": False,
+                "scores": {i: 0.5 for i in range(len(options))},
+                "breakdown": breakdown,
+                "why": "t",
+            }
+
+        wiring.mind.deliberate = fake
+
+    def test_shadow_logs_overlap_on_canon_path(self):
+        # канон-прогон (без lazy_orchestra, с orchestra в env) → deliberate отработал,
+        # shadow замерил overlap и записал. Реальный deliberate не меняется.
+        breakdown = [
+            {"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+            {"name": "ask_llm", "weight": 0.39, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+        ]
+        self._patch_deliberate(breakdown)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        recs = shadow_metrics.load()
+        self.assertEqual(len(recs), 1)
+        rec = recs[0]
+        self.assertEqual(rec["overlap"], 1.0)  # топ-3 полностью совпал
+        self.assertFalse(rec["would_call_phase2"])  # 1.0 >= 2/3 → Фаза 2 не нужна
+        self.assertEqual(rec["top_rank"], [0, 1, 2])
+        self.assertEqual(rec["top_ask"], [0, 1, 2])
+        self.assertEqual(rec["n_ideas"], 5)
+        self.assertEqual(rec["n_reviewers"], 1)
+
+    def test_shadow_records_disagreement_as_would_call_phase2(self):
+        # rank_ideas топ {0,1,2}, ask_llm топ {3,4,0} → пересечение {0}=1, объединение
+        # {0,1,2,3,4}=5 → Jaccard=0.2 < 2/3 → запись помечает would_call_phase2=True
+        # (lazy бы подключил оркестр для разрешения расхождения)
+        breakdown = [
+            {"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7, 3: 0.1, 4: 0.05}, "why": ""},
+            {"name": "ask_llm", "weight": 0.39, "scores": {0: 0.3, 1: 0.1, 2: 0.05, 3: 0.9, 4: 0.8}, "why": ""},
+        ]
+        self._patch_deliberate(breakdown)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1", "m2"]}})
+        recs = shadow_metrics.load()
+        self.assertEqual(len(recs), 1)
+        self.assertTrue(recs[0]["would_call_phase2"])
+        self.assertAlmostEqual(recs[0]["overlap"], 0.2)  # Jaccard 1/5
+        self.assertEqual(recs[0]["n_reviewers"], 2)
+
+    def test_shadow_no_record_when_breakdown_absent(self):
+        # deliberate без breakdown (моки в существующих тестах, stub) → overlap считать не из
+        # чего, запись НЕ пишется. Это защита: shadow не должен спамить пустыми записями.
+        self._patch_deliberate(breakdown=None)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        self.assertEqual(shadow_metrics.load(), [])
+
+    def test_shadow_silent_when_one_advisor_missing(self):
+        # только rank_ideas в breakdown (ask_llm промолчал) → overlap не считается, записи нет
+        breakdown = [{"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""}]
+        self._patch_deliberate(breakdown)
+        wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        self.assertEqual(shadow_metrics.load(), [])
+
+    def test_shadow_does_not_break_when_metrics_unavailable(self):
+        # если shadow_metrics падает (битый PATH/импорт) → прогон НЕ роняется, отбор идёт как обычно
+        breakdown = [
+            {"name": "rank_ideas", "weight": 0.41, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+            {"name": "ask_llm", "weight": 0.39, "scores": {0: 0.9, 1: 0.8, 2: 0.7}, "why": ""},
+        ]
+        self._patch_deliberate(breakdown)
+        # PATH в несоздаваемый каталог → append упадёт на os.makedirs, но _shadow_log_lazy
+        # ловит всё в try/except → _run_rank возвращает нормальный результат
+        shadow_metrics.PATH = "Z:/nonexistent_drive/shadow_test.jsonl"
+        out = wiring._run_rank({"ideas": self.IDEAS}, {"llm_chain": [{"id": "x"}], "orchestra": {"models": ["m1"]}})
+        # отбор не сломан: ideas_best не пустой
+        self.assertTrue(out and out.get("ideas_best"))
+
+
 class TestScopedRebindWeights(unittest.TestCase):
     """B2: council_weights.is_enabled() → подмена mind.WEIGHTS в try/finally вокруг deliberate.
     Feedback Cortex (B4) активирует флаг после накопления данных. По умолчанию disabled →
@@ -1201,20 +1569,20 @@ class TestCollectLockedTgSession(unittest.TestCase):
         held = {}
 
         def fake(inputs, env):
-            held["lock"] = os.path.exists(self.sess + ".lock")  # замок держится В МОМЕНТ фетча
+            held["lock"] = os.path.exists(self.sess + config.TG_LOCK_SUFFIX)  # замок держится В МОМЕНТ фетча
             return {"items": [], "degraded": False}
 
         wiring.collect_source.run = fake
         wiring._collect_locked({}, {"telegram_session": self.sess})
         self.assertTrue(held["lock"])  # держали эксклюзивно во время фетча
-        self.assertFalse(os.path.exists(self.sess + ".lock"))  # снят после выхода
+        self.assertFalse(os.path.exists(self.sess + config.TG_LOCK_SUFFIX))  # снят после выхода
 
     def test_no_lock_without_telegram(self):
         seen = {}
 
         def fake(inputs, env):
             seen["called"] = True
-            seen["any_lock"] = any(f.endswith(".lock") for f in os.listdir(self.tmp))
+            seen["any_lock"] = any(f.endswith(config.TG_LOCK_SUFFIX) for f in os.listdir(self.tmp))
             return {"items": []}
 
         wiring.collect_source.run = fake
@@ -1224,7 +1592,7 @@ class TestCollectLockedTgSession(unittest.TestCase):
 
     def test_second_caller_waits_then_proceeds_no_deadlock(self):
         # «чужой процесс» держит лок -> ждём до таймаута и ПРОХОДИМ (без дедлока), чужой лок не трогаем
-        open(self.sess + ".lock", "w").close()
+        open(self.sess + config.TG_LOCK_SUFFIX, "w").close()
         orig_to = wiring._TG_LOCK_TIMEOUT
         wiring._TG_LOCK_TIMEOUT = 0.2  # короткий таймаут — тест быстрый
         proceeded = {}
@@ -1296,7 +1664,7 @@ class TestRemoveStaleLock(unittest.TestCase):
 
     def _make_lock(self, age_minutes):
         """Создать lock-файл с mtime age_minutes минут назад."""
-        path = self.sess + ".lock"
+        path = self.sess + config.TG_LOCK_SUFFIX
         open(path, "w").close()
         old_ts = time.time() - age_minutes * 60
         os.utime(path, (old_ts, old_ts))
@@ -1321,7 +1689,7 @@ class TestRemoveStaleLock(unittest.TestCase):
 
     def test_no_lock_file_no_error(self):
         # lock-файла нет → функция не падает, возвращает False
-        self.assertFalse(os.path.exists(self.sess + ".lock"))
+        self.assertFalse(os.path.exists(self.sess + config.TG_LOCK_SUFFIX))
         removed = wiring._remove_stale_lock(self.sess, max_age_seconds=30 * 60)
         self.assertFalse(removed)
 
@@ -1343,7 +1711,7 @@ class TestRemoveStaleLock(unittest.TestCase):
         self._make_lock(age_minutes=29)
         removed = wiring._remove_stale_lock(self.sess, max_age_seconds=30 * 60)
         self.assertFalse(removed)
-        self.assertTrue(os.path.exists(self.sess + ".lock"))
+        self.assertTrue(os.path.exists(self.sess + config.TG_LOCK_SUFFIX))
 
     def test_stale_logs_message(self):
         # факт очистки попадает в stdout (читается в логах прогона)
@@ -1361,7 +1729,7 @@ class TestRemoveStaleLock(unittest.TestCase):
         out = captured.getvalue()
         self.assertIn("[stale-lock]", out)
         self.assertIn("удалён зависший lock", out)
-        self.assertIn(self.sess + ".lock", out)  # путь к lock в логе
+        self.assertIn(self.sess + config.TG_LOCK_SUFFIX, out)  # путь к lock в логе
 
     def test_empty_session_returns_false(self):
         # пустой путь сессии → ничего не делаем (защита от None/пустого env)
@@ -1388,7 +1756,7 @@ class TestCollectLockedStaleLockCleanup(unittest.TestCase):
         # _collect_locked должен: (1) снести труп через _remove_stale_lock,
         # (2) вызвать state_lock, который сразу получит O_EXCL (файла-то уже нет),
         # (3) выполниться быстро (без ожидания таймаута).
-        stale_path = self.sess + ".lock"
+        stale_path = self.sess + config.TG_LOCK_SUFFIX
         open(stale_path, "w").close()
         old_ts = time.time() - 31 * 60
         os.utime(stale_path, (old_ts, old_ts))
@@ -1408,7 +1776,7 @@ class TestCollectLockedStaleLockCleanup(unittest.TestCase):
     def test_fresh_lock_kept_cleanup_skipped(self):
         # свежий lock (1 мин) → _remove_stale_lock его НЕ трогает, state_lock честно
         # ждёт до _TG_LOCK_TIMEOUT, потом проходит без лока. Поведение прежнее.
-        fresh_path = self.sess + ".lock"
+        fresh_path = self.sess + config.TG_LOCK_SUFFIX
         open(fresh_path, "w").close()  # mtime = now → свежий
 
         orig_to = wiring._TG_LOCK_TIMEOUT
@@ -1470,11 +1838,7 @@ class TestRunIdeateProviderSurfaces(unittest.TestCase):
 
 
 class TestRunIdeateProvenance(unittest.TestCase):
-    """A5 provenance: после генерации каждая идея получает ссылку на item-источник
-    (source_name, source_url, source_title, inspired_by). Сопоставление по Jaccard
-    значимых слов title; порог 0.3 — ниже не приписываем (модель синтезировала, а не
-    пересказала). Промпт ideate даёт модели ТОЛЬКО title — post-factum Jaccard корректен.
-    """
+    """Provenance: точные source_ids — канон, Jaccard — фолбэк старого ответа."""
 
     def setUp(self):
         self._orig = wiring.ideate.run
@@ -1495,6 +1859,25 @@ class TestRunIdeateProvenance(unittest.TestCase):
         self.assertEqual(idea.get("source_name"), "hn")
         self.assertEqual(idea.get("source_url"), "https://hn/x")
         self.assertEqual(idea.get("source_title"), "сон: трекер фаз")
+
+    def test_declared_source_ids_attach_multiple_exact_refs(self):
+        wiring.ideate.run = lambda inputs, env: {
+            "ideas": [{"title": "Глубокая правка", "brain": "llm", "source_ids": ["map:1", "f2:2"]}]
+        }
+        items = [
+            {"title": "Карта проекта", "id": "map:1", "source": "files", "project": "demo"},
+            {
+                "title": "[demo] core.py",
+                "id": "f2:2",
+                "source": "files",
+                "project": "demo",
+                "path": "core.py",
+            },
+        ]
+        idea = wiring._run_ideate({"items": items}, {})["ideas"][0]
+        self.assertEqual(idea["inspired_by"], "map:1")
+        self.assertEqual([ref["id"] for ref in idea["source_refs"]], ["map:1", "f2:2"])
+        self.assertEqual(idea["source_refs"][1]["path"], "core.py")
 
     def test_provenance_below_threshold_no_attachment(self):
         # идея и все items слабо перекликаются → НЕ навязываем ложный источник

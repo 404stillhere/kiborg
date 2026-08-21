@@ -9,15 +9,25 @@
 """
 
 import os
+from pathlib import Path
 
-_KEYS_FILE = os.environ.get("KIBORG_LLM_KEYS", "M:/projects/kiborg/llm_keys.env")
+import config
 
-# Цепочка ИНТУИЦИИ (ask_llm): id, имя ключа, endpoint (полный chat-completions URL), модель.
-# Реш. юзера 2026-07-20: интуиция — meta/muse-spark-1.1 через closerouter; fallback на deepseek-
-# v4-pro и nvidia nemotron-3-ultra (тоже через closerouter, тот же ключ CLOSEROUTER_API_KEY).
-# Одна цепочка free-first: muse-spark (бесплатный tier) → deepseek-v4-pro → nemotron-3-ultra.
-# Порядок = приоритет. Mistral и все остальные — в СОВЕТ.
-_CR_URL = "https://api.closerouter.dev/v1/chat/completions"
+_KEYS_FILE = os.environ.get(config.LLM_KEYS_ENV, config.DEFAULT_LLM_KEYS_FILE)
+
+# Цепочка ИНТУИЦИИ (ask_llm) — fallback после z.ai. Основной провайдер z.ai (glm-5.2,
+# Anthropic endpoint) живёт в отдельном модуле zai_ask.py, потому что DarBench/organ.js
+# говорит только OpenAI /chat/completions. Fallback-цепочка здесь — closerouter:
+# muse-spark → deepseek-v4-pro → nemotron-3-ultra. Порядок = приоритет.
+# Mistral и все остальные — в СОВЕТ.
+_CR_URL = config.CLOSEROUTER_API_BASE
+# Нативные fallback-провайдеры для интуиции: (id, env-key, baseUrl, model). Дубли URL
+# убран — берём из cyborg.config.LLM_PROVIDER_*.
+_NATIVE_PROVIDERS = [
+    ("mistral",) + config.LLM_PROVIDER_MISTRAL,
+    ("openrouter",) + config.LLM_PROVIDER_OPENROUTER,
+    ("groq",) + config.LLM_PROVIDER_GROQ,
+]
 _SPEC = [
     ("muse-spark", "CLOSEROUTER_API_KEY", _CR_URL, "meta/muse-spark-1.1"),
     ("deepseek", "CLOSEROUTER_API_KEY", _CR_URL, "deepseek/deepseek-v4-pro"),
@@ -26,24 +36,78 @@ _SPEC = [
 
 
 def _read_env_file(fp):
-    """KEY=value -> dict. Пустые значения и комментарии игнорируются. Кавычки снимаются."""
+    """KEY=value -> dict. Пустые значения и комментарии игнорируются. Кавычки снимаются.
+    Предупреждает о типичных ошибках формата (пробелы вокруг =, кавычки, BOM)."""
     out = {}
+    warnings = []
     try:
-        with open(fp, encoding="utf-8") as f:
+        with open(fp, encoding=config.HTTP_CHARSET_UTF8_SIG) as f:
             raw = f.read()
     except Exception:
         return out
-    for line in raw.splitlines():
+    for lineno, line in enumerate(raw.splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, _, v = line.partition("=")
         k, v = k.strip(), v.strip()
+        if " " in k or "\t" in k:
+            warnings.append(f"строка {lineno}: ключ содержит пробелы — '{k}'")
         if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+            warnings.append(f"строка {lineno}: убраны кавычки у {k}")
             v = v[1:-1]
+        if line.partition("=")[0].endswith(" ") or line.partition("=")[2].startswith(" "):
+            warnings.append(f"строка {lineno}: пробелы вокруг = — работает, но лучше убрать")
         if k and v:  # пустое значение = ключ не задан, пропускаем
             out[k] = v
+    if warnings:
+        print(f"⚠️ {fp}: предупреждения о формате:")
+        for w in warnings[:3]:
+            print(f"   {w}")
+        if len(warnings) > 3:
+            print(f"   ... и ещё {len(warnings) - 3}")
     return out
+
+
+def _gitignore_for(path):
+    """Найти ближайший .gitignore, начиная с директории файла и поднимаясь вверх."""
+    p = Path(path).resolve()
+    for parent in [p.parent] + list(p.parents):
+        gi = parent / ".gitignore"
+        if gi.is_file():
+            return gi
+    return None
+
+
+def _is_gitignored(file_path):
+    """Проверить, что имя файла явно упомянуто в ближайшем .gitignore."""
+    gi = _gitignore_for(file_path)
+    if not gi:
+        return False
+    name = Path(file_path).name
+    try:
+        lines = gi.read_text(encoding=config.HTTP_CHARSET_UTF8).splitlines()
+    except Exception:
+        return False
+    for line in lines:
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        # убираем возможный префикс '/' и суффикс '/'
+        pattern = raw.strip("/")
+        if pattern == name:
+            return True
+    return False
+
+
+def keys_file_warning(path=None):
+    """Вернуть строку-предупреждение, если файл ключей не в .gitignore. Иначе None."""
+    fp = path or _KEYS_FILE
+    if not Path(fp).is_file():
+        return None
+    if _is_gitignored(fp):
+        return None
+    return f"ВНИМАНИЕ: {fp} НЕ в .gitignore — риск утечки секретов в git"
 
 
 def load_keys(path=None):
@@ -75,6 +139,13 @@ def chain_summary(path=None):
     return ", ".join(f"{c['id']}({c['model']})" for c in build_chain(path)) if build_chain(path) else ""
 
 
+def chain_ids(path=None):
+    """БЕЗОПАСНЫЙ список id провайдеров цепочки, БЕЗ apiKey/baseUrl.
+
+    Для UI/пульта, где нужен только факт наличия плеча и его идентификатор."""
+    return [c["id"] for c in build_chain(path)]
+
+
 def available(path=None):
     """Есть ли хоть один провайдер (жива ли интуиция)."""
     return len(build_chain(path)) > 0
@@ -88,18 +159,14 @@ def available(path=None):
 # сети юзера (HTTP 400 "User location is not supported") — тоже отключён 2026-07-21, спека
 # остается на случай смены сети/VPN (вернуть = убрать из _COUNCIL_DISABLED).
 _COUNCIL_SPEC = {
-    "sambanova": ("SAMBANOVA_API_KEY", "https://api.sambanova.ai/v1/chat/completions", "DeepSeek-V3.2"),
-    "groq": ("GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b"),
-    "gemini": (
-        "GEMINI_API_KEY",
-        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-        "gemini-2.5-flash",
-    ),
-    "mistral": ("MISTRAL_API_KEY", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"),
-    "openrouter": ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/chat/completions", "openrouter/free"),
-    "cohere": ("COHERE_API_KEY", "https://api.cohere.ai/compatibility/v1/chat/completions", "command-a-03-2025"),
-    "nvidia": ("NVIDIA_API_KEY", "https://integrate.api.nvidia.com/v1/chat/completions", "meta/llama-3.1-8b-instruct"),
-    "cerebras": ("CEREBRAS_API_KEY", "https://api.cerebras.ai/v1/chat/completions", "llama-3.3-70b"),
+    "sambanova": config.LLM_PROVIDER_SAMBANOVA,
+    "groq": config.LLM_PROVIDER_GROQ,
+    "gemini": config.LLM_PROVIDER_GEMINI,
+    "mistral": config.LLM_PROVIDER_MISTRAL,
+    "openrouter": config.LLM_PROVIDER_OPENROUTER,
+    "cohere": config.LLM_PROVIDER_COHERE,
+    "nvidia": config.LLM_PROVIDER_NVIDIA,
+    "cerebras": config.LLM_PROVIDER_CEREBRAS,
 }
 
 # Рецензенты ОТКЛЮЧЕНЫ, но НЕ удалены (реш. юзера 2026-07-13): спека остаётся, из совета
@@ -110,7 +177,9 @@ _COUNCIL_SPEC = {
 _COUNCIL_DISABLED = {"cerebras", "gemini"}
 
 
-_COUNCIL_DEADLINE = 50  # жёсткий wall-clock потолок на один вызов рецензента (см. _with_deadline)
+_COUNCIL_DEADLINE = int(
+    os.environ.get(config.COUNCIL_DEADLINE_ENV, str(config.COUNCIL_DEADLINE_DEFAULT_SEC))
+)  # wall-clock потолок на один вызов рецензента
 
 
 def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):
@@ -139,21 +208,34 @@ def _with_deadline(fn, deadline=_COUNCIL_DEADLINE):
     return box.get("r", "")
 
 
-def _openai_chat(url, key, model, system, prompt, timeout=40):
+def _openai_chat(url, key, model, system, prompt, timeout=config.KEYCHAIN_OPENAI_CHAT_TIMEOUT):
     """Один OpenAI-совместимый вызов chat/completions. Текст ответа. Бросает при сбое
     (контракт review_content: chat должен бросать, чтобы рецензент ушёл в фолбэк).
-    timeout=40с — сокет-таймаут (эндпоинт, что вообще молчит, падает тут). Slow-loris (сыплет по
+    timeout — сокет-таймаут (эндпоинт, что вообще молчит, падает тут). Slow-loris (сыплет по
     капле) сокет не ловит — его добивает жёсткий _with_deadline в make_council_chat (2026-07-14)."""
     import json as _json
     import urllib.request
 
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
-    body = _json.dumps({"model": model, "messages": msgs, "max_tokens": 1024, "temperature": 0.3}).encode("utf-8")
+    body = _json.dumps(
+        {
+            "model": model,
+            "messages": msgs,
+            "max_tokens": config.KEYCHAIN_OPENAI_MAX_TOKENS,
+            "temperature": config.KEYCHAIN_OPENAI_TEMPERATURE,
+        }
+    ).encode(config.HTTP_CHARSET_UTF8)
     req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}
+        url,
+        data=body,
+        headers={
+            config.HTTP_HEADER_CONTENT_TYPE: config.HTTP_MEDIA_TYPE_JSON,
+            config.HTTP_HEADER_AUTHORIZATION: config.HTTP_HEADER_AUTHORIZATION_BEARER_PREFIX + key,
+        },
+        method=config.HTTP_METHOD_POST,
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        d = _json.loads(r.read().decode("utf-8", "replace"))
+        d = _json.loads(r.read().decode(config.HTTP_CHARSET_UTF8, config.HTTP_DECODE_ERRORS_REPLACE))
     return d["choices"][0]["message"]["content"] or ""
 
 

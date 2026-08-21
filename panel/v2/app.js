@@ -7,9 +7,11 @@
    абстрактный набросок. Структура /api/state:
      S = {
        now, running, run_goal, key:{present,model}, organs:[{name,purpose,role,...}],
-       inbox:{cap,tick,ideas:[{id,title,score,why,brain,source,effort,status,...}],finish,seen_count,error},
+       inbox:{cap,tick,ideas:[{id,title,score,why,brain,source,effort,status,...}],
+              taken:[...],later:[...],rejected:[...],finish,seen_count,error},
        sources:{checked_at, sources:{<name>:{ok,error,items,...}}}|null,
        auto:{on,interval_min}, runs:[{ts,goal,chain,deliverable,value,council,degraded}],
+       last_provider,
        registry:{total,by_status,by_project,cards:[...],error},
        lab:{exists,locked,features,needs_manual},
        direction:{current,presets}, folders:{folders:[{path,on}],paths},
@@ -19,6 +21,23 @@
    ════════════════════════════════════════════════════════════════════════ */
 
 'use strict';
+
+const THEMES = Object.freeze({
+  risograph: { name: 'Risograph' },
+  industrial: { name: 'Industrial' },
+  aether: { name: 'Aether' },
+});
+
+function normalizeTheme(theme) {
+  return Object.prototype.hasOwnProperty.call(THEMES, theme) ? theme : 'risograph';
+}
+
+function applyTheme(theme) {
+  const next = normalizeTheme(theme);
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('kiborg-theme', next);
+  return next;
+}
 
 /* ────────────────────────────────────────────────────────────────────────
    1. API — тонкий клиент к серверу. AbortController на каждом запросе —
@@ -59,14 +78,24 @@ class API {
   static startRun(goal)       { return API._request('POST', '/api/run',       { goal }); }
   static stopRun()            { return API._request('POST', '/api/stop',      {}); }
   static observe()            { return API._request('POST', '/api/observe',   {}); }
+  static fuse()               { return API._request('POST', '/api/fuse',      {}); }
   static setIdea(id, status)  { return API._request('POST', '/api/idea',      { id, status }); }
   static purge(threshold)     { return API._request('POST', '/api/ideas/purge', { threshold }); }
   static setAuto(on, interval){ return API._request('POST', '/api/auto',      { on, interval_min: interval }); }
+  static setMode(mode)        { return API._request('POST', '/api/mode',      { mode }); }
   static setDirection(p)      { return API._request('POST', '/api/direction', p); }
   static setFolders(folders)  { return API._request('POST', '/api/folders',   { folders }); }
   static setFeeds(enabled)    { return API._request('POST', '/api/feeds',     { enabled }); }
   static setCouncil(enabled)  { return API._request('POST', '/api/council',   { enabled }); }
+  static genparams()          { return API._request('GET',  '/api/genparams'); }
+  static setGenparams(p)      { return API._request('POST', '/api/genparams', p); }
   static probeFolders()       { return API._request('GET',  '/api/folders/probe'); }
+  static startOracle(goal, project) { return API._request('POST', '/api/oracle', { goal, project }); }
+  static rollbackState() { return API._request('POST', '/api/state/rollback', {}); }
+  static wizard() { return API._request('GET', '/api/wizard'); }
+  static mcbotStatus() { return API._request('GET', '/api/mcbot/status'); }
+  static mcbotCmd(command) { return API._request('POST', '/api/mcbot/cmd', { command }); }
+  static mcbotAction(action, params) { return API._request('POST', '/api/mcbot/action', { action, params }); }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -130,6 +159,13 @@ class Knight {
     this.body = svg ? svg.querySelector('.breath') : null;
     this.heart = svg ? svg.querySelector('.heartbeat') : null;
     this._mode = 'alive';
+    // Вставить SVG-тело рыцаря из bodies.js (определяет window.KNIGHT_BODIES).
+    // В v1 это делалось inline в panel/index.html; в v2 код переехал сюда, но его
+    // забыли — тело оставалось пустым <g>, рыцарь был невидим (баг 2026-07-24).
+    if (this.body && window.KNIGHT_BODIES) {
+      const style = Object.keys(KNIGHT_BODIES)[0] || 'flat';
+      this.body.innerHTML = KNIGHT_BODIES[style] || '';
+    }
   }
 
   setMode(mode) {
@@ -168,12 +204,57 @@ class Renderer {
     this._lastOrgansSig = null;  // null = «ещё не рендерили» (см. фикс ideas — пустая сигнатура '' легитимна)
     this._lastRunsSig = null;
     this._lastRunLines = -1;
+    this._doneFilter = 'all';
+    this._doneDetailKey = null;
     this._foldProbe = {};        // путь папки → {exists, files, capped} из /api/folders/probe
     this._probeInFlight = false; // анти-спам: один параллельный запрос probe за раз
+    this._healthSetup = null;    // кеш setup-статуса из /api/health
     // Подписки
     state.subscribe('state', ({ prev, next }) => this._onState(prev, next));
     state.subscribe('run',   ({ prev, next }) => this._onRun(prev, next));
     state.subscribe('error', () => this._onError());
+    state.subscribe('running-toggle', (running) => this._updateEmptyStateText({ ...this.state.data, running }));
+    this._loadHealthSetup();
+    setInterval(() => this._loadHealthSetup(), 60000);
+  }
+
+  async _loadHealthSetup() {
+    try {
+      const r = await fetch('/api/health');
+      const data = await r.json();
+      this._healthSetup = data.setup || { status: 'ok', warnings: [] };
+      this._renderSetupDot();
+    } catch (e) {
+      console.error('[health setup] failed', e);
+    }
+  }
+
+  _updateEmptyStateText(S, hintEl) {
+    const hint = hintEl || Renderer.$('.empty-state-hint');
+    if (!hint) return;
+    const busy = !!S.running;
+    const auto = S.auto || {};
+    const hasSources = (S.sources && S.sources.length > 0) ||
+                       (S.folders && S.folders.current);
+    if (busy) {
+      hint.textContent = '⏳ Киборг работает — скоро появятся идеи';
+      hint.style.color = 'var(--text-tertiary)';
+    } else if (!hasSources) {
+      hint.textContent = '⚠️ Нет включённых источников — откройте настройки';
+      hint.style.color = '#d97706';
+    } else if (auto.on) {
+      // подсказка честная про дефолтный режим: что именно авто запускает по тику
+      const phrases = {
+        bring: 'Сам сходит за новыми идеями',
+        finish: 'Сам доделывает проекты',
+        ultra: 'Сам сплавляет ультра-идею'
+      };
+      hint.textContent = `${phrases[S.mode] || phrases.bring} каждые ~${auto.interval_min} мин`;
+      hint.style.color = 'var(--text-tertiary)';
+    } else {
+      hint.textContent = 'Авто выкл — можно нажать кнопку.';
+      hint.style.color = 'var(--text-tertiary)';
+    }
   }
 
   // ── helpers ──
@@ -212,6 +293,12 @@ class Renderer {
     return Math.floor(s / 86400) + ' дн назад';
   }
 
+  static ageMinutes(ts) {
+    if (!ts) return null;
+    const d = new Date(String(ts).replace(' ', 'T'));
+    return isNaN(+d) ? null : (Date.now() - d.getTime()) / 60000;
+  }
+
   static plural(n, one, few, many) {
     const m10 = n % 10, m100 = n % 100;
     if (m10 === 1 && m100 !== 11) return one;
@@ -235,9 +322,13 @@ class Renderer {
     this._renderSources(next);
     this._renderDirection(next);
     this._renderAuto(next);
+    this._renderModeDots(next);
+    this._renderGenparams(next);
     this._renderIdeas(next);
     this._renderOrgans(next);
     this._renderJournal(next);
+    this._renderOracles(next);
+    this._renderMcBot(next);
     this._renderRegistryStrip(next);  // сводка тела/реестра в табах
     this._renderDock(next);
     this._renderEmptyState(next);
@@ -278,13 +369,27 @@ class Renderer {
     Renderer.$('#m-inbox').textContent = open;
     Renderer.$('#m-memory').textContent = seen;
 
-    // свежесть — последний прогон
+    // свежесть — последний прогон; но при включённом авто главное не последняя доставка
+    // (она ЗАКОННО старая, когда нового нет — по ней краснеть нельзя, ложная тревога),
+    // а жив ли сам фон: checked_at пишется КАЖДЫЙ тик автоцикла, даже пустой. Протух =
+    // цикл встал → красный «фон молчит» (детектор перенесён из v1, семантика та же).
     const fresh = Renderer.$('#m-fresh');
     fresh.classList.remove('text-bad');
-    const runs = S.runs || [];
-    const last = runs.length ? runs[runs.length - 1] : null;
-    fresh.textContent = last ? Renderer.agoText(last.ts) : '—';
-    fresh.title = last ? 'последний: ' + last.ts : 'прогонов не было';
+    const chkTs = S.sources && S.sources.checked_at;
+    const chkAge = (S.auto && S.auto.on) ? Renderer.ageMinutes(chkTs) : null;
+    const staleMin = Math.max(((S.auto && S.auto.interval_min) || 30) * 3, 12);  // 3 пропущенных цикла = встал
+    if (chkAge !== null && chkAge > staleMin) {
+      const ago = Renderer.agoText(chkTs) || 'давно';
+      fresh.textContent = '⚠ фон молчит: ' + ago;
+      fresh.classList.add('text-bad');
+      fresh.title = 'автоцикл должен проверять источники каждые ~' + ((S.auto && S.auto.interval_min) || 30)
+        + ' мин, но последняя проверка — ' + ago + '. Похоже, встал — перезапусти пульт.';
+    } else {
+      const runs = S.runs || [];
+      const last = runs.length ? runs[runs.length - 1] : null;
+      fresh.textContent = last ? Renderer.agoText(last.ts) : '—';
+      fresh.title = last ? 'последний: ' + last.ts : 'прогонов не было';
+    }
 
     // ключи
     const keyEl = Renderer.$('#m-keys');
@@ -292,11 +397,26 @@ class Renderer {
     keyEl.textContent = k.present ? k.model : 'нет';
     keyEl.className = 'h-metric-value ' + (k.present ? 'good' : 'warn');
 
+    // последний ответивший провайдер
+    const provEl = Renderer.$('#m-provider');
+    if (provEl) {
+      provEl.textContent = S.last_provider || '—';
+      provEl.className = 'h-metric-value ' + (S.last_provider ? 'good' : '');
+    }
+
     // пульс
     const pulse = Renderer.$('#h-pulse');
     if (pulse) pulse.className = 'h-pulse' + (S.running ? ' working' : '');
     const pst = Renderer.$('.h-pstate');
     if (pst) { pst.textContent = S.running ? 'работает' : 'жив'; pst.className = 'h-pstate ' + (S.running ? 'working' : 'alive'); }
+
+    // Кнопка Стоп: активна ТОЛЬКО когда идёт прогон. Раньше disabled был хардкод в
+    // index.html и НИКОГДА не снимался → юзер не мог остановить прогон, а триаж был
+    // заблокирован busy-защитой (serve.py /api/idea: «идёт прогон — разбор отложен»).
+    // Симметрия с Принести (та disabled при running=true). После клика stopRun() шлёт
+    // POST /api/stop → RUN.running=False → следующий /api/state снимет disabled обратно.
+    const stopBtn = Renderer.$('#btn-stop-left');
+    if (stopBtn) stopBtn.disabled = !S.running;
 
     // авто в шапке
     const at = Renderer.$('#auto-toggle');
@@ -306,6 +426,38 @@ class Renderer {
       at.classList.toggle('on', !!auto.on);
       al.textContent = auto.on ? 'авто ' + auto.interval_min + 'м' : 'авто выкл';
     }
+
+    // индикатор настройки
+    if (this.renderer) this.renderer._renderSetupDot();
+  }
+
+  _renderSetupDot() {
+    if (!this._healthSetup) return;
+    // обновить setup в state.data, чтобы wizard мог открыться по первому ответу /api/health
+    if (this.state && this.state.data) {
+      this.state.data.setup = this._healthSetup;
+    }
+    const header = Renderer.$('#header');
+    if (!header) return;
+    let dot = Renderer.$('#setup-dot');
+    if (!dot) {
+      dot = Renderer.el('span', { attrs: { id: 'setup-dot' } });
+      const brand = Renderer.$('.h-brand');
+      if (brand) brand.appendChild(dot);
+    }
+    const colors = { critical: '#ef4444', warning: '#f59e0b', ok: '#10b981' };
+    const labels = {
+      critical: '⚠ Критические проблемы в настройке',
+      warning: '⚠ Не все источники настроены',
+      ok: '✓ Настройка завершена'
+    };
+    dot.style.cssText = `
+      display:inline-block;width:10px;height:10px;border-radius:50%;
+      background:${colors[this._healthSetup.status]};margin-left:8px;
+      vertical-align:middle;cursor:help;
+    `;
+    dot.title = labels[this._healthSetup.status] +
+      (this._healthSetup.warnings.length > 0 ? '\n\n' + this._healthSetup.warnings.join('\n') : '');
   }
 
   // ── ИСТОЧНИКИ (чипы в левой панели) ──
@@ -318,12 +470,22 @@ class Renderer {
     const activeFeeds = (S.feeds && S.feeds.enabled) || [];
     const filesOn = ((S.folders && S.folders.paths) || []).length > 0;
     const active = new Set([...activeFeeds, ...(filesOn ? ['files'] : [])]);
-    const NM = { hn: 'HN', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub', telegram: 'Telegram', files: 'Папки' };
-    const keys = Object.keys(s.sources).filter(k => active.has(k));
+    const NM = { hn: 'HN', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub', telegram: 'Telegram', self: 'Сам Киборг', files: 'Папки' };
+    // Активный источник показываем сразу, даже если source_status ещё от прошлого
+    // прогона и записи для нового тумблера пока нет. Иначе «Сам Киборг» исчезает
+    // с дашборда до первого сбора, хотя в настройках уже включён.
+    const keys = Object.keys(NM).filter(k => active.has(k));
     if (!keys.length) { box.textContent = 'источники выключены'; return; }
     box.textContent = '';
     keys.forEach(k => {
       const v = s.sources[k];
+      if (!v) {
+        const chip = Renderer.el('span', { cls: 'src-chip', title: 'ещё не проверен' });
+        chip.appendChild(Renderer.el('span', { cls: 'src-dot' }));
+        chip.appendChild(document.createTextNode(NM[k] || k));
+        box.appendChild(chip);
+        return;
+      }
       const ok = v && v.ok;
       const chip = Renderer.el('span', { cls: ['src-chip', ok ? 'ok' : 'bad'], title: v && v.error ? v.error : '' });
       chip.appendChild(Renderer.el('span', { cls: ['src-dot', ok ? 'ok' : 'bad'] }));
@@ -375,26 +537,76 @@ class Renderer {
     if (iv && document.activeElement !== iv) iv.value = auto.interval_min;
   }
 
+  // ── КРУЖКИ «ДЕФОЛТ ДЛЯ АВТО» (у кнопок режимов в левой панели) ──
+  // Радио: галочка стоит у ОДНОГО режима — его авто-петля и запускает по расписанию.
+  // Сам клик-обработчик живёт в UIController.setDefaultMode (у него api/toasts).
+  _renderModeDots(S) {
+    const mode = S.mode || 'bring';
+    Renderer.$$('.mode-dot').forEach(d => {
+      d.classList.toggle('checked', d.dataset.mode === mode);
+    });
+  }
+
+  // ── ПАРАМЕТРЫ ГЕНЕРАЦИИ (drawer «Настройки») ──
+  _renderGenparams(S) {
+    const gp = S.genparams || {};
+    // Для каждого параметра: синхронизируем value из state в range-инпут + текстовое значение.
+    // keep_min_score в env хранится 0..1, в UI показывается 0..10 (×10) — пересчёт здесь.
+    // НЕ затираем инпут, который юзер прямо сейчас правит (activeElement), иначе ползунок
+    // дёргается под пальцем на каждом poll /api/state (5 сек).
+    for (const [key, spec] of Object.entries(gp)) {
+      const input = Renderer.$('#p-' + key);
+      if (!input) continue;
+      const isScore = key.endsWith('_score');
+      let min = spec.min;
+      let max = spec.max;
+      let v = spec.value;
+      if (key === 'keep_min_score') {
+        min *= 10;
+        max *= 10;
+        v *= 10;  // UI 0..10, env 0..1
+      }
+      input.min = String(min);
+      input.max = String(max);
+      v = isScore ? Number(v).toFixed(1) : Math.round(v);
+      if (document.activeElement !== input) input.value = v;
+      const valEl = Renderer.$('#pv-' + key);
+      if (valEl) valEl.textContent = isScore ? Number(v).toFixed(1) : v;
+    }
+  }
+
   // ── ИДЕИ ──
   _renderIdeas(S) {
     const panel = Renderer.$('#tab-ideas');
     if (!panel) return;
     const ideas = (S.inbox && S.inbox.ideas) || [];
     const open = ideas.filter(i => i.status === 'open');
-    // «Разобранные» теперь живут в отдельных мастер-файлах (taken.json/later.json), а не в
-    // ideas[] — ideas[] содержит только open (мастер-разделение 2026-07-22). Собираем done из
-    // inbox.taken + inbox.later; каждая идея уже несёт status и triaged_ts. Сортируем по убыванию
-    // времени разбора (если есть triaged_ts), иначе по id — самые свежие действия сверху.
+    // «Разобранные» живут в отдельных мастер-файлах, а ideas[] содержит только open.
+    // У всех трёх исходов триажа есть свой список: взято, позже и отклонено.
+    // Сортируем по убыванию времени разбора, иначе по id — свежие действия сверху.
     const taken = ((S.inbox && S.inbox.taken) || []).map(i => ({ ...i, status: 'take' }));
     const later = ((S.inbox && S.inbox.later) || []).map(i => ({ ...i, status: 'later' }));
-    const done = [...taken, ...later].sort((a, b) => {
+    const rejected = ((S.inbox && S.inbox.rejected) || []).map(i => ({
+      ...i, status: 'trash', triaged_ts: i.triaged_ts || i.ts || ''
+    }));
+    const sortDone = (items) => items.slice().sort((a, b) => {
       const ta = a.triaged_ts || '', tb = b.triaged_ts || '';
       if (ta !== tb) return ta < tb ? 1 : -1;  // свежие сначала
       return (b.id || 0) - (a.id || 0);  // при равенстве — по id
     });
+    const done = {
+      all: sortDone([...taken, ...later, ...rejected]),
+      take: sortDone(taken),
+      later: sortDone(later),
+      trash: sortDone(rejected),
+    };
 
-    // счётчик
+    // счётчики
     Renderer.$('#ideas-counter').textContent = open.length + ' открыто';
+    // #ideas-panel-count — бейдж в заголовке вкладки «Открытые идеи» (раньше был хардкод
+    // «12» в HTML без JS-обновления → зависал, вводя в заблуждение).
+    const panelCount = Renderer.$('#ideas-panel-count');
+    if (panelCount) panelCount.textContent = open.length;
 
     // список открытых идей — вставляем между finish-slot (или .panel-title)
     // и .done-toggle. Контейнер: #ideas-open.
@@ -458,6 +670,28 @@ class Renderer {
 
     // why
     if (idea.why) card.appendChild(Renderer.el('div', { cls: 'idea-why', text: idea.why }));
+    if (idea.verification) {
+      card.appendChild(Renderer.el('div', {
+        cls: 'idea-proof',
+        text: 'Проверка: ' + idea.verification,
+      }));
+    }
+    if (Array.isArray(idea.source_refs) && idea.source_refs.length) {
+      const refs = idea.source_refs.slice(0, 3).map(ref =>
+        (ref && (ref.path || ref.title || ref.id)) || ''
+      ).filter(Boolean);
+      if (refs.length) {
+        card.appendChild(Renderer.el('div', {
+          cls: 'idea-evidence',
+          text: 'Основание: ' + refs.join(' · '),
+        }));
+      }
+    }
+
+    // сплав источников (ультра-карточка): кто что внёс и что сломается без него
+    if (idea.mode === 'ultra' && Array.isArray(idea.fusion) && idea.fusion.length) {
+      card.appendChild(this._fusionBlock(idea));
+    }
 
     // meta
     const meta = Renderer.el('div', { cls: 'idea-meta' });
@@ -466,6 +700,15 @@ class Renderer {
     }
     const isLLM = idea.brain === 'llm';
     meta.appendChild(Renderer.el('span', { cls: ['idea-tag', isLLM ? 'llm' : ''], text: isLLM ? 'нейронка' : 'болванка' }));
+    if (idea.mode === 'ultra') {
+      meta.appendChild(Renderer.el('span', { cls: ['idea-tag', 'ultra-tag'], text: '🧬 ультра' }));
+    }
+    if (idea.seed != null) {
+      meta.appendChild(Renderer.el('span', {
+        cls: 'idea-tag', text: 'seed ' + idea.seed,
+        title: 'зерно выборки — прогоны переигрываемы (fuse_mode --seed)'
+      }));
+    }
     if (idea.effort) meta.appendChild(Renderer.el('span', { cls: 'idea-tag', text: 'сложность: ' + idea.effort }));
     meta.appendChild(Renderer.el('span', { cls: 'idea-tag', text: '#' + idea.id }));
     card.appendChild(meta);
@@ -488,6 +731,33 @@ class Renderer {
     return card;
   }
 
+  // Блок сплава для ультра-карточки: роль → источник → вклад (took) → крах без него (collapse).
+  // Поля приходят из idea_engine/organs/fuse_ideas.py; sources_missing — кто не дошёл до сплава.
+  _fusionBlock(idea) {
+    const box = Renderer.el('div', { cls: 'idea-fusion' });
+    box.appendChild(Renderer.el('div', { cls: 'idea-fusion-title', text: '🧬 Сплав источников' }));
+    const rows = Renderer.el('div', { cls: 'fusion-rows' });
+    idea.fusion.forEach(f => {
+      if (!f || typeof f !== 'object') return;
+      const row = Renderer.el('div', { cls: 'fusion-row' });
+      const head = Renderer.el('div', { cls: 'fusion-row-head' });
+      if (f.role) head.appendChild(Renderer.el('span', { cls: 'fusion-role', text: f.role }));
+      if (f.source) head.appendChild(Renderer.el('span', { cls: 'fusion-src', text: f.source }));
+      row.appendChild(head);
+      if (f.took) row.appendChild(Renderer.el('div', { cls: 'fusion-took', text: f.took }));
+      if (f.collapse) row.appendChild(Renderer.el('div', { cls: 'fusion-collapse', text: 'Без него: ' + f.collapse }));
+      rows.appendChild(row);
+    });
+    box.appendChild(rows);
+    if (Array.isArray(idea.sources_missing) && idea.sources_missing.length) {
+      box.appendChild(Renderer.el('div', {
+        cls: 'fusion-missing',
+        text: 'Не дошли до сплава: ' + idea.sources_missing.join(', '),
+      }));
+    }
+    return box;
+  }
+
   _finishCard(f) {
     const card = Renderer.el('div', { cls: 'idea-card' });
     card.style.borderColor = 'rgba(6,182,212,0.25)';
@@ -501,22 +771,115 @@ class Renderer {
     return card;
   }
 
-  _renderDone(done) {
+  _renderDone(groups) {
     const toggle = Renderer.$('#done-toggle');
     const list = Renderer.$('#done-list');
     const countEl = Renderer.$('#done-count');
-    if (countEl) countEl.textContent = String(done.length);
-    if (toggle) toggle.style.display = done.length ? '' : 'none';
+    const buttonToggle = Renderer.$('#btn-done-toggle');
+    const total = groups.all.length;
+    if (countEl) countEl.textContent = String(total);
+    if (toggle) toggle.style.display = total ? '' : 'none';
+    if (buttonToggle) buttonToggle.style.display = total ? '' : 'none';
     if (!list) return;
+    if (!total) {
+      list.classList.remove('open');
+      if (toggle) toggle.classList.remove('open');
+    }
+    if (!groups[this._doneFilter]) this._doneFilter = 'all';
+    const visible = groups[this._doneFilter];
+    if (this._doneDetailKey && !visible.some(i => this._doneItemKey(i) === this._doneDetailKey)) {
+      this._doneDetailKey = null;
+    }
     list.textContent = '';
-    done.forEach(i => {
-      const row = Renderer.el('div', { cls: 'done-row' });
-      const st = Renderer.el('span', { cls: ['done-status', i.status], text: { take: 'взял', later: 'позже', trash: 'мусор' }[i.status] || i.status });
+    const filters = [
+      ['all', 'все'],
+      ['take', 'взятые'],
+      ['later', 'позже'],
+      ['trash', 'отклонённые'],
+    ];
+    const filterBar = Renderer.el('div', { cls: 'done-filters', attrs: { role: 'group', 'aria-label': 'Разобранные идеи' } });
+    filters.forEach(([key, label]) => {
+      const selected = this._doneFilter === key;
+      const button = Renderer.el('button', {
+        cls: ['done-filter', selected ? 'on' : ''],
+        text: label + ' ' + groups[key].length,
+        attrs: { type: 'button', 'aria-pressed': String(selected) },
+        onclick: () => {
+          this._doneFilter = key;
+          list.classList.add('open');
+          if (toggle) toggle.classList.add('open');
+          this._renderDone(groups);
+        },
+      });
+      filterBar.appendChild(button);
+    });
+    list.appendChild(filterBar);
+
+    visible.forEach(i => {
+      const itemKey = this._doneItemKey(i);
+      const expanded = this._doneDetailKey === itemKey;
+      const entry = Renderer.el('div', { cls: ['done-entry', expanded ? 'open' : ''] });
+      const row = Renderer.el('button', {
+        cls: 'done-row',
+        attrs: {
+          type: 'button',
+          'aria-expanded': String(expanded),
+          title: expanded ? 'Скрыть описание' : 'Показать описание',
+        },
+        onclick: () => {
+          this._doneDetailKey = expanded ? null : itemKey;
+          this._renderDone(groups);
+        },
+      });
+      const st = Renderer.el('span', { cls: ['done-status', i.status], text: { take: 'взято', later: 'позже', trash: 'отклонено' }[i.status] || i.status });
       row.appendChild(st);
       row.appendChild(Renderer.el('span', { cls: 'done-title', text: i.title || '' }));
-      row.appendChild(Renderer.el('span', { cls: 'done-id', text: '#' + i.id }));
-      list.appendChild(row);
+      if (i.id != null) row.appendChild(Renderer.el('span', { cls: 'done-id', text: '#' + i.id }));
+      row.appendChild(Renderer.el('span', { cls: 'done-row-caret', text: expanded ? '▾' : '▸', attrs: { 'aria-hidden': 'true' } }));
+      entry.appendChild(row);
+      if (expanded) entry.appendChild(this._doneDetailCard(i));
+      list.appendChild(entry);
     });
+  }
+
+  _doneItemKey(i) {
+    return [i.status || '', i.id ?? '', i.triaged_ts || i.ts || '', i.title || ''].join('\u001f');
+  }
+
+  _doneDetailCard(i) {
+    const card = Renderer.el('article', { cls: ['done-detail', i.status] });
+    card.appendChild(Renderer.el('div', { cls: 'done-detail-label', text: 'О чём идея' }));
+    card.appendChild(Renderer.el('div', {
+      cls: 'done-detail-why',
+      text: i.why || 'Описание для этой идеи не сохранилось.',
+    }));
+    if (i.verification) {
+      card.appendChild(Renderer.el('div', {
+        cls: 'done-detail-proof',
+        text: 'Проверка: ' + i.verification,
+      }));
+    }
+    if (Array.isArray(i.source_refs) && i.source_refs.length) {
+      const refs = i.source_refs.slice(0, 3).map(ref =>
+        (ref && (ref.path || ref.title || ref.id)) || ''
+      ).filter(Boolean);
+      if (refs.length) {
+        card.appendChild(Renderer.el('div', {
+          cls: 'done-detail-proof',
+          text: 'Основание: ' + refs.join(' · '),
+        }));
+      }
+    }
+
+    const meta = Renderer.el('div', { cls: 'done-detail-meta' });
+    const score = i.score != null ? i.score : i.read_score;
+    if (score != null) meta.appendChild(Renderer.el('span', { text: 'оценка ' + Number(score).toFixed(1) }));
+    if (i.source) meta.appendChild(Renderer.el('span', { text: i.source }));
+    if (i.effort) meta.appendChild(Renderer.el('span', { text: i.effort }));
+    const ts = i.triaged_ts || i.ts;
+    if (ts) meta.appendChild(Renderer.el('span', { text: 'разобрано ' + ts }));
+    if (meta.childElementCount) card.appendChild(meta);
+    return card;
   }
 
   _renderEmptyState(S) {
@@ -549,11 +912,8 @@ class Renderer {
     } else {
       sub.textContent = 'Сборов ещё не было.';
     }
-    const hint = Renderer.el('div', { cls: 'empty-sub' });
-    hint.textContent = busy ? 'идёт сбор — скоро появятся, можно уйти'
-      : auto.on ? `Сам сходит за новыми каждые ~${auto.interval_min} мин`
-      : 'Авто выкл — можно нажать кнопку.';
-    hint.style.color = 'var(--text-tertiary)';
+    const hint = Renderer.el('div', { cls: 'empty-sub empty-state-hint' });
+    this._updateEmptyStateText(S, hint);
     es.appendChild(sub);
     es.appendChild(hint);
 
@@ -623,6 +983,10 @@ class Renderer {
     const panel = Renderer.$('#tab-organs');
     if (!panel) return;
     const organs = S.organs || [];
+    // счётчик в заголовке вкладки — из данных (раньше в HTML стояло статичное «6 впаяно»,
+    // которое никогда не обновлялось и врёт при другом составе реестра)
+    const cnt = Renderer.$('#tab-organs .panel-title .count');
+    if (cnt) cnt.textContent = organs.length + ' впаяно';
     let list = Renderer.$('#organs-list');
     if (!list) {
       // Первая отрисовка — вычистим статичные примеры и создадим контейнер
@@ -665,6 +1029,9 @@ class Renderer {
     const panel = Renderer.$('#tab-journal');
     if (!panel) return;
     const runs = S.runs || [];
+    // счётчик в заголовке вкладки — реальное число прогонов (раньше в HTML висело статичное «87»)
+    const cnt = Renderer.$('#tab-journal .panel-title .count');
+    if (cnt) cnt.textContent = String(runs.length);
     let tbody = Renderer.$('#tab-journal tbody');
     if (!tbody) return;  // таблица в каркасе уже есть с примерами — чистим при первой реальной отрисовке
     const sig = runs.map(r => r.ts + ':' + r.value).join('|');
@@ -698,6 +1065,230 @@ class Renderer {
     const pill = Renderer.el('span', { cls: ['run-status-pill', ok ? 'ok' : 'fail'], text: ok ? 'ok' : '⚠' });
     tr.appendChild(Renderer.el('td', {}, [pill]));
     return tr;
+  }
+
+  // ── ORACLE (список планов) ──
+  _renderOracles(S) {
+    const list = Renderer.$('#oracles-list');
+    const counter = Renderer.$('#oracles-count');
+    if (!list) return;
+    const oracles = S.oracles || [];
+    if (counter) counter.textContent = String(oracles.length);
+    const sig = oracles.map(o => o.path).join('|');
+    if (sig === this._lastOraclesSig) return;
+    this._lastOraclesSig = sig;
+    list.textContent = '';
+    if (!oracles.length) {
+      list.appendChild(Renderer.el('div', { cls: 'empty-state', text: 'Планов пока нет. Нажми 🔮 Oracle слева.' }));
+      return;
+    }
+    oracles.forEach(o => {
+      const row = Renderer.el('div', { cls: 'oracle-row' });
+      const title = Renderer.el('span', { cls: 'oracle-slug', text: o.slug });
+      const ts = Renderer.el('span', { cls: 'oracle-ts', text: o.ts });
+      const link = Renderer.el('a', { cls: 'oracle-link', text: 'открыть', attrs: { href: 'file:///' + o.path.replace(/\\/g, '/'), target: '_blank' } });
+      row.appendChild(title);
+      row.appendChild(ts);
+      row.appendChild(link);
+      list.appendChild(row);
+    });
+  }
+
+  // ── MC-BOT (управление майнер-ботом) ──
+  _renderMcBot(S) {
+    const panel = Renderer.$('#tab-mcbot');
+    if (!panel) return;
+    const mcbot = S.mcbot || {};
+    const pill = Renderer.$('#mcbot-pill');
+    const statusEl = Renderer.$('#mcbot-status');
+    const metricsEl = Renderer.$('#mcbot-metrics');
+    const logEl = Renderer.$('#mcbot-log');
+
+    // пилюля состояния
+    if (pill) {
+      if (!mcbot.enabled) { pill.textContent = 'off'; pill.className = 'status-pill off'; }
+      else if (!mcbot.connected) { pill.textContent = 'нет связи'; pill.className = 'status-pill warn'; }
+      else { pill.textContent = 'онлайн'; pill.className = 'status-pill on'; }
+    }
+
+    // строка статуса
+    if (statusEl) {
+      if (!mcbot.enabled) statusEl.textContent = 'Управление mc-bot выключено: нет MCBOT_CONTROL_TOKEN.';
+      else if (mcbot.error) statusEl.textContent = 'Ошибка: ' + mcbot.error;
+      else if (!mcbot.connected) statusEl.textContent = 'Бот не в игре (heartbeat не найден в логе).';
+      else if (mcbot.state) statusEl.textContent = 'Состояние: ' + mcbot.state;
+      else statusEl.textContent = 'Бот в игре.';
+    }
+
+    // метрики
+    if (metricsEl) {
+      const sig = JSON.stringify({
+        pos: mcbot.pos, health: mcbot.health, food: mcbot.food,
+        dimension: mcbot.dimension, state: mcbot.state, ts: mcbot.timestamp
+      });
+      if (sig !== this._lastMcBotMetricsSig) {
+        this._lastMcBotMetricsSig = sig;
+        metricsEl.textContent = '';
+        const items = [];
+        if (mcbot.pos && Array.isArray(mcbot.pos)) {
+          items.push(['Позиция', `X ${Math.round(mcbot.pos[0])} · Y ${Math.round(mcbot.pos[1])} · Z ${Math.round(mcbot.pos[2])}`]);
+        }
+        if (typeof mcbot.health === 'number') items.push(['Здоровье', `${mcbot.health.toFixed(1)} / 20`]);
+        if (typeof mcbot.food === 'number') items.push(['Еда', `${mcbot.food.toFixed(1)} / 20`]);
+        if (mcbot.dimension) items.push(['Измерение', String(mcbot.dimension)]);
+        if (mcbot.timestamp) items.push(['Последний пульс', String(mcbot.timestamp).split('.')[0].replace('T', ' ')]);
+        if (!items.length) {
+          metricsEl.textContent = 'Нет данных.';
+        } else {
+          items.forEach(([k, v]) => {
+            const row = Renderer.el('div', { cls: 'mcbot-metric' });
+            row.appendChild(Renderer.el('span', { cls: 'mcbot-metric-key', text: k }));
+            row.appendChild(Renderer.el('span', { cls: 'mcbot-metric-val', text: v }));
+            metricsEl.appendChild(row);
+          });
+        }
+      }
+    }
+
+    // лог операций (одноразовая инициализация + обновление по _mcbotLog)
+    if (logEl && !this._mcbotLogBound) {
+      this._mcbotLogBound = true;
+      logEl.textContent = '';
+      this._mcbotLog('Пульт подключён.');
+    }
+
+    // кнопки — навешиваем один раз
+    if (!this._mcbotButtonsBound) {
+      this._mcbotButtonsBound = true;
+      panel.querySelectorAll('[data-mcbot-cmd]').forEach(btn => {
+        btn.onclick = () => this._mcbotSend(btn.dataset.mcbotCmd);
+      });
+      const sendActionBtn = Renderer.$('#mcbot-action-send');
+      if (sendActionBtn) sendActionBtn.onclick = () => this._mcbotSendAction();
+    }
+  }
+
+  _mcbotActionParams(action) {
+    const params = {};
+    const val = (id) => {
+      const el = Renderer.$(id);
+      return el ? el.value.trim() : '';
+    };
+    const num = (id) => {
+      const v = val(id);
+      const n = Number(v);
+      return v !== '' && Number.isFinite(n) ? n : undefined;
+    };
+    const param = val('#mcbot-action-param');
+    const x = num('#mcbot-action-x');
+    const y = num('#mcbot-action-y');
+    const z = num('#mcbot-action-z');
+    const count = num('#mcbot-action-count');
+
+    if (count !== undefined) params.count = count;
+
+    switch (action) {
+      case 'status':
+      case 'inventory':
+      case 'useitem':
+      case 'eat':
+      case 'fish':
+        break;
+      case 'digblock':
+      case 'placeblock':
+      case 'harvest':
+      case 'sleep':
+        if (x !== undefined) params.x = x;
+        if (y !== undefined) params.y = y;
+        if (z !== undefined) params.z = z;
+        if (action === 'placeblock' && param) params.itemName = param;
+        if (action === 'harvest' && param) params.seedItem = param;
+        break;
+      case 'equip':
+      case 'drop':
+      case 'craft':
+      case 'chesttake':
+        if (param) params.itemName = param;
+        if (action === 'chesttake') {
+          if (x !== undefined) params.x = x;
+          if (y !== undefined) params.y = y;
+          if (z !== undefined) params.z = z;
+        }
+        break;
+      case 'attack':
+      case 'interact':
+      case 'ride':
+        if (param) {
+          const n = Number(param);
+          params.entityId = Number.isFinite(n) ? n : param;
+        }
+        break;
+      case 'trade':
+        if (param) {
+          const n = Number(param);
+          params.tradeIndex = Number.isFinite(n) ? n : 0;
+        }
+        if (x !== undefined) params.entityId = x;
+        break;
+      case 'look':
+        if (x !== undefined) params.yaw = x;
+        if (y !== undefined) params.pitch = y;
+        if (z !== undefined) {
+          params.x = x; params.y = y; params.z = z;
+        }
+        break;
+      case 'move':
+        if (param) params.control = param;
+        params.state = true;
+        if (count !== undefined) params.ms = count;
+        break;
+    }
+    return params;
+  }
+
+  async _mcbotSendAction() {
+    const select = Renderer.$('#mcbot-action-select');
+    if (!select) return;
+    const action = select.value;
+    const params = this._mcbotActionParams(action);
+    const logEl = Renderer.$('#mcbot-log');
+    const line = Object.keys(params).length
+      ? `→ action:${action} ${JSON.stringify(params)}`
+      : `→ action:${action}`;
+    this._mcbotLog(line);
+    const r = await API.mcbotAction(action, params);
+    if (logEl) {
+      if (!r.ok) this._mcbotLog('✗ ' + (r.msg || 'ошибка'));
+      else this._mcbotLog('✓ ' + (r.mc && r.mc.msg ? r.mc.msg : JSON.stringify(r.mc).slice(0, 200)));
+    }
+    const st = await API.mcbotStatus();
+    const state = (this.state && this.state.data) || {};
+    state.mcbot = st;
+    this._renderMcBot(state);
+  }
+
+  async _mcbotSend(command) {
+    const logEl = Renderer.$('#mcbot-log');
+    this._mcbotLog('→ ' + command);
+    const r = await API.mcbotCmd(command);
+    if (logEl) {
+      if (!r.ok) this._mcbotLog('✗ ' + (r.msg || 'ошибка'));
+      else this._mcbotLog('✓ ' + (r.mc && r.mc.msg ? r.mc.msg : 'ok'));
+    }
+    // сразу обновим статус после команды
+    const st = await API.mcbotStatus();
+    const state = (this.state && this.state.data) || {};
+    state.mcbot = st;
+    this._renderMcBot(state);
+  }
+
+  _mcbotLog(line) {
+    const logEl = Renderer.$('#mcbot-log');
+    if (!logEl) return;
+    const now = new Date().toLocaleTimeString('ru-RU', { hour12: false });
+    const div = Renderer.el('div', { cls: 'mcbot-log-line', text: `[${now}] ${line}` });
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
   // ── СВОДКА В ТАБ-БАРЕ ──
@@ -743,7 +1334,7 @@ class Renderer {
       const lines = (run.lines || []).join('\n');
       const m = [...lines.matchAll(/иду: ([a-z_]+)/g)];
       const cur = m.length ? m[m.length - 1][1] : null;
-      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка' };
+      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка', oracle_scan: 'Oracle · скан', oracle_plan: 'Oracle · план', deliver_oracle: 'Oracle · сохранение' };
       header.appendChild(document.createTextNode('работает · ' + (NM[cur] || cur || '…')));
       // таймер по started
       const timer = Renderer.el('span', { cls: 'run-timer' });
@@ -756,8 +1347,8 @@ class Renderer {
     if (prog) {
       prog.textContent = '';
       const lines = (run.lines || []).join('\n');
-      const order = ['collect_source', 'ideate', 'rank_ideas', 'readability_gate', 'scrub_secrets', 'deliver'];
-      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка' };
+      const order = ['collect_source', 'ideate', 'rank_ideas', 'readability_gate', 'scrub_secrets', 'deliver', 'oracle_scan', 'oracle_plan', 'deliver_oracle'];
+      const NM = { collect_source: 'Сбор', ideate: 'Генерация', rank_ideas: 'Арбитр', readability_gate: 'Читаемость', scrub_secrets: 'Очистка', deliver: 'Доставка', oracle_scan: 'Oracle · скан', oracle_plan: 'Oracle · план', deliver_oracle: 'Oracle · сохранение' };
       const cur = (lines.match(/иду: ([a-z_]+)/g) || []).slice(-1)[0];
       const curName = cur && cur.match(/иду: ([a-z_]+)/)[1];
       const done = new Set([...lines.matchAll(/✓ готов: ([a-z_]+)/g)].map(m => m[1]));
@@ -828,11 +1419,12 @@ class Toasts {
       пользователя, дёргает API, обновляет State (или сразу Toasts).
    ──────────────────────────────────────────────────────────────────────── */
 class UIController {
-  constructor(state, api, knight, toasts) {
+  constructor(state, api, knight, toasts, renderer) {
     this.state = state;
     this.api = api;
     this.knight = knight;
     this.toasts = toasts;
+    this.renderer = renderer;
     UIController.instance = this;
 
     // Состояние UI
@@ -846,9 +1438,12 @@ class UIController {
     this._bindTabs();
     this._bindConsole();
     this._bindSettings();
+    this._bindGenparams();
     this._bindDock();
     this._bindIdeasPanelActions();
     this._bindLeftActions();
+    this._bindWizard();
+    this._wizard = new FirstRunWizard(this.api, this.toasts, this);
   }
 
   // ── HEADER ──
@@ -955,11 +1550,13 @@ class UIController {
     const body = Renderer.$('#settings-body');
     if (body) {
       body.addEventListener('click', (e) => {
+        const theme = e.target.closest('.theme-option[data-theme-value]');
         const tgl = e.target.closest('.toggle');
         const chk = e.target.closest('.check');
         const rm = e.target.closest('.list-item-rm');
         const addBtn = e.target.closest('.list-add-row .btn-mini');
-        if (tgl) this._onSettingsToggle(tgl);
+        if (theme) this._setTheme(theme.dataset.themeValue);
+        else if (tgl) this._onSettingsToggle(tgl);
         else if (chk) this._onCouncilToggle(chk);
         else if (rm) this._onRemoveListItem(rm);
         else if (addBtn) this._onAddFolder(addBtn);
@@ -977,6 +1574,24 @@ class UIController {
     };
     const cancel = Renderer.$('.settings-footer .btn-mini');
     if (cancel) cancel.onclick = () => this.closeSettings();
+    // кнопка отката state.json к последнему бэкапу (B7)
+    const rollback = Renderer.$('#btn-rollback');
+    if (rollback) rollback.onclick = () => this._onRollbackState();
+  }
+
+  _onRollbackState() {
+    if (!confirm('Откатить state.json и seen_items.json к последнему бэкапу?\n\nТекущие файлы сохранятся в .pre-restore- рядом.')) return;
+    const btn = Renderer.$('#btn-rollback');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    this.api.rollbackState().then(r => {
+      if (btn) { btn.disabled = false; btn.textContent = '↩ Откат'; }
+      if (r && r.ok) {
+        this.toasts.show('Откат выполнен: ' + (r.msg || r.backup), 'success');
+        this._refreshSoon();
+      } else {
+        this.toasts.show('Откат: ' + ((r && r.msg) || 'не вышло'), 'error');
+      }
+    });
   }
 
   _onSettingsToggle(tgl) {
@@ -994,16 +1609,6 @@ class UIController {
         }
         this._refreshSoon();
       });
-    } else if (what === 'theme') {
-      const cur = document.documentElement.getAttribute('data-theme') || 'risograph';
-      const next = cur === 'risograph' ? 'industrial' : 'risograph';
-      // Сохраняем и применяем
-      localStorage.setItem('kiborg-theme', next);
-      document.documentElement.setAttribute('data-theme', next);
-      tgl.classList.toggle('on', next === 'risograph');
-      const nm = Renderer.$('#theme-name');
-      if (nm) nm.textContent = next === 'risograph' ? 'Risograph' : 'Industrial';
-      this.toasts.show('Тема: ' + (next === 'risograph' ? 'Risograph' : 'Industrial'), 'success');
     } else if (what === 'feed') {
       // какой фид переключили — найдём по пути в DOM
       const row = tgl.closest('.list-item');
@@ -1051,6 +1656,24 @@ class UIController {
         });
       }
     }
+  }
+
+  _setTheme(theme) {
+    const next = applyTheme(theme);
+    this._syncThemePicker(Renderer.$('#settings-body'));
+    this.toasts.show('Тема: ' + THEMES[next].name, 'success');
+  }
+
+  _syncThemePicker(root) {
+    if (!root) return;
+    const current = normalizeTheme(document.documentElement.getAttribute('data-theme'));
+    Renderer.$$('.theme-option[data-theme-value]', root).forEach(option => {
+      const active = option.dataset.themeValue === current;
+      option.classList.toggle('active', active);
+      option.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const name = root.querySelector('#theme-name');
+    if (name) name.textContent = THEMES[current].name;
   }
 
   _onCouncilToggle(chk) {
@@ -1178,24 +1801,115 @@ class UIController {
     }
   }
 
+  // ── ПАРАМЕТРЫ ГЕНЕРАЦИИ (drawer «Настройки», секция «Параметры генерации») ──
+  // Ползунки range для gen_k/rank_keep/source_n/read_min_score/keep_min_score.
+  // Применение: мгновенно по change (как Direction/Feeds), но с debounce 300ms, чтобы
+  // протащить ползунок 8→12 одним движением = ОДИН POST, а не 5. Загоняем все 5 значений
+  // одним запросом — атомарно, state.json не дёргаем.
+  _bindGenparams() {
+    this._gpDebounce = null;
+    const inputs = Renderer.$$('#settings-body input[data-gp]');
+    inputs.forEach(inp => {
+      // input event — обновляем только текстовое значение (живой отклик под пальцем),
+      // POST уходит по change (когда юзер отпустил ползунок) + debounce.
+      inp.addEventListener('input', () => this._updateParamValLabel(inp));
+      inp.addEventListener('change', () => this._scheduleGenparamsSave());
+    });
+    const reset = Renderer.$('#btn-genparams-reset');
+    if (reset) reset.onclick = () => {
+      if (!confirm('Сбросить ВСЕ параметры генерации к значениям по умолчанию?')) return;
+      this.api.setGenparams({ reset: true }).then(r => {
+        if (r && r.ok) {
+          this.toasts.show('Параметры сброшены к умолчаниям', 'success');
+          this._refreshSoon();
+        } else {
+          this.toasts.show('Сброс: ' + ((r && r.msg) || 'не вышло'), 'error');
+        }
+      });
+    };
+  }
+
+  _updateParamValLabel(inp) {
+    const key = inp.dataset.gp;
+    const valEl = Renderer.$('#pv-' + key);
+    if (!valEl) return;
+    const v = parseFloat(inp.value);
+    valEl.textContent = key.endsWith('_score') ? v.toFixed(1) : String(Math.round(v));
+    if (key === 'gen_k') {
+      const keep = Renderer.$('#p-rank_keep');
+      const keepLabel = Renderer.$('#pv-rank_keep');
+      if (keep) {
+        const keepMax = Math.min(8, Math.round(v));
+        keep.max = String(keepMax);
+        if (Number(keep.value) > keepMax) keep.value = String(keepMax);
+        if (keepLabel) keepLabel.textContent = String(Math.round(Number(keep.value)));
+      }
+    }
+  }
+
+  _scheduleGenparamsSave() {
+    if (this._gpDebounce) clearTimeout(this._gpDebounce);
+    this._gpDebounce = setTimeout(() => {
+      this._gpDebounce = null;
+      this._saveGenparams();
+    }, 300);
+  }
+
+  _saveGenparams() {
+    // Собираем все 5 значений из DOM. keep_min_score: UI 0..10 → env 0..1 (делим на 10).
+    // Остальные уходят как есть — clamp на стороне genparams.save по диапазонам.
+    const inputs = Renderer.$$('#settings-body input[data-gp]');
+    const payload = {};
+    inputs.forEach(inp => {
+      const key = inp.dataset.gp;
+      let v = parseFloat(inp.value);
+      if (isNaN(v)) return;
+      if (key === 'keep_min_score') v = v / 10;  // UI 0..10 → env 0..1
+      payload[key] = v;
+    });
+    this.api.setGenparams(payload).then(r => {
+      if (!r || !r.ok) this.toasts.show('Параметры: ' + ((r && r.msg) || 'не вышло'), 'error');
+      else this._refreshSoon();
+    });
+  }
+
   openSettings() {
     Renderer.$('#settings-overlay').classList.add('open');
     Renderer.$('#settings-drawer').classList.add('open');
     this._renderSettingsLists();
+    // Восстановить сохранённый порядок блоков (если юзер ранее расставлял мышкой).
+    // После _renderSettingsLists, т.к. тот может перестраивать .list-item внутри секций,
+    // но сами секции .settings-section не пересоздаёт — порядок восстановится корректно.
+    if (ArrangeManager.instance) ArrangeManager.instance.restoreOrder();
   }
   closeSettings() {
     Renderer.$('#settings-overlay').classList.remove('open');
     Renderer.$('#settings-drawer').classList.remove('open');
   }
 
+  _bindWizard() {
+    const overlay = Renderer.$('#wizard-overlay');
+    const modal = Renderer.$('#wizard-modal');
+    const close = Renderer.$('#wizard-close');
+    const next = Renderer.$('#wizard-next');
+    if (close) close.onclick = () => this._wizard && this._wizard.skip();
+    if (next) next.onclick = () => this._wizard && this._wizard.next();
+    if (overlay) overlay.onclick = () => this._wizard && this._wizard.skip();
+  }
+
+  openWizard() {
+    this._wizard.open();
+  }
+
   _renderSettingsLists() {
+    const body = Renderer.$('#settings-body');
+    if (!body) return;
+    this._syncThemePicker(body);
     const S = this.state.data;
     if (!S) return;
     // Папки
     const folderHost = Renderer.$('#settings-body .settings-section:nth-of-type(2) .list-item');
     // Простой подход: перерисуем секции папок/лент/совета из state
-    const body = Renderer.$('#settings-body');
-    if (!body) return;
     // Папки
     const foldersSection = this._findSection(body, 'Папки');
     if (foldersSection) this._renderFoldersList(foldersSection, S.folders);
@@ -1206,15 +1920,6 @@ class UIController {
     const councilSection = this._findSection(body, 'совет');
     if (councilSection) this._renderCouncilList(councilSection, S.council);
 
-    // Синхронизация тумблера темы с текущей темой.
-    // Условный язык: on = risograph (по умолчанию), off = industrial.
-    const themeToggle = body.querySelector('.toggle[data-toggle="theme"]');
-    if (themeToggle) {
-      const cur = document.documentElement.getAttribute('data-theme') || 'risograph';
-      themeToggle.classList.toggle('on', cur === 'risograph');
-      const nm = body.querySelector('#theme-name');
-      if (nm) nm.textContent = cur === 'risograph' ? 'Risograph' : 'Industrial';
-    }
   }
 
   _findSection(body, titleSub) {
@@ -1254,7 +1959,7 @@ class UIController {
     items.forEach(i => i.remove());
     const all = (feedsData && feedsData.all) || [];
     const enabled = new Set((feedsData && feedsData.enabled) || []);
-    const NM = { hn: 'Hacker News', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub Trending', telegram: 'Telegram' };
+    const NM = { hn: 'Hacker News', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub Trending', telegram: 'Telegram', self: 'Сам Киборг' };
     all.forEach(name => {
       const item = Renderer.el('div', { cls: 'list-item' });
       item.appendChild(Renderer.el('div', { cls: ['toggle', enabled.has(name) ? 'on' : ''], attrs: { 'data-toggle': 'feed' } }));
@@ -1289,11 +1994,41 @@ class UIController {
   }
 
   // ── ДЕЙСТВИЯ В ЛЕВОЙ ПАНЕЛИ ──
+  // Кружок «дефолт для авто» у кнопки режима: ткнул → POST /api/mode → галочка переезжает.
+  // Рисует галочки Renderer._renderModeDots (по подписке на state), здесь — только клик.
+  async setDefaultMode(mode) {
+    if (!mode) return;
+    if (mode === 'oracle') {
+      // Oracle нельзя назначить дефолтом: авто не знает, какой проект анализировать
+      this.toasts.show('Oracle нельзя в авто — ему нужен путь к проекту, укажите его руками', 'warn');
+      return;
+    }
+    const r = await this.api.setMode(mode);
+    if (!r.ok) {
+      this.toasts.show('Дефолт: ' + (r.msg || 'не вышло'), 'error');
+      return;
+    }
+    if (this.state && this.state.data) this.state.data.mode = r.mode;  // не ждать 5-сек poll
+    if (this.renderer) this.renderer._renderModeDots(this.state.data || { mode: r.mode });
+    const names = { bring: 'принести идеи', finish: 'доделать проект', ultra: 'ультра-идею' };
+    this.toasts.show('Авто будет запускать: ' + (names[r.mode] || r.mode), 'success');
+  }
+
   _bindLeftActions() {
-    const actions = Renderer.$$('.actions-list .btn-action');
-    if (actions[0]) actions[0].onclick = () => this.runGoal('приноси свежие идеи');
-    if (actions[1]) actions[1].onclick = () => this.runGoal('доделать существующие проекты');
-    if (actions[2]) actions[2].onclick = () => this.stopRun();
+    const bring = Renderer.$('#btn-bring-left');
+    if (bring) bring.onclick = () => this.runGoal('приноси свежие идеи');
+    const finish = Renderer.$('#btn-finish-left');
+    if (finish) finish.onclick = () => this.runGoal('доделать существующие проекты');
+    const oracle = Renderer.$('#btn-oracle-left');
+    if (oracle) oracle.onclick = () => this.openOracle();
+    const fuse = Renderer.$('#btn-fuse-left');
+    if (fuse) fuse.onclick = () => this.fuse();
+    const stop = Renderer.$('#btn-stop-left');
+    if (stop) stop.onclick = () => this.stopRun();
+    // кружки «дефолт для авто»: ткнул в кружок у режима — авто-петля будет запускать его
+    Renderer.$$('.mode-dot').forEach(dot => {
+      dot.onclick = () => this.setDefaultMode(dot.dataset.mode);
+    });
     // направление
     const applyBtn = Renderer.$('#left .dir-input-row .btn-mini[title="Применить"]');
     const input = Renderer.$('#left .dir-input-row input');
@@ -1393,6 +2128,24 @@ class UIController {
     }
   }
 
+  async fuse() {
+    // Ультра-режим: по одной идее из каждого источника → одна ультра-идея (fuse_mode.py).
+    // Работает через тот же RUN-консоль/стоп, что и обычный прогон.
+    if (this.state.run && this.state.run.running) {
+      this.toasts.show('Прогон уже идёт', 'warn');
+      return;
+    }
+    const r = await this.api.fuse();
+    if (!r.ok) {
+      this.toasts.show('Ультра: ' + (r.msg || 'не вышло'), 'error');
+      return;
+    }
+    this._runStartTime = Date.now();
+    this.toasts.show('Ультра-режим запущен: сплавляю по идее из каждого источника', 'info');
+    const area = Renderer.$('#console-area');
+    if (area) { area.classList.remove('collapsed'); area.classList.add('expanded'); }
+  }
+
   async ideaAct(id, status) {
     const card = Renderer.$('#idea-' + id);
     if (card) card.classList.add('removing');
@@ -1442,6 +2195,225 @@ class UIController {
       this._refreshTimer = null;
       if (window.__kiborgPoller) window.__kiborgPoller.kickState();
     }, 200);
+  }
+
+  async addFolderFromWizard(path) {
+    if (!path) return { ok: false, msg: 'пустой путь' };
+    const folders = ((this.state.data && this.state.data.folders && this.state.data.folders.folders) || [])
+      .map(f => ({ path: f.path, on: f.on }));
+    if (folders.some(f => f.path === path)) return { ok: true, already: true };
+    folders.push({ path, on: true });
+    const r = await this.api.setFolders(folders);
+    if (r && r.ok) this._refreshSoon();
+    return r || { ok: false, msg: 'сеть' };
+  }
+
+  async setFeedsFromWizard(enabled) {
+    const r = await this.api.setFeeds(enabled);
+    if (r && r.ok) this._refreshSoon();
+    return r || { ok: false, msg: 'сеть' };
+  }
+
+  openOracle() {
+    const project = prompt('Путь к проекту:', 'M:/projects/');
+    if (!project) return;
+    const goal = prompt('Цель Oracle — что нужно получить?', '');
+    if (!goal) {
+      this.toasts.show('Цель не указана', 'warn');
+      return;
+    }
+    if (this.state.run && this.state.run.running) {
+      this.toasts.show('Прогон уже идёт', 'warn');
+      return;
+    }
+    this.api.startOracle(goal, project).then(r => {
+      if (!r.ok) {
+        this.toasts.show('Oracle: ' + (r.msg || 'не вышло'), 'error');
+        return;
+      }
+      this._runStartTime = Date.now();
+      this.toasts.show('Oracle запущен: «' + goal + '»', 'info');
+      const area = Renderer.$('#console-area');
+      if (area) { area.classList.remove('collapsed'); area.classList.add('expanded'); }
+    });
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   6a. FirstRunWizard — визард первой настройки. Показывается если setup.status
+       != 'ok': шаги «ключи», «источники», «запуск». Можно пропустить.
+   ──────────────────────────────────────────────────────────────────────── */
+class FirstRunWizard {
+  constructor(api, toasts, ui) {
+    this.api = api;
+    this.toasts = toasts;
+    this.ui = ui;
+    this.opened = false;
+    this.step = 0;
+    this.data = null;
+    this._skipped = localStorage.getItem('kiborg-wizard-skipped') === '1';
+  }
+
+  async maybeOpen() {
+    if (this._skipped || this.opened) return;
+    // Открываем только если setup не ok (нет ключей или нет источников)
+    const S = this.ui.state.data;
+    const setup = (S && S.setup) || { status: 'ok' };
+    if (setup.status === 'ok') return;
+    await this._load();
+    this.open();
+  }
+
+  async _load() {
+    this.data = await this.api.wizard();
+  }
+
+  open() {
+    this.opened = true;
+    this.step = 0;
+    const overlay = Renderer.$('#wizard-overlay');
+    const modal = Renderer.$('#wizard-modal');
+    if (overlay) overlay.classList.add('open');
+    if (modal) modal.classList.add('open');
+    this._render();
+  }
+
+  skip() {
+    this._skipped = true;
+    localStorage.setItem('kiborg-wizard-skipped', '1');
+    this.close();
+  }
+
+  close() {
+    this.opened = false;
+    const overlay = Renderer.$('#wizard-overlay');
+    const modal = Renderer.$('#wizard-modal');
+    if (overlay) overlay.classList.remove('open');
+    if (modal) modal.classList.remove('open');
+  }
+
+  next() {
+    if (this.step === 0) { this.step = 1; this._render(); return; }
+    if (this.step === 1) { this.step = 2; this._render(); return; }
+    if (this.step === 2) {
+      this.ui.runGoal('приноси свежие идеи');
+      this.close();
+      return;
+    }
+  }
+
+  _render() {
+    const body = Renderer.$('#wizard-body');
+    const next = Renderer.$('#wizard-next');
+    const sub = Renderer.$('#wizard-sub');
+    if (!body || !next || !sub) return;
+    body.textContent = '';
+    const titles = ['Ключи LLM', 'Источники', 'Первый сбор'];
+    sub.textContent = `Шаг ${this.step + 1} из ${titles.length}: ${titles[this.step]}`;
+    if (this.step === 0) body.appendChild(this._keysStep());
+    else if (this.step === 1) body.appendChild(this._sourcesStep());
+    else body.appendChild(this._launchStep());
+    this._updateNextButton();
+  }
+
+  _keysStep() {
+    const root = Renderer.el('div', { cls: 'wizard-step active' });
+    root.appendChild(Renderer.el('h3', { text: 'Добавьте ключи' }));
+    root.appendChild(Renderer.el('p', { text: 'Киборг ходит за идеями через LLM-цепочку. Создайте файл llm_keys.env в корне проекта и вставьте хотя бы CLOSEROUTER_API_KEY.' }));
+    const ok = !!(this.data && this.data.keys_configured);
+    root.appendChild(this._checkRow(ok, ok ? 'Ключи найдены' : 'Ключи ещё не найдены — проверьте файл'));
+    if (!ok) {
+      const path = Renderer.el('div', { cls: 'wizard-status', text: 'Пример пути: M:/projects/kiborg/llm_keys.env' });
+      root.appendChild(path);
+      const refresh = Renderer.el('button', { cls: 'btn-mini', text: '↻ Проверить ещё раз' });
+      refresh.onclick = async () => { await this._load(); this._render(); };
+      root.appendChild(refresh);
+    }
+    return root;
+  }
+
+  _sourcesStep() {
+    const root = Renderer.el('div', { cls: 'wizard-step active' });
+    root.appendChild(Renderer.el('h3', { text: 'Выберите источники' }));
+    root.appendChild(Renderer.el('p', { text: 'Можно включить публичные ленты и/или указать папку с вашими заметками/проектами.' }));
+
+    const feedsWrap = Renderer.el('div', { cls: 'wizard-feeds' });
+    const all = (this.data && this.data.all_feeds) || [];
+    const enabled = new Set((this.data && this.data.feeds && this.data.feeds.enabled) || []);
+    const NM = { hn: 'Hacker News', reddit: 'Reddit', lobsters: 'Lobsters', gh_trending: 'GitHub Trending', telegram: 'Telegram', self: 'Сам Киборг' };
+    if (!all.length) {
+      feedsWrap.appendChild(Renderer.el('div', { cls: 'wizard-status', text: 'Ленты недоступны' }));
+    }
+    all.forEach(name => {
+      const row = Renderer.el('div', { cls: 'wizard-feed-row' });
+      row.appendChild(Renderer.el('span', { cls: 'wizard-feed-name', text: NM[name] || name }));
+      const tgl = Renderer.el('div', { cls: ['toggle', enabled.has(name) ? 'on' : ''] });
+      tgl.onclick = () => {
+        tgl.classList.toggle('on');
+        if (enabled.has(name)) enabled.delete(name); else enabled.add(name);
+        this.ui.setFeedsFromWizard(Array.from(enabled));
+      };
+      row.appendChild(tgl);
+      feedsWrap.appendChild(row);
+    });
+    root.appendChild(feedsWrap);
+
+    root.appendChild(Renderer.el('p', { text: 'Или добавьте папку:' }));
+    const folderRow = Renderer.el('div', { cls: 'wizard-folder-row' });
+    const input = Renderer.el('input', { attrs: { type: 'text', placeholder: 'M:/projects/myproject' } });
+    const add = Renderer.el('button', { cls: 'btn-mini', text: '+ Добавить' });
+    add.onclick = async () => {
+      const r = await this.ui.addFolderFromWizard(input.value.trim());
+      if (r && r.ok) { input.value = ''; this.toasts.show('Папка добавлена', 'success'); await this._load(); this._render(); }
+      else { this.toasts.show((r && r.msg) || 'не вышло', 'error'); }
+    };
+    folderRow.appendChild(input);
+    folderRow.appendChild(add);
+    root.appendChild(folderRow);
+
+    const active = this._wizardActiveSources();
+    root.appendChild(this._checkRow(active.length > 0, active.length > 0 ? `Источников: ${active.length}` : 'Нет включённых источников'));
+    return root;
+  }
+
+  _launchStep() {
+    const root = Renderer.el('div', { cls: 'wizard-step active' });
+    root.appendChild(Renderer.el('h3', { text: 'Готово к запуску' }));
+    root.appendChild(Renderer.el('p', { text: 'Киборг может сходить за первой партией идей прямо сейчас. Это займёт 1–3 минуты.' }));
+    const ready = !!(this.data && this.data.keys_configured) && this._wizardActiveSources().length > 0;
+    root.appendChild(this._checkRow(ready, ready ? 'Всё настроено' : 'Проверьте ключи и источники'));
+    return root;
+  }
+
+  _checkRow(ok, text) {
+    const row = Renderer.el('div', { cls: ['wizard-check', ok ? 'ok' : ''] });
+    row.appendChild(Renderer.el('div', { cls: ['check', ok ? 'on' : ''] }));
+    row.appendChild(Renderer.el('span', { cls: 'wizard-check-label', text: text }));
+    return row;
+  }
+
+  _wizardActiveSources() {
+    if (!this.data) return [];
+    const fromFeeds = (this.data.feeds && this.data.feeds.enabled) || [];
+    const fromFolders = ((this.data.folders && this.data.folders.folders) || [])
+      .filter(f => f.on).map(f => 'files:' + f.path);
+    return [...fromFeeds, ...fromFolders];
+  }
+
+  _updateNextButton() {
+    const next = Renderer.$('#wizard-next');
+    if (!next) return;
+    if (this.step === 0) {
+      next.textContent = 'Есть ключи →';
+      next.disabled = false;
+    } else if (this.step === 1) {
+      next.textContent = 'Далее →';
+      next.disabled = false;
+    } else {
+      const ready = !!(this.data && this.data.keys_configured) && this._wizardActiveSources().length > 0;
+      next.textContent = '⚡ Запустить первый сбор';
+      next.disabled = !ready;
+    }
   }
 }
 
@@ -1533,7 +2505,224 @@ class PollingManager {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   8. INIT — связываем всё вместе после загрузки DOM.
+   8. ArrangeManager — режим расстановки блоков настроек мышкой.
+
+   Рубильник: кнопка «✋ Разместить» в шапке drawer. Клик → body.arrange-mode (блоки
+   можно тягать), повторный клик → режим выкл, порядок ФИКСИРУЕТСЯ (порядок DOM
+   сохранён в localStorage и восстановится при следующем открытии настроек).
+
+   Реализация — MOUSE EVENTS (mousedown/mousemove/mouseup), НЕ HTML5 Drag&Drop.
+   Причина: HTML5 D&D в CSS Grid капризен — drop на пустом месте между секциями
+   игнорируется (target=null → блок «возвращается»), drag-image уплывает как призрак
+   а реальный DOM не меняется, а touch-устройства вообще его не любят. Mouse events
+   дают прямой контроль: блок реально едет за курсором (position:fixed), и при mouseup
+   мы честно вставляем его в DOM относительно секции под курсором.
+   ──────────────────────────────────────────────────────────────────────── */
+class ArrangeManager {
+  static STORAGE_KEY = 'kiborg-settings-order';
+  static instance = null;
+
+  constructor(toasts) {
+    this.toasts = toasts;
+    this.active = false;
+    ArrangeManager.instance = this;
+    this._bindButton();
+    // Состояние активного перетаскивания (одно за раз):
+    this._drag = null;  // {el, startX, startY, offsetX, offsetY, moved, width, height}
+  }
+
+  _bindButton() {
+    const btn = Renderer.$('#btn-arrange');
+    if (!btn) return;
+    btn.onclick = () => this.toggle();
+  }
+
+  toggle() {
+    this.active ? this.deactivate() : this.activate();
+  }
+
+  activate() {
+    this.active = true;
+    document.body.classList.add('arrange-mode');
+    const btn = Renderer.$('#btn-arrange');
+    if (btn) {
+      btn.classList.add('on');
+      btn.textContent = '📌 Зафиксировать';
+    }
+    this._installMouseHandlers();
+    if (this.toasts) this.toasts.show('Расстановка вкл — тягай блоки мышкой. Когда готов — «Зафиксировать»', 'info', 4000);
+  }
+
+  deactivate() {
+    this.active = false;
+    document.body.classList.remove('arrange-mode');
+    const btn = Renderer.$('#btn-arrange');
+    if (btn) {
+      btn.classList.remove('on');
+      btn.textContent = '✋ Разместить';
+    }
+    this._uninstallMouseHandlers();
+    this._cleanupDrag();
+    this._persistOrder();
+    if (this.toasts) this.toasts.show('Порядок блоков сохранён', 'success');
+  }
+
+  _sections() {
+    return Renderer.$$('#settings-body > .settings-section');
+  }
+
+  // Стабильный id секции: оригинальный индекс в DOM (как в HTML), а не текущая позиция.
+  // Размечаем один раз — дальше DOM-порядок мутирует перетаскиванием, но data-orig-id остаётся.
+  _ensureOrigIds() {
+    const sections = this._sections();
+    if (sections[0] && sections[0].dataset.origId !== undefined) return;
+    sections.forEach((s, i) => { s.dataset.origId = String(i); });
+  }
+
+  _installMouseHandlers() {
+    // Делегирование на #settings-body: один mousedown ловит любую секцию.
+    // mousemove/mouseup — на document (курсор может выйти за пределы body при быстром тяге).
+    this._onMouseDown = (e) => {
+      if (e.button !== 0) return;  // только левая кнопка
+      const sec = e.target.closest('#settings-body > .settings-section');
+      if (!sec) return;
+      // НЕ стартуем drag с клика по интерактивным элементам внутри секции (инпуты, кнопки,
+      // тумблеры) — юзер может хотеть пользоваться ими даже в arrange-mode.
+      if (e.target.closest('input, button, .toggle, .check, select, textarea')) return;
+      this._ensureOrigIds();
+      const rect = sec.getBoundingClientRect();
+      this._drag = {
+        el: sec,
+        startX: e.clientX,
+        startY: e.clientY,
+        offsetX: e.clientX - rect.left,   // где внутри секции зажали (для фиксации позиции)
+        offsetY: e.clientY - rect.top,
+        moved: false,
+        width: rect.width,
+        height: rect.height,
+      };
+      e.preventDefault();  // не давать браузеру начать выделение текста
+    };
+    this._onMouseMove = (e) => {
+      if (!this._drag) return;
+      const d = this._drag;
+      // Порог 4px — различаем клик от drag (иначе любой клик по блоку «дёрнет» его).
+      if (!d.moved) {
+        const dx = Math.abs(e.clientX - d.startX);
+        const dy = Math.abs(e.clientY - d.startY);
+        if (dx < 4 && dy < 4) return;
+        d.moved = true;
+        this._beginDrag(d);
+      }
+      // Секция едет за курсором: position:fixed ставит её в viewport-координаты.
+      d.el.style.left = (e.clientX - d.offsetX) + 'px';
+      d.el.style.top = (e.clientY - d.offsetY) + 'px';
+      // Подсветить секцию, над которой курсор (target = верхний элемент под курсором
+      // ИСКЛЮЧАЯ саму перетаскиваемую — иначе всегда подсвечивала бы себя).
+      const under = this._elementUnderPoint(e.clientX, e.clientY, d.el);
+      this._sections().forEach(s => s.classList.toggle('drag-over', s === under && s !== d.el));
+    };
+    this._onMouseUp = (e) => {
+      if (!this._drag) return;
+      const d = this._drag;
+      if (d.moved) {
+        // Вставляем в реальное место DOM: относительно секции под курсором.
+        const under = this._elementUnderPoint(e.clientX, e.clientY, d.el);
+        if (under && under !== d.el) {
+          // По половине цели решаем до/после — плавное «положил сверху/снизу».
+          const rect = under.getBoundingClientRect();
+          const after = (e.clientY - rect.top) > rect.height / 2;
+          if (after) under.insertAdjacentElement('afterend', d.el);
+          else under.insertAdjacentElement('beforebegin', d.el);
+        } else if (!under) {
+          // Бросили в пустое место (между секциями / в конце) — вешаем в конец контейнера.
+          // Это и был главный баг HTML5 D&D: drop на пустоте игнорировался → блок «возвращался».
+          const body = Renderer.$('#settings-body');
+          if (body) body.appendChild(d.el);
+        }
+      }
+      this._cleanupDrag();
+    };
+    const body = Renderer.$('#settings-body');
+    if (body) body.addEventListener('mousedown', this._onMouseDown);
+    document.addEventListener('mousemove', this._onMouseMove);
+    document.addEventListener('mouseup', this._onMouseUp);
+  }
+
+  // Найти секцию под точкой, ИГНОРИРУЯ перетаскиваемый элемент. Используем elementsFromPoint
+  // (возвращает всех под курсором) и берём первую .settings-section — так fixed-блок под
+  // курсором не маскирует цель, и подсветка/вставка работают корректно.
+  _elementUnderPoint(x, y, ignore) {
+    const stack = document.elementsFromPoint(x, y);
+    for (const el of stack) {
+      if (el === ignore) continue;
+      if (el.matches && el.matches('#settings-body > .settings-section')) return el;
+    }
+    return null;
+  }
+
+  // Старт реального перетаскивания: секция снимается с grid-потока и становится floating.
+  _beginDrag(d) {
+    d.el.classList.add('dragging');
+    d.el.style.position = 'fixed';
+    d.el.style.width = d.width + 'px';
+    d.el.style.height = d.height + 'px';
+    d.el.style.zIndex = '1000';
+    d.el.style.left = (d.startX - d.offsetX) + 'px';
+    d.el.style.top = (d.startY - d.offsetY) + 'px';
+    // Плейсхолдер в grid: чтобы остальные секции не схлопнулись, когда эту снимем с потока.
+    // Простой путь — оставить grid-ячейку на её месте через visibility:hidden дубликат? Нет —
+    // проще: перетаскиваемая секция НЕ вынимается из DOM (она остаётся в grid, просто fixed).
+    // Grid всё ещё резервирует под неё место → остальные не прыгают. Ок.
+  }
+
+  _cleanupDrag() {
+    if (!this._drag) return;
+    const d = this._drag;
+    // Снимаем все inline-стили, что ставили — секция возвращается в нормальный grid-поток.
+    d.el.classList.remove('dragging');
+    d.el.style.cssText = d.el.style.cssText
+      .split(';')
+      .filter(p => !/^(position|width|height|z-index|left|top)\s*:/.test(p.trim()))
+      .join(';');
+    this._sections().forEach(s => s.classList.remove('drag-over'));
+    this._drag = null;
+  }
+
+  _uninstallMouseHandlers() {
+    const body = Renderer.$('#settings-body');
+    if (body) body.removeEventListener('mousedown', this._onMouseDown);
+    document.removeEventListener('mousemove', this._onMouseMove);
+    document.removeEventListener('mouseup', this._onMouseUp);
+  }
+
+  _persistOrder() {
+    this._ensureOrigIds();
+    const order = this._sections().map(s => s.dataset.origId);
+    try { localStorage.setItem(ArrangeManager.STORAGE_KEY, JSON.stringify(order)); } catch (_) {}
+  }
+
+  // Восстановить сохранённый порядок при открытии drawer. Вызывается из UIController.openSettings.
+  restoreOrder() {
+    let order;
+    try { order = JSON.parse(localStorage.getItem(ArrangeManager.STORAGE_KEY) || 'null'); } catch (_) {}
+    if (!Array.isArray(order) || !order.length) return;  // ничего не сохранено — порядок по умолчанию
+    this._ensureOrigIds();
+    const body = Renderer.$('#settings-body');
+    if (!body) return;
+    // Размечаем map origId → элемент, потом переставляем по сохранённому порядку.
+    const byId = {};
+    this._sections().forEach(s => { byId[s.dataset.origId] = s; });
+    order.forEach(id => {
+      const el = byId[id];
+      if (el) body.appendChild(el);  // appendChild перемещает существующий узел (не клонирует)
+    });
+  }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────
+   9. INIT — связываем всё вместе после загрузки DOM.
 
    Глобальные обработчики ошибок вешаем ДО init: если что-то упадёт в конструкторе
    State/Renderer/UIController/Poller (например, селектор не найден), ошибка не
@@ -1571,15 +2760,19 @@ function __initKiborgPanel() {
     const demoToasts = Renderer.$$('#toasts .toast');
     demoToasts.forEach(t => t.remove());
 
-    // Применяем сохранённую тему (по умолчанию — risograph)
-    const savedTheme = localStorage.getItem('kiborg-theme') || 'risograph';
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    // Применяем сохранённую тему (по умолчанию — risograph).
+    applyTheme(localStorage.getItem('kiborg-theme') || 'risograph');
 
     const renderer = new Renderer(state, knight);
-    const ui = new UIController(state, api, knight, toasts);
+    const ui = new UIController(state, api, knight, toasts, renderer);
     const poller = new PollingManager(state, api);
+    // ArrangeManager — режим расстановки блоков настроек мышкой (кнопка «✋ Разместить»).
+    // Вне режима блоки стоят по умолчанию; сохранённый порядок восстанавливается в openSettings.
+    new ArrangeManager(toasts);
 
     poller.start();
+    // Первый запуск: wizard откроется после первого /api/health если setup не ok.
+    setTimeout(() => ui._wizard && ui._wizard.maybeOpen(), 800);
     console.log('[kiborg] пульт v2 запущен, поллинг /api/state каждые 5 сек');
   } catch (e) {
     __showFatalError('__initKiborgPanel', e);

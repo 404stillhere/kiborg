@@ -6,7 +6,7 @@
 
 Два режима работы maybe_alert(level, message):
   - Токен в окружении (config.ALERT_TOKEN_ENV + ALERT_CHAT_ENV заданы): POST на
-    https://api.telegram.org/bot<TOKEN>/sendMessage через urllib.request (stdlib, БЕЗ новой
+    config.TELEGRAM_BOT_API_BASE/bot<TOKEN>/sendMessage через urllib.request (stdlib, БЕЗ новой
     зависимости — требование requirements.txt «runtime = чистый stdlib»). Chat ID = из ENV,
     текст = «[kiborg][{level}] {message}». Таймаут ALERT_HTTP_TIMEOUT; любая сетевая ошибка →
     тихо падаем на print (алертинг НЕ должен ронять прогон).
@@ -28,10 +28,10 @@ import config
 
 
 def _tg_send(token, chat_id, text):
-    """POST на api.telegram.org/bot<TOKEN>/sendMessage. Любая ошибка → raise (звавший поймает)."""
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
+    """POST на Telegram Bot API /sendMessage. Любая ошибка → raise (звавший поймает)."""
+    url = f"{config.TELEGRAM_BOT_API_BASE}/bot{token}/sendMessage"
+    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode(config.HTTP_CHARSET_UTF8)
+    req = urllib.request.Request(url, data=data, method=config.HTTP_METHOD_POST)
     # urlopen сам по себе выбросит URLError/HTTPError при таймауте/сбое — звавший обработает.
     urllib.request.urlopen(req, timeout=config.ALERT_HTTP_TIMEOUT).read()
 
@@ -44,8 +44,8 @@ def maybe_alert(level, message):
     Любой сбой отправки (нет сети, неверный токен, таймаут) — тихо логируется в stdout,
     исключение НЕ прокидывается: алертинг не должен ронять рабочий прогон киборга.
     """
-    token = os.environ.get("KIBORG_ALERT_TOKEN")
-    chat_id = os.environ.get("KIBORG_ALERT_CHAT_ID")
+    token = os.environ.get(config.ALERT_TOKEN_ENV)
+    chat_id = os.environ.get(config.ALERT_CHAT_ENV)
     line = f"[kiborg][{level}] {message}"
     if not token or not chat_id:
         # Нет конфигурации — логируем. Прогон продолжается, юзер хотя бы увидит в консоли/журнале.

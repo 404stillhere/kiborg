@@ -12,12 +12,24 @@
 """
 
 import json
+import os
 import re
+import sys
+
+# path-bootstrap: rank_ideas.py импортируется как из idea_engine, так и из cyborg (advisors.py).
+# Гарантируем project-root в path, чтобы `from cyborg import config` работал в обоих режимах.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from cyborg import config
 
 RUBRIC = (
     "Ты строгий отборщик идей. Ниже {n} идей-кандидатов (проекты/скиллы/аддоны).\n"
-    "Мысленно оцени каждую: оригинальность (вне очевидного) + практическая польза +\n"
-    "выполнимость в одиночку. Верни ОДНУ строку JSON и ничего больше:\n"
+    "Мысленно оцени каждую: доказательность по исходным материалам + конкретность проверки +\n"
+    "практическая польза + оригинальность + выполнимость. Красивая, но не подтверждённая\n"
+    "догадка должна быть ниже проверяемого улучшения. Верни ОДНУ строку JSON и ничего больше:\n"
     '{{"top":[i,j,k]}} — 0-based индексы {keep} ЛУЧШИХ, от лучшей к худшей.\n'
     "Идеи:\n{items}\n"
 )
@@ -56,11 +68,33 @@ def run(inputs, env):
     env = env or {}
     ideas = list((inputs or {}).get("ideas") or [])
     keep = int(env.get("keep", 3))
-    if len(ideas) <= keep:
-        return {"ideas_best": ideas}  # отбирать не из чего — отдаём как есть
+    # Изменено: если идей МЕНЬШЕ keep — отдаём как есть (нечего отбрасывать).
+    # Если идей >= keep — всегда зовём модель (если есть), даже при len==keep.
+    # Раньше: len<=keep возвращало как есть БЕЗ модели — workaround для этого был keep=len-1.
+    if len(ideas) < keep:
+        return {"ideas_best": ideas}  # идей меньше чем нужно — отдаём все
     llm = env.get("llm")
     if callable(llm):
-        items = "\n".join(f"{i}. {d.get('title', '')} — {d.get('why', '')[:100]}" for i, d in enumerate(ideas))
+        items = "\n".join(
+            (
+                f"{i}. {d.get('title', '')} — {d.get('why', '')[: config.RANK_IDEAS_WHY_MAX_CHARS]}"
+                + (
+                    f" | Проверка: {d.get('verification', '')[: config.RANK_IDEAS_VERIFICATION_MAX_CHARS]}"
+                    if d.get("verification")
+                    else ""
+                )
+                + (
+                    " | Источники: "
+                    + ", ".join(
+                        str(ref.get("title") or ref.get("id") or "")[: config.RANK_IDEAS_REF_TITLE_MAX_CHARS]
+                        for ref in d.get("source_refs", [])[: config.RANK_IDEAS_MAX_REFS]
+                    )
+                    if isinstance(d.get("source_refs"), list) and d.get("source_refs")
+                    else ""
+                )
+            )
+            for i, d in enumerate(ideas)
+        )
         prompt = RUBRIC.format(n=len(ideas), keep=keep, items=items)
         direction = (env.get("direction") or "").strip()
         if direction:  # при прочих равных — идеи В НАПРАВЛЕНИИ выше

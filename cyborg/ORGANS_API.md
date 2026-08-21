@@ -73,21 +73,27 @@ def run(inputs: dict, env: dict) -> dict:
 - `sources` (list[str]) — активные источники. **Пустой список = нет источников** (не дефолт hn).
 - `timeout` (default 8) — таймаут фетча на источник.
 - keyed/конфиг-источники: `telegram_channels`, `telegram_api_id`, `telegram_api_hash`,
-  `telegram_session`, `telegram_python`, `telegram_timeout`, `files_paths`.
+  `telegram_session`, `telegram_python`, `telegram_timeout`, `self_path`, `files_paths`,
+  `gh_enrich_limit`.
 
 **outputs:**
 ```python
 {
-  "items": [{"title": str, "url": str, "id": str, "source": str}, ...],
+  "items": [{"title": str, "url": str, "id": str, "source": str,
+             "context": str | absent, "kind": str | absent}, ...],
   "source": str,           # label источника (для/logs)
-  "degraded": bool,        # True если все упали / фолбэк на хардкод-заголовки
+  "degraded": bool,        # True если все упали / сырья нет
   "degraded_reason": str,  # опц. — почему деградировал
   "partial_errors": [str], # опц. — упавшие источники ("name: error")
 }
 ```
 
-**Побочный эффект нервом:** названия items чистятся через `scrub_secrets.scrub_text` ДО генерации
-(защита от утечки секрета в промпт: файл-источник может принести секрет в заголовке).
+`context` есть у локальных `files` и `self`: это ограниченный безопасный фрагмент начала файла.
+`self` всегда смотрит на корень kiborg и ставит `kind="self_reflection"`, чтобы генератор
+предлагал по этим материалам улучшения самого kiborg, не меняя назначение остальных источников.
+
+**Побочный эффект нервом:** `title` и `context` чистятся через `scrub_secrets.scrub_text` ДО
+генерации (защита от утечки секрета в промпт).
 
 ---
 
@@ -100,7 +106,8 @@ def run(inputs: dict, env: dict) -> dict:
 **env:**
 - `k` (нерв ставит **12**) — сколько идей-кандидатов генерить.
 - `llm` / `content_llm` (callable) — генератор. Нет ключа → stub-болванки (`brain: "stub"`).
-- `direction` (опц.) — руль темы, прокидывается в генератор.
+- `direction` (опц.) — руль темы, прокидывается в генератор и записывается в карточку идеи
+  как метаданные запрошенного направления.
 - `filter_seen_items` (опц., bool) — если True, нерв фильтрует items через `seen_items.filter_fresh`
   («уже видели») и метит виденными после успешной генерации.
 - `on_progress` (опц.) — колбэк суб-прогресса.

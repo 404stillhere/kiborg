@@ -9,6 +9,8 @@
 import os
 import time
 
+import config
+
 
 def _remove_stale_lock(session_path, max_age_seconds):
     """Снести lock-файл tg-сессии, если он «зависший» (старше max_age_seconds).
@@ -29,7 +31,7 @@ def _remove_stale_lock(session_path, max_age_seconds):
     """
     if not session_path:
         return False
-    lock_path = session_path + ".lock"
+    lock_path = session_path + config.TG_LOCK_SUFFIX
     try:
         st = os.stat(lock_path)
     except OSError:
@@ -57,7 +59,7 @@ def _collect_locked(inputs, env):
         # Сначала снесём зависший lock (если крашнулся прошлый процесс и оставил труп).
         # Без этого — ждём 130с таймаута; с этим — сразу O_EXCL-захват. Свежий lock не трогаем.
         _remove_stale_lock(sess, wiring._STALE_LOCK_MAX_AGE)
-        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=0.2) as held:
+        with wiring.state_lock(sess, timeout=wiring._TG_LOCK_TIMEOUT, poll=wiring._TG_LOCK_POLL_INTERVAL) as held:
             if not held:
                 print(
                     f"[warn] state_lock timeout ({wiring._TG_LOCK_TIMEOUT}s) на {sess} — "
@@ -72,30 +74,61 @@ def _collect_locked(inputs, env):
     return wiring.collect_source.run(inputs, env)
 
 
+def _scrub_and_cross_dedup(out):
+    """Общий шаг обработки ЛЮБОГО выхлопа сбора: scrub секретов + кросс-дедуп.
+
+    Раньше работал только на пути собственного фетча: ранний return из
+    prefetched_out (выхлоп гейта, автономный harvest-путь) обходил обе защиты —
+    секрет из файла-источника уходил в промпт на ГЛАВНОМ пути, а чистился только
+    на ручном (council 2026-08-17, находка #4). Идемпотентен: чистое не трогает.
+    """
+    import wiring
+
+    if isinstance(out, dict) and isinstance(out.get("items"), list):
+        # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести
+        # секрет в ЗАГОЛОВКЕ ИЛИ КОНТЕКСТЕ (собственный фильтр _files неполон — пропускал
+        # напр. AQ.-ключ из gitignored gemini.md). Оба поля уходят в ПРОМПТ генератора →
+        # к LLM-провайдеру. scrub downstream (перед deliver) ПОЗДНО — промпт уже ушёл.
+        # Чистим ОБА поля до генерации: scrub_secrets ловит форматы, что _FILES_SECRET_LINE
+        # пропустил.
+        for it in out["items"]:
+            if isinstance(it, dict):
+                for field in ("title", "context"):
+                    if isinstance(it.get(field), str):
+                        it[field] = wiring.scrub_secrets.scrub_text(it[field])
+        # КРОСС-ДЕДУП (2026-07-23): один пост может прийти с HN (item id) и Lobsters
+        # (short_id) — в seen_items это два разных ключа, оба проходят → LLM тратится на
+        # две похожие идеи. Уберём дубли ВНУТРИ прогона по нормализованному заголовку
+        # (первое вхождение выигрывает), до ideate. Чистая функция (нет персиста),
+        # строгая (точное совпадение, не Jaccard).
+        out["items"] = wiring.seen_items.cross_dedup(out["items"])
+    return out
+
+
 def _run_collect(inputs, env):
     # ВАЖНО: раньше env игнорировался (жёстко n=8/source=hn) — расширение харвеста
     # (SOURCE_N) реально не долетало до сборщика в живом прогоне, только до gate-проверки
     # в _source_signature (та звала collect_source напрямую). Теперь настройки прокидываются.
-    import wiring
 
     env = env if isinstance(env, dict) else {}
     # переиспользуем фетч гейта, если он уже сходил в источник ЭТИМ тиком (harvest кладёт
-    # prefetched_out) — не тянем телегу второй раз за тик (~90с/лишний pyrogram-логин). Нет /
-    # невалидно (force / сбой гейта / ручной прогон run.py) → фетчим сами, как раньше.
+    # prefetched_out) — не тянем телегу второй раз за тик (~90с/лишний pyrogram-логин).
+    # ФЕТЧ пропускаем, но ОБРАБОТКУ — нет: scrub секретов и кросс-дедуп обязаны работать
+    # и на автономном пути (раньше ранний return обходил их — council 2026-08-17, #4).
     pf = env.get("prefetched_out")
     if isinstance(pf, dict) and pf.get("items") is not None:
-        return pf
-    e = {"n": env.get("n", 8), "source": env.get("source", "hn")}
+        return _scrub_and_cross_dedup(pf)
+    e = {"n": env.get("n", config.COLLECT_DEFAULT_N), "source": env.get("source", config.COLLECT_DEFAULT_SOURCE)}
     if env.get("sources") is not None:
         e["sources"] = env["sources"]  # пробрасываем И пустой список: пусто = «нет источников»,
         #                                 collect_source честно вернёт пусто+degraded, не дефолт hn (D7)
     if env.get("timeout"):
         e["timeout"] = env["timeout"]
     # keyed/конфиг-источники читают свои данные из env по своим ключам — их тоже надо ПРОКИНУТЬ,
-    # иначе источник в списке sources есть, а данных для него нет → тихо падает в фолбэк/partial_errors.
+    # иначе источник в списке sources есть, а данных для него нет → честно попадает в partial_errors.
     # telegram: креды/каналы. files: files_paths (папки-источник) — БЕЗ него _files даёт «no folders
-    # configured», весь прогон уходит в 4 захардкодированных заголовка и degraded=True, а папка юзера НЕ
-    # читается (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
+    # configured», прогон честно вернёт пустое сырьё и degraded=True, а папка юзера НЕ читается
+    # (баг 2026-07-15: files_paths забыли добавить сюда при вводе источника-папки).
     for k in (
         "telegram_channels",
         "telegram_api_id",
@@ -103,7 +136,14 @@ def _run_collect(inputs, env):
         "telegram_session",
         "telegram_python",
         "telegram_timeout",
+        "self_path",
         "files_paths",
+        # Качество публичных лент. harvest_gate передаёт весь env, а ручной run.py идёт
+        # сюда без prefetched_out: без этого явного проброса ручной запуск терял Show HN
+        # и описания GitHub-репозиториев, хотя фон видел их правильно.
+        "hn_show_mix",
+        "gh_enrich",
+        "gh_enrich_limit",
     ):
         if env.get(k) is not None:
             e[k] = env[k]
@@ -111,13 +151,4 @@ def _run_collect(inputs, env):
     # что уже обдумывали, — работа Мозга (см. _run_ideate): фильтр переехал туда 2026-07-13,
     # чтобы метафора не врала (смотреть ≠ помнить).
     out = _collect_locked(inputs, e)  # под замком tg-сессии, если телеграм в игре
-    # ЗАЩИТА ОТ УТЕЧКИ СЕКРЕТА В ПРОМПТ (2026-07-15): файл-источник может принести секрет в
-    # ЗАГОЛОВКЕ (собственный фильтр _files неполон — пропускал напр. AQ.-ключ из gitignored
-    # gemini.md). Заголовок уходит в ПРОМПТ генератора → к LLM-провайдеру. scrub downstream
-    # (перед deliver) ПОЗДНО — промпт уже ушёл. Чистим заголовки ЗДЕСЬ, до генерации: scrub_secrets
-    # ловит форматы, что _FILES_SECRET_LINE пропустил (проверено: AQ.-ключ → [REDACTED]).
-    if isinstance(out, dict) and isinstance(out.get("items"), list):
-        for it in out["items"]:
-            if isinstance(it, dict) and isinstance(it.get("title"), str):
-                it["title"] = wiring.scrub_secrets.scrub_text(it["title"])
-    return out
+    return _scrub_and_cross_dedup(out)

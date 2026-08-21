@@ -19,9 +19,10 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 sys.path.insert(0, os.path.join(os.path.dirname(BASE), "idea_engine"))
 
-from wiring import build_organs  # noqa: E402
+from wiring import build_oracle_organs, build_organs  # noqa: E402
 
 IDEA_PATH = ["collect_source", "ideate", "rank_ideas", "readability_gate", "scrub_secrets", "deliver"]
+ORACLE_PATH = ["oracle_scan", "oracle_plan", "deliver_oracle"]
 
 
 class TestPipelineKeysChain(unittest.TestCase):
@@ -56,6 +57,22 @@ class TestPipelineKeysChain(unittest.TestCase):
         self.assertEqual(fk.consumes, ["nudge"])
         self.assertIn("delivered", fk.produces)
 
+    def test_oracle_path_keys_chain(self):
+        # третья ветка: oracle_scan -> oracle_plan -> deliver_oracle (режим Oracle),
+        # тем же правилом — consume каждой стадии произведён вверх по цепи, до 'delivered'
+        organs = {o.name: o for o in build_oracle_organs()}
+        available = set()
+        for name in ORACLE_PATH:
+            o = organs[name]
+            for c in o.consumes:
+                self.assertIn(c, available, f"{name} потребляет '{c}', которого выше по цепи никто не произвёл")
+            available.update(o.produces)
+        self.assertIn("delivered", available)
+        # прямые ассерты на стыки — ловят переименование ключа в одной стадии
+        self.assertEqual(organs["oracle_scan"].produces, ["project_map"])
+        self.assertEqual((organs["oracle_plan"].consumes, organs["oracle_plan"].produces), (["project_map"], ["plan"]))
+        self.assertEqual(organs["deliver_oracle"].consumes, ["plan"])
+
 
 class TestPipelineDataFlow(unittest.TestCase):
     """(2) Динамика: идея реально протекает сквозь РЕАЛЬНЫЕ трансформы на стабах (без сети/ключа).
@@ -82,6 +99,20 @@ class TestPipelineDataFlow(unittest.TestCase):
         # у дошедшей идеи есть суть (title/why) — не пустой каркас
         first = blob["ideas_safe"][0]
         self.assertTrue(first.get("title") or first.get("why"))
+
+    def test_oracle_scan_real_transform_offline(self):
+        # голова oracle-ветки на живых данных: tmp-проект -> реальный project_map
+        # (plan/deliver_oracle требуют LLM и пишут на диск — их стык проверен статически)
+        import tempfile
+
+        organs = {o.name: o for o in build_oracle_organs()}
+        with tempfile.TemporaryDirectory() as proj:
+            with open(os.path.join(proj, "main.py"), "w", encoding="utf-8") as f:
+                f.write("def main():\n    print('demo')\n\n\nif __name__ == '__main__':\n    main()\n")
+            out = organs["oracle_scan"].run({}, {"oracle_project": proj})
+            self.assertIsInstance(out, dict)
+            self.assertIn("project_map", out, "oracle_scan не произвёл 'project_map' — цепь порвалась")
+            self.assertTrue(out["project_map"], "карта проекта пуста на непустом проекте")
 
 
 if __name__ == "__main__":

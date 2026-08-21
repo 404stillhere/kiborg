@@ -50,7 +50,16 @@ import finish_sink  # noqa: E402,F401  (sink: доводит nudge «додел�
 import mind  # noqa: E402,F401  (движок взвешенного совещания — отбор идей советом, не одним судьёй)
 import seen_items  # noqa: E402,F401  (фильтр «уже видели» по ID сырых items — только для харвеста)
 from core import Organ  # noqa: E402,F401
-from organs import collect_source, finish_step, ideate, rank_ideas, readability_gate  # noqa: E402,F401
+from organs import (  # noqa: E402,F401  # noqa: E402,F401
+    collect_source,
+    finish_step,
+    ideate,
+    oracle_plan,
+    oracle_scan,
+    rank_ideas,
+    readability_gate,
+)
+from organs import deliver_oracle as deliver_oracle_organ  # noqa: E402,F401
 from organs_vendored import scrub_secrets  # noqa: E402,F401  (вендорен из реестра, чистый)
 from store import state_lock  # noqa: E402,F401  (O_EXCL-замок; тот же примитив, что вокруг state.json)
 
@@ -73,17 +82,19 @@ SKIP_FOLDERS = config.SKIP_FOLDERS
 # не коллизится. Таймаут > фетча (телеграм-таймаут ~90с), чтобы ждущий дождался. Нет телеграма
 # (нет telegram_session) → без замка, как раньше.
 _TG_LOCK_TIMEOUT = config.TG_LOCK_TIMEOUT  # mutable для тестов (test_wiring ставит 0.2)
+# Период poll при захвате tg-сессии state_lock (сек). Mutable для тестов.
+_TG_LOCK_POLL_INTERVAL = config.TG_LOCK_POLL_INTERVAL
 # Порог протухания lock-файла tg-сессии (СЕКУНДЫ; config хранит в минутах для читаемости).
 # _collect_locked перед захватом зовёт _remove_stale_lock(sess, ...): lock старше порога
 # (зависший после краша) сносится, не тратя TG_LOCK_TIMEOUT на ожидание. Mutable для тестов.
-_STALE_LOCK_MAX_AGE = config.STALE_LOCK_MAX_AGE_MINUTES * 60
+_STALE_LOCK_MAX_AGE = config.STALE_LOCK_MAX_AGE_MINUTES * config.SECONDS_PER_MINUTE
 # Курсор ротации finish_step — куда писать/откуда читать next_cursor. Mutable для test_registry.
 _CURSOR_FILE = config.CURSOR_FILE
 
 # Реэкспорт из подмодулей: сохраняет публичный API wiring.* для внешних потребителей
 # (run.py, harvest.py, panel/serve.py, ВСЕ тесты). E402 — импорты после sys.path-хака выше;
 # F401 — символы реэкспортируются, но в ЭТОМ модуле напрямую не используются.
-from wiring_builder import build_organs  # noqa: E402,F401
+from wiring_builder import build_oracle_organs, build_organs  # noqa: E402,F401
 from wiring_collect import _collect_locked, _remove_stale_lock, _run_collect  # noqa: E402,F401
 from wiring_council import (  # noqa: E402,F401
     _council_no_cap,
@@ -94,5 +105,6 @@ from wiring_council import (  # noqa: E402,F401
 )
 from wiring_finish import _run_finish  # noqa: E402,F401
 from wiring_ideate import _run_ideate  # noqa: E402,F401
+from wiring_oracle import _run_deliver_oracle, _run_oracle_plan, _run_oracle_scan  # noqa: E402,F401
 from wiring_runtime import _content_llm  # noqa: E402,F401
 from wiring_scrub import _liver_clean, _run_deliver, _run_finish_sink, _run_scrub  # noqa: E402,F401

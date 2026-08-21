@@ -8,6 +8,8 @@
 import json
 import os
 
+import config
+
 
 def _run_finish(inputs, env):
     import wiring
@@ -22,7 +24,7 @@ def _run_finish(inputs, env):
     cursor_file = wiring._CURSOR_FILE
     cursor = 0
     try:
-        with open(cursor_file, encoding="utf-8") as f:
+        with open(cursor_file, encoding=config.HTTP_CHARSET_UTF8) as f:
             cursor = int(json.load(f).get("cursor", 0))
     except Exception:
         pass
@@ -31,7 +33,7 @@ def _run_finish(inputs, env):
     )
     try:
         os.makedirs(os.path.dirname(cursor_file), exist_ok=True)
-        with open(cursor_file, "w", encoding="utf-8") as f:
+        with open(cursor_file, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"cursor": int(out.get("next_cursor", cursor + 1))}, f)
     except Exception:
         pass

@@ -6,6 +6,8 @@
 
 import json
 
+import config
+
 # что цель хочет на выходе -> ключ памяти-результат
 _DELIVERABLE = [
     (("идея", "идеи", "идей", "предлож"), "ideas"),
@@ -89,7 +91,9 @@ def llm_plan(goal, candidates, memory, deliverable, llm):
         "Доступные органы:",
     ]
     for i, o in enumerate(candidates):
-        lines.append(f"{i}. {o.name} — {o.purpose[:80]} [consumes={o.consumes} produces={o.produces}]")
+        lines.append(
+            f"{i}. {o.name} — {o.purpose[: config.BRAIN_PURPOSE_MAX_CHARS]} [consumes={o.consumes} produces={o.produces}]"
+        )
     lines.append('Ответь ОДНОЙ строкой JSON: {"index": N} чтобы вызвать орган N, или {"finish": true}.')
     raw = llm("\n".join(lines))
     mem_keys = set(k for k in memory.data if memory.has(k))

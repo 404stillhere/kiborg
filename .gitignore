@@ -12,6 +12,7 @@ cyborg/data/
 idea_engine/data/
 **/finish_cursor.json
 panel/auto.json
+panel/mode.json
 *.log
 
 # бэкапы-снапшоты редактора (панель) — не в git
@@ -26,10 +27,16 @@ __pycache__/
 
 # приватная память проекта — никогда не коммитить
 .brain/
+.brain/ebash-*.json
+.brain/ebash-*.log
+.brain/ebash-scan.log
 
 # handoff-заметки между чатами (рабочий процесс, не код проекта; ссылаются на внутрянку/секрет-файлы)
 # — как .brain, локальны, НЕ уезжают в публичный репо на «выкатывай»
 handoffs/
+
+# council-арены и аудит-заметки — рабочий процесс, не код проекта
+audit/
 
 # локальный тулинг Claude Code (launch.json превью с машинно-специфичным путём к питону) — не в общий репо
 .claude/

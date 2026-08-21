@@ -10,12 +10,16 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import harvest  # noqa: E402
 import seen_items  # noqa: E402
+
+_LIVE_BACKUPS_DIR = os.path.abspath(config.BACKUPS_DIR)
 
 
 @contextlib.contextmanager
@@ -46,6 +50,12 @@ class TestHarvestGate(unittest.TestCase):
         c = harvest._titles_sig(["Идея А", "Идея Б", "Идея Г"])  # состав изменился
         self.assertNotEqual(a, c)  # изменение поймано
 
+    def test_items_sig_detects_local_context_change_below_same_title(self):
+        old = [{"title": "[demo] core.py — Ядро", "id": "f2:old", "source": "files"}]
+        changed = [{"title": "[demo] core.py — Ядро", "id": "f2:new", "source": "files"}]
+        self.assertNotEqual(harvest._items_sig(old), harvest._items_sig(changed))
+        self.assertEqual(harvest._items_sig(old), harvest._items_sig(list(reversed(old))))
+
     def test_source_env_carries_direction(self):
         # активное направление подкладывается в env ОБЕИХ кнопок (через _source_env)
         orig = harvest.direction.current
@@ -62,6 +72,61 @@ class TestHarvestGate(unittest.TestCase):
             self.assertNotIn("direction", harvest._source_env())  # пусто -> ключа нет
         finally:
             harvest.direction.current = orig
+
+    def test_source_env_caps_github_enrichment_for_minimum_auto_interval(self):
+        orig_feeds, orig_folders = harvest.feeds.enabled, harvest.folders.current
+        harvest.feeds.enabled = lambda: ["gh_trending"]
+        harvest.folders.current = lambda: []
+        try:
+            env = harvest._source_env()
+            self.assertTrue(env["gh_enrich"])
+            self.assertEqual(env["gh_enrich_limit"], 5)
+        finally:
+            harvest.feeds.enabled, harvest.folders.current = orig_feeds, orig_folders
+
+    def test_source_env_carries_reddit_oauth_creds_when_feed_on(self):
+        # reddit OAuth: креды из llm_keys.env подкладываются в env при включённой ленте —
+        # публичный .json reddit блокирует анти-ботом (403), официальный путь это oauth-токен
+        orig_load, orig_feeds = harvest._load_kiborg_reddit_creds, harvest.feeds.enabled
+        harvest._load_kiborg_reddit_creds = lambda: ("cid1", "sec1")
+        harvest.feeds.enabled = lambda: ["reddit"]
+        try:
+            env = harvest._source_env()
+            self.assertEqual(env.get("reddit_client_id"), "cid1")
+            self.assertEqual(env.get("reddit_client_secret"), "sec1")
+        finally:
+            harvest._load_kiborg_reddit_creds, harvest.feeds.enabled = orig_load, orig_feeds
+
+    def test_source_env_no_reddit_creds_keys_when_creds_absent(self):
+        # кредов нет (не заведены/файл пуст) -> ключей в env НЕТ: _reddit уходит на публичный
+        # URL и честно деградирует, как раньше — OAuth опционален, не ломает существующее
+        orig_load, orig_feeds = harvest._load_kiborg_reddit_creds, harvest.feeds.enabled
+        harvest._load_kiborg_reddit_creds = lambda: (None, None)
+        harvest.feeds.enabled = lambda: ["reddit"]
+        try:
+            env = harvest._source_env()
+            self.assertNotIn("reddit_client_id", env)
+            self.assertNotIn("reddit_client_secret", env)
+        finally:
+            harvest._load_kiborg_reddit_creds, harvest.feeds.enabled = orig_load, orig_feeds
+
+    def test_load_kiborg_reddit_creds_reads_llm_keys_env(self):
+        # загрузчик читает llm_keys.env (путь можно перекрыть KIBORG_LLM_KEYS, как keychain)
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False, encoding="utf-8") as f:
+            f.write('# comment\nREDDIT_CLIENT_ID=abc123\nREDDIT_CLIENT_SECRET="dee pf"\nOTHER=1\n')
+            path = f.name
+        old = os.environ.get(config.LLM_KEYS_ENV)
+        os.environ[config.LLM_KEYS_ENV] = path
+        try:
+            self.assertEqual(harvest._load_kiborg_reddit_creds(), ("abc123", "dee pf"))
+        finally:
+            if old is None:
+                del os.environ[config.LLM_KEYS_ENV]
+            else:
+                os.environ[config.LLM_KEYS_ENV] = old
+            os.remove(path)
 
     def test_source_env_carries_files_paths_when_folders_set(self):
         # заданы папки -> источник-файлы получает их через env ОБЕИХ кнопок (_source_env),
@@ -84,6 +149,19 @@ class TestHarvestGate(unittest.TestCase):
             self.assertNotIn("files", env["sources"])  # и не значится активным
         finally:
             harvest.folders.current = orig
+
+    def test_source_env_carries_builtin_self_path_without_enabling_files(self):
+        with _patched_source(feeds=["hn", "self"], folders=[]):
+            env = harvest._source_env()
+        self.assertEqual(env["sources"], ["hn", "self"])
+        self.assertEqual(env["self_path"], config.PROJECT_ROOT)
+        self.assertNotIn("files_paths", env)
+        self.assertNotIn("files", env["sources"])
+
+    def test_source_env_omits_self_path_when_source_disabled(self):
+        with _patched_source(feeds=["hn"], folders=[]):
+            env = harvest._source_env()
+        self.assertNotIn("self_path", env)
 
     def test_telegram_creds_only_when_telegram_active(self):
         # РЕГРЕССИЯ 2026-07-15: telegram-креды/сессию кладём в env ТОЛЬКО если 'telegram' в active.
@@ -112,12 +190,12 @@ class TestHarvestGate(unittest.TestCase):
         tmp = tempfile.mkdtemp(prefix="harvest_aw_")
         path = os.path.join(tmp, "sub", "f.json")  # несуществующая подпапка — создаётся
         harvest._atomic_write(path, '{"a":1}')
-        with open(path, encoding="utf-8") as f:  # with — не течёт хэндл (Windows: temp удалится)
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:  # with — не течёт хэндл (Windows: temp удалится)
             self.assertEqual(f.read(), '{"a":1}')
         harvest._atomic_write(path, '{"a":2}')  # перезапись поверх
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
             self.assertEqual(f.read(), '{"a":2}')
-        self.assertFalse(os.path.exists(path + ".tmp"))
+        self.assertFalse(os.path.exists(path + config.ATOMIC_TMP_SUFFIX))
 
     def test_sig_persist_roundtrip(self):
         tmp = tempfile.mkdtemp(prefix="harvest_")
@@ -127,15 +205,18 @@ class TestHarvestGate(unittest.TestCase):
             self.assertIsNone(harvest._last_sig())  # пусто -> None
             harvest._save_sig("deadbeef")
             self.assertEqual(harvest._last_sig(), "deadbeef")
-            self.assertFalse(os.path.exists(harvest.STATE_FILE + ".tmp"))  # атомарно, без хвоста
+            self.assertFalse(os.path.exists(harvest.STATE_FILE + config.ATOMIC_TMP_SUFFIX))  # атомарно, без хвоста
         finally:
             harvest.STATE_FILE = orig
 
     def test_harvest_env_widens_source(self):
         # КОРЕНЬ узкого источника: env харвеста должен тянуть шире дефолтных 8 заголовков
-        env = harvest._harvest_env()
-        self.assertEqual(env["n"], harvest.SOURCE_N)
-        self.assertGreater(harvest.SOURCE_N, 8)  # шире дефолта органа collect_source
+        params = harvest.genparams.defaults()
+        params["source_n"] = 42
+        with mock.patch.object(harvest.genparams, "load", return_value=params):
+            env = harvest._harvest_env()
+        self.assertEqual(env["n"], 42)
+        self.assertGreater(env["n"], 8)  # шире дефолта органа collect_source
 
     def test_harvest_env_carries_configured_sources(self):
         # env харвеста несёт РОВНО активные источники (_active_sources: включённые ленты + files).
@@ -162,9 +243,11 @@ class TestHarvestGate(unittest.TestCase):
             captured.update(env)
             return {"items": [{"title": "A"}, {"title": "B"}], "degraded": False}
 
-        with _patched_source(fake_run):
+        params = harvest.genparams.defaults()
+        params["source_n"] = 42
+        with mock.patch.object(harvest.genparams, "load", return_value=params), _patched_source(fake_run):
             sig, degraded, fresh_n, status, _out = harvest._source_signature()
-        self.assertEqual(captured.get("n"), harvest.SOURCE_N)  # гейт и прогон смотрят одинаково глубоко
+        self.assertEqual(captured.get("n"), 42)  # гейт и прогон смотрят одинаково глубоко
         self.assertEqual(captured.get("sources"), ["hn", "reddit"])  # и по тому же набору источников
         self.assertIsNotNone(sig)
         self.assertFalse(degraded)
@@ -281,7 +364,11 @@ class TestDegradeNote(unittest.TestCase):
         self.assertEqual(harvest._degrade_note({"degraded": False, "dropped_stub": 0}), "")
 
     def test_degraded_source(self):
-        self.assertEqual(harvest._degrade_note({"degraded": True}), "источник в фолбэке")
+        self.assertEqual(harvest._degrade_note({"degraded": True}), "источники недоступны — идей нет")
+
+    def test_sources_explicitly_disabled_not_reported_as_network_failure(self):
+        note = harvest._degrade_note({"degraded": True, "degraded_reason": "нет источников: всё выключено"})
+        self.assertEqual(note, "источники выключены — идей нет")
 
     def test_dropped_stub(self):
         self.assertEqual(harvest._degrade_note({"dropped_stub": 3}), "stub-отсеяно=3")
@@ -300,13 +387,13 @@ class TestDegradeNote(unittest.TestCase):
 
     def test_both_flags(self):
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2})
-        self.assertIn("источник в фолбэке", note)
+        self.assertIn("источники недоступны — идей нет", note)
         self.assertIn("stub-отсеяно=2", note)
 
     def test_all_three_flags(self):
         # все три сигнала деградации в одной строке, разделены · (provider не передан → нет флага модели)
         note = harvest._degrade_note({"degraded": True, "dropped_stub": 2, "dropped_dup": 1})
-        self.assertEqual(note, "источник в фолбэке · stub-отсеяно=2 · дубликатов=1")
+        self.assertEqual(note, "источники недоступны — идей нет · stub-отсеяно=2 · дубликатов=1")
 
     def test_provider_flagged_always(self):
         # реш. юзера 2026-07-21: провайдер генератора светится ВСЕГДА (id модели, что ответила),
@@ -322,7 +409,7 @@ class TestDegradeNote(unittest.TestCase):
     def test_provider_with_other_flags(self):
         # модель встаёт в общую строку деградации рядом с источником/дубликатами
         note = harvest._degrade_note({"degraded": True, "provider": "deepseek", "dropped_dup": 1})
-        self.assertEqual(note, "источник в фолбэке · дубликатов=1 · модель=deepseek")
+        self.assertEqual(note, "источники недоступны — идей нет · дубликатов=1 · модель=deepseek")
 
 
 class TestHarvestRunnerGracefulShutdown(unittest.TestCase):
@@ -350,15 +437,30 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
 
         self._ic = items_cache
         self._orig_path = items_cache.PATH
-        self.tmp_dir = os.path.join(tempfile.gettempdir(), "kiborg_harvest_ic")
-        os.makedirs(self.tmp_dir, exist_ok=True)
+        self._orig_backups_dir = config.BACKUPS_DIR
+        self._orig_feedback_main = harvest.feedback_cortex.main
+        self.feedback_calls = 0
+
+        def fake_feedback_main():
+            self.feedback_calls += 1
+
+        harvest.feedback_cortex.main = fake_feedback_main
+        self._tmp = tempfile.TemporaryDirectory(prefix="kiborg_harvest_runner_")
+        self.tmp_dir = self._tmp.name
         self.cache_file = os.path.join(self.tmp_dir, "ic_integration.json")
         items_cache.PATH = self.cache_file
+        config.BACKUPS_DIR = os.path.join(self.tmp_dir, "backups")
         self._cleanup()
+
+    def test_backup_path_is_not_live_data(self):
+        self.assertNotEqual(os.path.abspath(config.BACKUPS_DIR), _LIVE_BACKUPS_DIR)
 
     def tearDown(self):
         self._ic.PATH = self._orig_path
+        config.BACKUPS_DIR = self._orig_backups_dir
+        harvest.feedback_cortex.main = self._orig_feedback_main
         self._cleanup()
+        self._tmp.cleanup()
 
     def _cleanup(self):
         try:
@@ -428,6 +530,120 @@ class TestHarvestRunnerCacheCheck(unittest.TestCase):
         # 2-й прогон: «повтор» теперь в кэше → отфильтрован, «совсем-новое» проходит
         harvest_runner.main([])
         self.assertEqual(captured["items_seen_by_generator"], ["совсем-новое"])  # повтор отрезан
+        self.assertEqual(self.feedback_calls, 2)  # Cortex запускается перед каждым вызовом harvest
+
+    def test_empty_after_filter_skips_run(self):
+        # council 2026-08-17 #5а: гейт пускает (fresh_n>0), но items_cache уже знает все
+        # items (прошлый тик упал после mark_seen) → filter_fresh вырезает всё → прогон
+        # из пустоты ЗАПРЕЩЁН: cy.run не зовётся, считается пропуском.
+        import harvest_runner
+
+        item = {"title": "уже в кэше", "id": "i1", "source": "hn"}
+        self._ic.mark_seen([item])  # как будто прошлый тик уже отдал генератору
+
+        def boom(goal, env=None):
+            raise AssertionError("прогон из пустоты: cy.run не должен вызываться")
+
+        class FakeCy:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, goal, env=None):
+                return boom(goal, env)
+
+        saved = (
+            harvest._source_signature,
+            harvest._should_run,
+            harvest._save_sig,
+            harvest._persist_status,
+            harvest._log,
+            harvest._degrade_note,
+            harvest._harvest_env,
+            harvest.Cyborg,
+            harvest.build_organs,
+        )
+        try:
+            harvest._source_signature = lambda: (None, False, 1, None, {"items": [item], "source": "hn"})
+            harvest._should_run = lambda sig, force, fresh_n: True
+            harvest._save_sig = lambda sig: None
+            harvest._persist_status = lambda status: None
+            harvest._log = lambda *a, **k: None
+            harvest._degrade_note = lambda out: ""
+            harvest._harvest_env = lambda: {"filter_seen_items": False}
+            harvest.Cyborg = FakeCy
+            harvest.build_organs = lambda: []
+            harvest_runner.main([])
+        finally:
+            (
+                harvest._source_signature,
+                harvest._should_run,
+                harvest._save_sig,
+                harvest._persist_status,
+                harvest._log,
+                harvest._degrade_note,
+                harvest._harvest_env,
+                harvest.Cyborg,
+                harvest.build_organs,
+            ) = saved
+
+    def test_failed_run_does_not_burn_material(self):
+        # council 2026-08-17 #5б: cy.run вернул всю партию болванками (added=0,
+        # dropped_stub>0) → mark_seen НЕ зовётся: «сбой LLM не сжигает сырьё». Следующий
+        # тик с тем же материалом всё ещё отдаёт его генератору (не отфильтрован).
+        import harvest_runner
+
+        item = {"title": "материал после сбоя", "id": "i9", "source": "hn"}
+        gen = {"seen": None}
+
+        class FakeCy:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, goal, env=None):
+                pf = (env or {}).get("prefetched_out") or {}
+                gen["seen"] = [i.get("title") for i in pf.get("items", [])]
+                return {"result": 0, "dropped_stub": 2}  # вся партия — болванки
+
+        def fake_signature():
+            return (None, False, 1, None, {"items": [dict(item)], "source": "hn"})
+
+        saved = (
+            harvest._source_signature,
+            harvest._should_run,
+            harvest._save_sig,
+            harvest._persist_status,
+            harvest._log,
+            harvest._degrade_note,
+            harvest._harvest_env,
+            harvest.Cyborg,
+            harvest.build_organs,
+        )
+        try:
+            harvest._source_signature = fake_signature
+            harvest._should_run = lambda sig, force, fresh_n: True
+            harvest._save_sig = lambda sig: None
+            harvest._persist_status = lambda status: None
+            harvest._log = lambda *a, **k: None
+            harvest._degrade_note = lambda out: ""
+            harvest._harvest_env = lambda: {"filter_seen_items": False}
+            harvest.Cyborg = FakeCy
+            harvest.build_organs = lambda: []
+            harvest_runner.main([])
+            self.assertEqual(gen["seen"], ["материал после сбоя"])  # 1-й тик: генератор видел
+            harvest_runner.main([])
+            self.assertEqual(gen["seen"], ["материал после сбоя"])  # 2-й тик: ВСЁ ЕЩЁ видит — не сгорело
+        finally:
+            (
+                harvest._source_signature,
+                harvest._should_run,
+                harvest._save_sig,
+                harvest._persist_status,
+                harvest._log,
+                harvest._degrade_note,
+                harvest._harvest_env,
+                harvest.Cyborg,
+                harvest.build_organs,
+            ) = saved
 
     def test_cache_check_never_crashes_harvest(self):
         # items_cache.PATH указывает на недоступное место / битый → harvest НЕ падает

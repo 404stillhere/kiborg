@@ -7,9 +7,14 @@
 """
 
 import os
+import sys
 import unittest
 
-import items_cache
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, BASE)
+
+import config  # noqa: E402
+import items_cache  # noqa: E402
 
 
 class TestItemsCacheFilter(unittest.TestCase):
@@ -84,7 +89,7 @@ class TestItemsCacheFilter(unittest.TestCase):
 
     def test_corrupt_cache_file_treated_as_empty(self):
         # битый JSON в кэше — не роняет фильтр, всё считается свежим
-        with open(self.tmp, "w", encoding="utf-8") as f:
+        with open(self.tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{не валидный json")
         items = [{"title": "после-сбоя", "id": "1"}]
         out = items_cache.filter_fresh(items)
@@ -97,6 +102,23 @@ class TestItemsCacheFilter(unittest.TestCase):
         items = [{"title": "дубль", "id": "1"}]
         out = items_cache.filter_fresh(items)
         self.assertEqual(out, [])  # одна запись, но фильтрует
+
+    def test_local_file_changed_id_passes_even_when_title_same(self):
+        old = {"title": "[demo] core.py — Ядро", "id": "f2:old", "source": "files"}
+        changed = {"title": "[demo] core.py — Ядро", "id": "f2:new", "source": "files"}
+        items_cache.mark_seen([old])
+        self.assertEqual(items_cache.filter_fresh([old]), [])
+        self.assertEqual(items_cache.filter_fresh([changed]), [changed])
+
+    def test_project_map_always_passes_short_cache(self):
+        project_map = {
+            "title": "[КАРТА ПРОЕКТА] demo",
+            "id": "map:1",
+            "source": "files",
+            "always_context": True,
+        }
+        items_cache.mark_seen([project_map])
+        self.assertEqual(items_cache.filter_fresh([project_map]), [project_map])
 
 
 if __name__ == "__main__":

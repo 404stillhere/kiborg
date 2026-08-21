@@ -10,10 +10,30 @@ import datetime
 import hashlib
 import json
 
+import config
+
 
 def _titles_sig(titles):
     """Отпечаток набора заголовков (порядок не важен, изменение — важно)."""
-    return hashlib.sha1("|".join(sorted(titles)).encode("utf-8")).hexdigest()
+    return hashlib.sha1("|".join(sorted(titles)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()
+
+
+def _items_sig(items):
+    """Отпечаток видимого сырья, включая content-aware ID локальных файлов.
+
+    Раньше хешировались только заголовки. Изменение функции ниже неизменной первой
+    строки давало новый f2-id, но гейт всё равно пропускал прогон как «не изменилось».
+    """
+    values = []
+    for item in items or []:
+        if isinstance(item, dict):
+            iid = item.get("id")
+            title = str(item.get("title") or "")
+            source = str(item.get("source") or "")
+            values.append(f"{source}:{iid if iid is not None else title}")
+        else:
+            values.append(str(item))
+    return hashlib.sha1("|".join(sorted(values)).encode(config.HTTP_CHARSET_UTF8)).hexdigest()
 
 
 def _status_from_out(out):
@@ -41,7 +61,7 @@ def _status_from_out(out):
             "beta": name not in harvest.USER_VERIFIED_SOURCES,
         }  # β в пульте: юзером не проверен
     return {
-        "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "checked_at": datetime.datetime.now().strftime(config.DATETIME_FMT),
         "degraded": bool(out.get("degraded")),
         "sources": sources,
     }
@@ -53,8 +73,8 @@ def _atomic_write(path, text):
     import os
 
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    tmp = path + config.ATOMIC_TMP_SUFFIX
+    with open(tmp, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(text)
     os.replace(tmp, path)
 
@@ -92,11 +112,10 @@ def _source_signature():
         print(f"гейт-проба источника упала ({type(e).__name__}: {e}) — прогон пойдёт без отпечатка")
         return None, False, None, None, None
     items = out.get("items") or []
-    titles = [(it.get("title", "") if isinstance(it, dict) else str(it)) for it in items]
     # 5-й элемент — сам `out` гейт-фетча: прогон переиспользует его вместо ВТОРОГО фетча телеги
     # (гейт и cy.run раньше тянули ленту независимо, 2 pyrogram-логина ~90с/тик; см. _run_collect)
     return (
-        _titles_sig(titles),
+        _items_sig(items),
         bool(out.get("degraded")),
         harvest.seen_items.count_fresh(items),
         _status_from_out(out),
@@ -108,7 +127,7 @@ def _last_sig():
     import harvest
 
     try:
-        with open(harvest.STATE_FILE, encoding="utf-8") as f:
+        with open(harvest.STATE_FILE, encoding=config.HTTP_CHARSET_UTF8) as f:
             return json.load(f).get("sig")
     except Exception:
         return None

@@ -11,13 +11,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import brain as brain_mod  # noqa: E402
+import config  # noqa: E402
 import executor as executor_mod  # noqa: E402
 import router as router_mod  # noqa: E402
 from core import Memory  # noqa: E402
 
 
 class Cyborg:
-    def __init__(self, organs, safe_mode=True, max_steps=8, k=5):
+    def __init__(self, organs, safe_mode=True, max_steps=config.CYBORG_MAX_STEPS, k=config.CYBORG_ROUTE_K):
         self.organs = organs
         self.safe_mode = safe_mode
         self.max_steps = max_steps
@@ -31,8 +32,6 @@ class Cyborg:
         env = dict(env or {})
         mem = Memory()
         env["memory"] = mem.data
-        deliverable = brain_mod.infer_deliverable(goal, self.organs)
-        trace = []
 
         def _emit(step, phase, name, why):
             if on_step:
@@ -40,6 +39,13 @@ class Cyborg:
                     on_step(step, phase, name, why)
                 except Exception:
                     pass  # прогресс — удобство; сбой колбэка не роняет прогон
+
+        # Oracle-режим: детерминированная дорожка органов, минуя роутер/мозг.
+        if env.get("mode") == "oracle":
+            return self._run_oracle(goal, env, _emit)
+
+        deliverable = brain_mod.infer_deliverable(goal, self.organs)
+        trace = []
 
         for step in range(self.max_steps):
             candidates = router_mod.route(goal, self.organs, self.k)
@@ -81,6 +87,7 @@ class Cyborg:
             # маркеры нужны логгеру/панели, чтобы юзер не думал, что сломалось, когда
             # просто упала сеть или идеи дубликаты).
             "degraded": bool(mem.data.get("degraded")),
+            "degraded_reason": mem.data.get("degraded_reason") or "",
             "dropped_stub": int(mem.data.get("dropped_stub") or 0),
             "dropped_dup": int(mem.data.get("dropped_dup") or 0),
             # секретов вычищено скрабом из идей перед доставкой (0 = чисто). >0 = АНОМАЛИЯ
@@ -93,4 +100,61 @@ class Cyborg:
             # кто РЕАЛЬНО ответил в генераторе (muse-spark/deepseek/nemotron — цепочка closerouter).
             # Светим в логе/пульте, какое плечо сработало: muse-spark=первичная, остальное=фолбэк.
             "provider": mem.data.get("provider") or "",
+        }
+
+    def _run_oracle(self, goal, env, _emit):
+        """Фиксированная цепочка Oracle: scan -> plan -> deliver."""
+        from executor import execute
+        from wiring import build_oracle_organs
+
+        trace = []
+        mem = Memory()
+        env["memory"] = mem.data
+        oracle_organs = build_oracle_organs()
+        chain = [
+            ("oracle_scan", {}),
+            ("oracle_plan", {"project_map": "project_map"}),
+            ("deliver_oracle", {"plan": "plan"}),
+        ]
+        by_name = {o.name: o for o in oracle_organs}
+
+        for step, (name, input_map) in enumerate(chain):
+            organ = by_name.get(name)
+            if organ is None:
+                trace.append({"step": step, "action": "error", "why": f"organ {name} not found"})
+                break
+            _emit(step, "start", organ.name, f"{organ.role}:{organ.name}")
+            inputs = {}
+            for out_key, mem_key in input_map.items():
+                inputs[out_key] = mem.data.get(mem_key)
+            result = execute(organ, inputs, env, self.safe_mode)
+            note = mem.observe(organ.name, result)
+            trace.append(
+                {
+                    "step": step,
+                    "organ": organ.name,
+                    "why": f"{organ.role}:{organ.name}",
+                    "got": note.get("keys"),
+                    "error": note.get("error"),
+                    "skipped": note.get("skipped"),
+                }
+            )
+            _emit(step, "done", organ.name, note.get("error") or note.get("skipped") or "")
+            if note.get("error") or note.get("skipped"):
+                break
+
+        return {
+            "goal": goal,
+            "deliverable": "delivered",
+            "result": mem.data.get("delivered"),
+            "memory_keys": list(mem.data.keys()),
+            "trace": trace,
+            "steps": len(trace),
+            "routed": [o.name for o in oracle_organs],
+            "mode": "oracle",
+            "oracle_plan_path": (
+                (mem.data.get("delivered") or {}).get("plan_path")
+                if isinstance(mem.data.get("delivered"), dict)
+                else None
+            ),
         }

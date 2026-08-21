@@ -8,7 +8,9 @@
 
 import json
 
-DEFAULT_CATALOG = "M:/projects/_shared/organs.json"
+import config
+
+DEFAULT_CATALOG = config.ORGANS_CATALOG
 
 
 class OrganCard:
@@ -24,7 +26,7 @@ class OrganCard:
 
 
 def load_catalog(path=DEFAULT_CATALOG):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding=config.HTTP_CHARSET_UTF8) as f:
         d = json.load(f)
     organs = d.get("organs", d if isinstance(d, list) else [])
     return [OrganCard(o) for o in organs]

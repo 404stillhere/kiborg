@@ -27,8 +27,16 @@ returns:
     {"items": [{channel, id, date, text, url}], "warnings": [str]}
     items отсортированы хронологически внутри каждого канала.
 """
+
 import datetime
 import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from cyborg import config
 
 
 def _make_client(env):
@@ -36,8 +44,8 @@ def _make_client(env):
     from pyrogram import Client
 
     session = str(env["TELEGRAM_SESSION"])
-    if session.endswith(".session"):
-        session = session[: -len(".session")]
+    if session.endswith(config.TELEGRAM_SESSION_SUFFIX):
+        session = session[: -len(config.TELEGRAM_SESSION_SUFFIX)]
     workdir, name = os.path.split(session)
     return Client(
         name,
@@ -61,14 +69,14 @@ def _post_url(channel, msg_id):
     username = channel.lstrip("@")
     if username.lstrip("-").isdigit():  # приватный канал по числовому id — публичной ссылки нет
         return None
-    return f"https://t.me/{username}/{msg_id}"
+    return config.TELEGRAM_POST_URL_TEMPLATE.format(username=username, msg_id=msg_id)
 
 
 def run(inputs: dict, env: dict) -> dict:
     """Механизм. Тот же inputs + тот же env → то же поведение."""
     channels = inputs["channels"]
     cutoff = _parse_since(inputs.get("since"))
-    limit = int(inputs.get("limit_per_channel", 50))
+    limit = int(inputs.get("limit_per_channel", config.TELEGRAM_LIMIT_PER_CHANNEL))
 
     items, warnings = [], []
     client = env.get("client") or _make_client(env)
@@ -86,13 +94,15 @@ def run(inputs: dict, env: dict) -> dict:
                         break
                     text = msg.text or msg.caption
                     if text:
-                        posts.append({
-                            "channel": ch,
-                            "id": msg.id,
-                            "date": msg_date.isoformat() if msg_date else None,
-                            "text": text,
-                            "url": _post_url(ch, msg.id),
-                        })
+                        posts.append(
+                            {
+                                "channel": ch,
+                                "id": msg.id,
+                                "date": msg_date.isoformat() if msg_date else None,
+                                "text": text,
+                                "url": _post_url(ch, msg.id),
+                            }
+                        )
                 items.extend(reversed(posts))
             except Exception as e:
                 warnings.append(f"{ch}: {e}")
@@ -102,6 +112,7 @@ def run(inputs: dict, env: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Мосты для kiborg (НЕ было в оригинале darbot — добавлено при вендоринге)
 # ---------------------------------------------------------------------------
+
 
 def _rpc_main():
     """Режим --rpc: JSON {"inputs":..., "env":...} на stdin -> JSON run() на stdout.
@@ -114,12 +125,13 @@ def _rpc_main():
     import json
     import sys
 
-    payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    _UTF8 = "utf-8"
+    payload = json.loads(sys.stdin.buffer.read().decode(_UTF8))
     try:
         result = run(payload.get("inputs", {}), payload.get("env", {}))
     except Exception as e:
         result = {"items": [], "warnings": [f"rpc: {type(e).__name__}: {e}"]}
-    sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+    sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False).encode(_UTF8))
 
 
 if __name__ == "__main__":

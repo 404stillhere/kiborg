@@ -22,6 +22,8 @@
 import threading
 import time
 
+import config
+
 # Список временных меток таймаутов (Unix epoch, float). Append-only кроме cleanup.
 # Под _LOCK — публичных мутаций напрямую нет, только через record/recent API.
 _TIMECTS: list = []
@@ -39,13 +41,14 @@ def record_timeout():
         _TIMECTS.append(now)
 
 
-def recent_timeouts(minutes=60):
+def recent_timeouts(minutes=None):
     """Сколько таймаутов произошло за последние `minutes` минут.
 
     Заодно (под тем же локом) сносим из списка всё, что старше окна — список не
     растёт бесконечно при долгой жизни процесса. Возвращает int-количество.
     """
-    cutoff = time.time() - minutes * 60
+    minutes = minutes if minutes is not None else config.LOCK_MONITOR_RECENT_TIMEOUTS_MINUTES
+    cutoff = time.time() - minutes * config.SECONDS_PER_MINUTE
     with _LOCK:
         # in-place filter: оставляем только свежие, устаревшие выкидываем навсегда.
         kept = [t for t in _TIMECTS if t >= cutoff]

@@ -7,7 +7,7 @@ _harvest_env), и гейт «есть что нового?» (_source_signature/
 
     harvest_env.py    — _active_sources, _load_darbot_tg_creds, _source_env, wire_council,
                          _harvest_env (конфигурация источников + впайка совета)
-    harvest_gate.py   — _titles_sig, _status_from_out, _atomic_write, _persist_status,
+    harvest_gate.py   — _titles_sig/_items_sig, _status_from_out, _atomic_write, _persist_status,
                          _source_signature, _last_sig, _should_run, _save_sig
                          (гейт «есть что нового?» — дёшево без LLM)
     harvest_log.py    — council_note, _degrade_note, _log (форматтеры + запись в runs.md)
@@ -59,8 +59,10 @@ except Exception:
 # подмодули через `import harvest`. Потому F401 на каждом. E402 — импорты после sys.path-хака.
 import ask_llm  # noqa: E402,F401  (last_provider мок для provider-проброса в _run_ideate)
 import direction  # noqa: E402,F401  (руль темы: env["direction"] для генератора/судьи)
+import feedback_cortex  # noqa: E402,F401  (применяет новые triage-сигналы перед автосбором)
 import feeds  # noqa: E402,F401  (ленты-источник: какие публичные ленты включены, тумблеры в пульте)
 import folders  # noqa: E402,F401  (папки-источник: env["files_paths"], список правится в пульте)
+import genparams  # noqa: E402,F401  (параметры генерации: env["gen_k"]/["rank_keep"]/... для wiring; правятся в пульте)
 import keychain  # noqa: E402,F401  (ключи -> совет на отборе; впаивается wire_council для ОБЕИХ кнопок)
 import rejected  # noqa: E402,F401  (отклонённые: env["rejected"] — генератор/судья не приносят похожее; idea_engine на path через wiring)
 import seen_items  # noqa: E402,F401
@@ -99,11 +101,13 @@ from harvest_env import (  # noqa: E402,F401
     _active_sources,
     _harvest_env,
     _load_darbot_tg_creds,
+    _load_kiborg_reddit_creds,
     _source_env,
     wire_council,
 )
 from harvest_gate import (  # noqa: E402,F401
     _atomic_write,
+    _items_sig,
     _last_sig,
     _persist_status,
     _save_sig,

@@ -9,6 +9,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import direction  # noqa: E402
 
 
@@ -35,9 +36,9 @@ class TestDirection(unittest.TestCase):
 
     def test_save_persists_to_disk_atomic(self):
         direction.save(current="игры", presets=["игры", "здоровье"])
-        with open(direction.PATH, encoding="utf-8") as f:
+        with open(direction.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)  # валидный JSON на диске
-        self.assertFalse(os.path.exists(direction.PATH + ".tmp"))
+        self.assertFalse(os.path.exists(direction.PATH + config.ATOMIC_TMP_SUFFIX))
         self.assertEqual(direction.load()["current"], "игры")
         self.assertEqual(direction.load()["presets"], ["игры", "здоровье"])
 
@@ -63,7 +64,7 @@ class TestDirection(unittest.TestCase):
         self.assertEqual(direction.current(), "")
 
     def test_broken_file_falls_to_default(self):
-        with open(direction.PATH, "w", encoding="utf-8") as f:
+        with open(direction.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{битый json")
         self.assertEqual(direction.current(), "")  # не падаем, дефолт
         self.assertEqual(direction.load()["presets"], direction._DEFAULT_PRESETS)

@@ -11,6 +11,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import triage_store  # noqa: E402
 
 
@@ -74,23 +75,54 @@ class TestTriageStore(unittest.TestCase):
         self.assertEqual(triage_store.load(self.later)["later"][0]["title"], "позже")
 
     def test_no_cap_keeps_all(self):
-        """В отличие от rejected (cap=200), taken/later не урезаются — взятые не теряются."""
+        """В отличие от rejected (cap=config.REJECTED_MAX_ITEMS), taken/later не урезаются — взятые не теряются."""
         for i in range(300):
             triage_store.add(self.taken, self._idea(i))
         self.assertEqual(triage_store.count(self.taken), 300)
 
     def test_persists_atomic(self):
         triage_store.add(self.taken, self._idea(1))
-        with open(self.taken, encoding="utf-8") as f:
+        with open(self.taken, encoding=config.HTTP_CHARSET_UTF8) as f:
             d = json.load(f)  # валидный JSON на диске
         self.assertEqual(d, {"taken": [json.loads(json.dumps(v)) for v in triage_store.load(self.taken)["taken"]]})
-        self.assertFalse(any(p.endswith(".tmp") for p in os.listdir(self.tmp)))  # tmp убран
+        self.assertFalse(any(p.endswith(config.ATOMIC_TMP_SUFFIX) for p in os.listdir(self.tmp)))  # tmp убран
 
     def test_broken_file_falls_to_empty(self):
-        with open(self.taken, "w", encoding="utf-8") as f:
+        with open(self.taken, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{битый")
         self.assertEqual(triage_store.load(self.taken), {"taken": []})  # не падаем
         self.assertEqual(triage_store.count(self.taken), 0)
+
+    def test_bom_file_is_valid_not_corrupted(self):
+        # council 2026-08-17 #3: блокнотная правка оставляет BOM — файл ВАЛИДЕН, читается
+        # без аварии (utf-8 бросал бы JSONDecodeError на первый же байт).
+        with open(self.taken, "w", encoding="utf-8-sig") as f:
+            json.dump({"taken": [{"id": 7, "title": "после блокнота"}]}, f, ensure_ascii=False)
+        self.assertEqual(triage_store.count(self.taken), 1)  # запись на месте, не «битая»
+        self.assertEqual(triage_store.load(self.taken)["taken"][0]["title"], "после блокнота")
+
+    def test_broken_file_add_refuses_and_preserves(self):
+        # council 2026-08-17 #3: битый taken.json (ручная правка с опечаткой) — add ОТКАЗЫВАЕТ
+        # (CorruptedError), файл НЕ перезаписывается одним новым элементом, снимается
+        # карантин-копия. Раньше: битый → [] → _save затирал всю историю молча.
+        with open(self.taken, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            f.write('{"taken": [{"id": 1}')  # обрыв посреди JSON
+        with self.assertRaises(triage_store.CorruptedError):
+            triage_store.add(self.taken, self._idea(2, "новая"))
+        with open(self.taken, encoding=config.HTTP_CHARSET_UTF8) as f:
+            self.assertEqual(f.read(), '{"taken": [{"id": 1}')  # файл НЕ тронут
+        copies = [p for p in os.listdir(self.tmp) if ".corrupted-" in p]
+        self.assertEqual(len(copies), 1)  # карантин-копия снята
+
+    def test_quarantine_once_per_incident(self):
+        # повторные чтения битого файла не плодят копии: копия уже новее файла — пропускаем
+        with open(self.taken, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+            f.write("{битый")
+        triage_store.load(self.taken)
+        triage_store.load(self.taken)
+        triage_store.count(self.taken)
+        copies = [p for p in os.listdir(self.tmp) if ".corrupted-" in p]
+        self.assertEqual(len(copies), 1)  # одна копия на инцидент, не три
 
 
 if __name__ == "__main__":

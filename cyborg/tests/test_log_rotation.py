@@ -16,6 +16,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import harvest_log  # noqa: E402
 
 
@@ -32,12 +33,12 @@ class TestRotateIfNeeded(unittest.TestCase):
 
     def _write_lines(self, n):
         """Писать n строк вида 'line-0001', 'line-0002', ... в self.path."""
-        with open(self.path, "w", encoding="utf-8") as f:
+        with open(self.path, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             for i in range(1, n + 1):
                 f.write(f"line-{i:04d}\n")
 
     def _read_lines(self):
-        with open(self.path, encoding="utf-8") as f:
+        with open(self.path, encoding=config.HTTP_CHARSET_UTF8) as f:
             return [ln.rstrip("\n") for ln in f.readlines()]
 
     def test_truncates_to_last_n(self):
@@ -72,7 +73,7 @@ class TestRotateIfNeeded(unittest.TestCase):
         # После ротации .tmp-файла рядом быть не должно (atomic_write через os.replace)
         self._write_lines(12)
         harvest_log._rotate_if_needed(self.path)
-        self.assertFalse(os.path.exists(self.path + ".tmp"))
+        self.assertFalse(os.path.exists(self.path + config.ATOMIC_TMP_SUFFIX))
 
     def test_respects_patched_max(self):
         # Поставили лимит 3 (не дефолт 1000) → обрезает до 3

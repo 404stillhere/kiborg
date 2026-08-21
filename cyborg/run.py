@@ -16,9 +16,13 @@ except Exception:
     pass
 
 import ask_llm  # noqa: E402
+import config  # noqa: E402
+import feeds  # noqa: E402
+import folders  # noqa: E402
 import harvest  # noqa: E402  (_source_env + wire_council: единый источник и впайка совета — как у автосбора)
+import keychain  # noqa: E402  (runtime-предупреждение о секретном файле не в .gitignore)
 from orchestrator import Cyborg  # noqa: E402
-from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемся на граф)
+from organs_vendored import scrub_secrets  # noqa: E402  (лог тоже вычищаем — не полагаемы на граф)
 from registry import load_catalog  # noqa: E402
 from wiring import build_organs  # noqa: E402
 
@@ -26,7 +30,6 @@ from wiring import build_organs  # noqa: E402
 # (run.DATA = tmp в test_scrub) продолжал работать: live-код _log_run читает БЭАР-НЕЙМ `DATA`,
 # патч переписывает module global. `import config` + assignment (не `from config import`) —
 # ruff I001 не схлопывает assignment-строки (см. wiring.py/harvest.py для того же паттерна).
-import config  # noqa: E402  # isort: skip
 
 DATA = config.CYBORG_DATA_DIR  # mutable для тестов (test_scrub патчит на tmp)
 
@@ -34,10 +37,10 @@ DATA = config.CYBORG_DATA_DIR  # mutable для тестов (test_scrub пат�
 def _log_run(out):
     """Читаемый след прогона — чтобы юзер утром видел, что киборг делал."""
     os.makedirs(DATA, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.datetime.now().strftime(config.DATETIME_FMT)
     steps = " -> ".join(t.get("organ") for t in out["trace"] if t.get("organ")) or "—"
     r = out.get("result")
-    rv = str(r)[:120] if r is not None else "нет"
+    rv = str(r)[: config.HARVEST_LOG_RESULT_MAX_CHARS] if r is not None else "нет"
     line = f"- [{ts}] «{out['goal']}» → {steps} | {out['deliverable']}={rv}"
     note = harvest.council_note(out)
     if note:
@@ -47,8 +50,8 @@ def _log_run(out):
         line += f" | ⚠ {dn}"  # деградация видна в истории (обе кнопки согласованы)
     line += "\n"
     # защита класса: даже если в результат/цель просочился секрет — в лог он не ляжет
-    runs_path = os.path.join(DATA, "runs.md")
-    with open(runs_path, "a", encoding="utf-8") as f:
+    runs_path = os.path.join(DATA, config.RUNS_MD_FILE)
+    with open(runs_path, "a", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write(scrub_secrets.scrub_text(line))
     # ротация: обрезать до config.MAX_LOG_ENTRIES, если вырос (общий хелпер с harvest_log)
     from harvest_log import _rotate_if_needed
@@ -57,12 +60,38 @@ def _log_run(out):
 
 
 def main(argv):
+    # защита класса: секретный файл должен быть в .gitignore; предупреждаем, но не ломаем запуск
+    key_warn = keychain.keys_file_warning()
+    if key_warn:
+        print(f"⚠ {key_warn}", flush=True)
+
+    # Oracle-режим: --mode oracle --project PATH --goal GOAL
+    if len(argv) >= 2 and argv[0] in ("--mode", "-m") and argv[1] == "oracle":
+        import oracle_mode
+
+        return oracle_mode.main(argv[2:])
     goal = argv[0] if argv else "приноси свежие идеи"
+
+    # --- Ранняя проверка конфигурации (council 2026-08-06) ---
+    smoke_errors = []
+    if not keychain.available():
+        smoke_errors.append("нет настроенных LLM-ключей — см. cyborg/llm_keys.env")
+    if not list(feeds.enabled()) and not folders.current():
+        smoke_errors.append("нет включённых источников — откройте настройки пульта")
+    if smoke_errors:
+        print("⚠ Не запущено:", flush=True)
+        for err in smoke_errors:
+            print(f"   • {err}", flush=True)
+        print("\nПодробности: см. USAGE.md или запустите python panel/serve.py", flush=True)
+        return 1
+
     try:
         cat_n = len(load_catalog())
     except Exception as e:
-        cat_n = "?(" + str(e)[:30] + ")"
-    cy = Cyborg(build_organs(), safe_mode=True, k=6)  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
+        cat_n = "?(" + str(e)[: config.RUN_CATALOG_ERROR_MAX_CHARS] + ")"
+    cy = Cyborg(
+        build_organs(), safe_mode=True, k=config.CYBORG_ROUTE_K_FULL_CHAIN
+    )  # k>=6: роутер сурфейсит всю цепь (+readability_gate)
     # ЕДИНЫЙ источник: те же каналы/настройки, что у автосбора (harvest._source_env), БЕЗ
     # фильтра «уже видели» — ручной клик приносит что нашёл сейчас. Раньше env был пуст → collect
     # молча падал на дефолт HN(n=8), и «Принеси идеи» ходила мимо телеграм-пула. Это чинит ту дырку.
@@ -122,7 +151,7 @@ def main(argv):
                 line += " SKIP:" + t["skipped"]
         print(line)
     r = out["result"]
-    print("РЕЗУЛЬТАТ:", (str(r)[:900] if r is not None else "(нет)"))
+    print("РЕЗУЛЬТАТ:", (str(r)[: config.RUN_RESULT_MAX_CHARS] if r is not None else "(нет)"))
     note = harvest.council_note(out)
     if note:
         print("СОВЕТ НА ОТБОРЕ:", note)
@@ -140,7 +169,7 @@ def main(argv):
     if out.get("dropped_dup"):
         print(f"♻️ Отклонено дубликатов: {out['dropped_dup']} (идеи уже были в пуле)", flush=True)
     _log_run(out)
-    print("след прогона ->", os.path.join(DATA, "runs.md"))
+    print("след прогона ->", config.RUNS_MD)
 
 
 if __name__ == "__main__":

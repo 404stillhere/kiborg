@@ -10,7 +10,10 @@ sys.path.insert(0, BASE)
 
 from organs import ideate  # noqa: E402
 
-ITEMS = [{"title": "A tiny CRDT in 200 lines"}, {"title": "QuadRF sees WiFi through walls"}]
+ITEMS = [
+    {"title": "A tiny CRDT in 200 lines", "id": "hn:1"},
+    {"title": "QuadRF sees WiFi through walls", "id": "hn:2"},
+]
 
 # как реально отвечает Gemini — pretty-printed JSON-массив
 ARRAY = """[
@@ -56,6 +59,16 @@ class TestIdeateParse(unittest.TestCase):
         self.assertTrue(all(i["brain"] == "llm" for i in out["ideas"]))
         self.assertTrue(all(i["title"] for i in out["ideas"]))  # карточки не пустые
 
+    def test_parses_grounding_and_verification_fields(self):
+        raw = (
+            '{"title":"Глубокий аудит","why":"Ищет хвостовые TODO.",'
+            '"effort":"средне","source_ids":["files:f2:a","map:1"],'
+            '"verification":"Добавить регрессионный тест."}'
+        )
+        idea = ideate.run({"items": ITEMS}, {"k": 1, "llm": lambda p: raw})["ideas"][0]
+        self.assertEqual(idea["source_ids"], ["files:f2:a", "map:1"])
+        self.assertEqual(idea["verification"], "Добавить регрессионный тест.")
+
     def test_respects_k_limit(self):
         out = ideate.run({"items": ITEMS}, {"k": 1, "llm": lambda p: ARRAY})
         self.assertEqual(len(out["ideas"]), 1)
@@ -77,6 +90,51 @@ class TestIdeateParse(unittest.TestCase):
         )
         self.assertIn("железки", seen["p"])
         self.assertIn("НАПРАВЛЕНИЕ", seen["p"])
+
+    def test_file_context_reaches_prompt_and_direction_is_recorded(self):
+        seen = {}
+        items = [
+            {
+                "title": "cyborg/wiring.py — Сборка органов",
+                "context": "def build_organs(): | TODO: убрать дублирование маршрутов",
+            }
+        ]
+        out = ideate.run(
+            {"items": items},
+            {
+                "k": 2,
+                "direction": "самоулучшение kiborg",
+                "llm": lambda p: seen.setdefault("p", p) or ARRAY,
+            },
+        )
+        self.assertIn("Факты материала:", seen["p"])
+        self.assertIn("TODO: убрать дублирование", seen["p"])
+        self.assertIn("Для улучшения существующего проекта", seen["p"])
+        self.assertIn("source_ids", seen["p"])
+        self.assertIn("verification", seen["p"])
+        self.assertTrue(all(i["direction"] == "самоулучшение kiborg" for i in out["ideas"]))
+
+    def test_self_source_is_local_instruction_not_global_direction(self):
+        seen = {}
+        items = [
+            {"title": "Show HN: tiny calendar"},
+            {
+                "title": "cyborg/health.py — Проверяет здоровье источников",
+                "context": "TODO: отличать сетевой сбой от выключенного источника",
+                "kind": "self_reflection",
+            },
+        ]
+        ideate.run({"items": items}, {"k": 2, "llm": lambda p: seen.setdefault("p", p) or ARRAY})
+        prompt = seen["p"]
+        self.assertIn("[САМОАНАЛИЗ KIBORG]", prompt)
+        self.assertIn("улучшение самого kiborg", prompt)
+        self.assertIn("Show HN: tiny calendar", prompt)  # внешнее сырьё осталось обычным
+        self.assertNotIn("НАПРАВЛЕНИЕ", prompt)  # саморефлексия не стала глобальным рулём
+
+    def test_stub_records_requested_direction_without_claiming_llm(self):
+        out = ideate.run({"items": ITEMS}, {"k": 2, "direction": "самоулучшение kiborg"})
+        self.assertTrue(all(i["direction"] == "самоулучшение kiborg" for i in out["ideas"]))
+        self.assertTrue(all(i["brain"] == "stub" for i in out["ideas"]))
 
     def test_no_direction_no_steer(self):
         # без направления руль в запрос НЕ вставляется (поведение как раньше)

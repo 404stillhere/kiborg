@@ -7,6 +7,7 @@ Scoped rebind в wiring_council (B2) читает current_weights() только
 """
 
 import json
+import math
 import os
 import sys
 import tempfile
@@ -15,6 +16,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
+import config  # noqa: E402
 import council_weights  # noqa: E402
 
 
@@ -48,18 +50,18 @@ class TestCouncilWeights(unittest.TestCase):
 
     def test_save_persists_atomic(self):
         council_weights.save({"enabled": False, "weights": council_weights.DEFAULT_WEIGHTS})
-        with open(council_weights.PATH, encoding="utf-8") as f:
+        with open(council_weights.PATH, encoding=config.HTTP_CHARSET_UTF8) as f:
             json.load(f)
-        self.assertFalse(os.path.exists(council_weights.PATH + ".tmp"))
+        self.assertFalse(os.path.exists(council_weights.PATH + config.ATOMIC_TMP_SUFFIX))
 
     def test_broken_file_falls_back_to_default(self):
-        with open(council_weights.PATH, "w", encoding="utf-8") as f:
+        with open(council_weights.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             f.write("{ не json")
         self.assertFalse(council_weights.is_enabled())  # disabled = безопасный дефолт
         self.assertEqual(council_weights.current_weights(), council_weights.DEFAULT_WEIGHTS)
 
     def test_missing_weights_key_uses_default(self):
-        with open(council_weights.PATH, "w", encoding="utf-8") as f:
+        with open(council_weights.PATH, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
             json.dump({"enabled": True}, f)  # нет weights → дефолт
         self.assertTrue(council_weights.is_enabled())
         self.assertEqual(council_weights.current_weights(), council_weights.DEFAULT_WEIGHTS)
@@ -83,6 +85,44 @@ class TestCouncilWeights(unittest.TestCase):
         w = council_weights.current_weights()
         self.assertNotIn("ghost", w)
         self.assertEqual(set(w.keys()), set(council_weights.ALL_ADVISORS))
+
+    def test_invalid_weights_fall_back_to_defaults(self):
+        """Ручная порча JSON не должна отравлять rebind в живом совете."""
+        council_weights.save(
+            {
+                "enabled": True,
+                "weights": {
+                    "ask_llm": float("nan"),
+                    "orchestra": float("inf"),
+                    "rank_ideas": True,
+                },
+            }
+        )
+        w = council_weights.current_weights()
+        self.assertEqual(w, council_weights.DEFAULT_WEIGHTS)
+        self.assertTrue(all(math.isfinite(value) for value in w.values()))
+
+    def test_invalid_updated_after_is_normalized_on_load_and_save(self):
+        """Infinity/NaN/bool/минус не должны ронять Cortex или сохраняться курсором."""
+        for bad in (float("inf"), float("nan"), True, -7):
+            saved = council_weights.save(
+                {
+                    "enabled": True,
+                    "weights": council_weights.DEFAULT_WEIGHTS,
+                    "updated_after": bad,
+                }
+            )
+            self.assertEqual(saved["updated_after"], 0)
+            self.assertEqual(council_weights.load()["updated_after"], 0)
+
+        council_weights.save(
+            {
+                "enabled": True,
+                "weights": council_weights.DEFAULT_WEIGHTS,
+                "updated_after": "12",
+            }
+        )
+        self.assertEqual(council_weights.load()["updated_after"], 12)
 
 
 if __name__ == "__main__":

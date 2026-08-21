@@ -13,10 +13,12 @@ if _CY not in sys.path:
 
 import keychain  # noqa: E402
 
+from cyborg import config  # noqa: E402
+
 
 def _keys_file(**pairs):
     fd, path = tempfile.mkstemp(suffix=".env")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
+    with os.fdopen(fd, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
         f.write("# test keys\n")
         for k, v in pairs.items():
             f.write(f"{k}={v}\n")
@@ -217,3 +219,43 @@ def test_with_deadline_kills_slow_loris():
     except TimeoutError:
         pass
     assert time.time() - t < 5  # уложился в ~1с (deadline), а не ждал 30с
+
+
+def test_chain_ids_has_no_secrets():
+    # chain_ids — только id, без apiKey/baseUrl. Используется в panel/serve.py _key_state().
+    SECRET = "sk-SUPER-SECRET-VALUE-xyz"
+    p = _keys_file(CLOSEROUTER_API_KEY=SECRET)
+    try:
+        ids = keychain.chain_ids(p)
+        assert ids == ["muse-spark", "deepseek", "nemotron"]
+        assert SECRET not in str(ids)
+        assert "https://" not in str(ids)
+        assert keychain.chain_ids(_keys_file()) == []
+    finally:
+        os.remove(p)
+
+
+def test_keys_file_warning_when_not_gitignored():
+    # файл ключей не в .gitignore -> предупреждение
+    fd, p = tempfile.mkstemp(suffix=".env")
+    os.close(fd)
+    try:
+        assert keychain.keys_file_warning(p) is not None
+    finally:
+        os.remove(p)
+
+
+def test_keys_file_warning_none_when_gitignored():
+    # файл ключей в .gitignore -> предупреждение None
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "llm_keys.env")
+    with open(p, "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+        f.write("CLOSEROUTER_API_KEY=cr\n")
+    with open(os.path.join(d, ".gitignore"), "w", encoding=config.HTTP_CHARSET_UTF8) as f:
+        f.write("# secrets\nllm_keys.env\n")
+    try:
+        assert keychain.keys_file_warning(p) is None
+    finally:
+        os.remove(p)
+        os.remove(os.path.join(d, ".gitignore"))
+        os.rmdir(d)

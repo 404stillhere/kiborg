@@ -20,6 +20,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 
 import brain  # noqa: E402
+import config  # noqa: E402
 import finish_sink  # noqa: E402
 import router as R  # noqa: E402
 import wiring  # noqa: E402
@@ -48,7 +49,7 @@ class TestFinishSink(unittest.TestCase):
         finish_sink._load_ie_run = self._orig
 
     def _state(self):
-        with open(self.fake.STATE, encoding="utf-8") as f:
+        with open(self.fake.STATE, encoding=config.HTTP_CHARSET_UTF8) as f:
             return json.load(f)
 
     def test_routes_to_lane_B_not_A(self):
